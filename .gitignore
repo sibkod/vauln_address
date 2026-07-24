@@ -1,0 +1,14 @@
+# Binaries
+vauln-server
+server.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+
+# Local env
+.env
