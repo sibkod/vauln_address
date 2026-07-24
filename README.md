@@ -4,17 +4,30 @@ A V Language web server with HTTP API and WebSocket support for checking wallet 
 
 ## Features
 
-- **HTTP Server** (port 8080) - Serves the frontend UI and REST API
+- **HTTP Server** (port 8080) - FastHTTP-based REST API
 - **WebSocket Server** (port 8081) - Real-time wallet checks
 - **IP Rate Limiting** - Maximum 3 checks per IP per hour (configurable)
 - **Demo Data** - 10 demo wallets with various security statuses
 - **Thread-safe** - Mutex-protected shared state
-- **HTML Frontend** - Served from `./assets/index.html`
+- **HTML Frontend** - Served from `./templates/index.html`
+
+## Project Structure
+
+```
+vauln_address/
+├── main.v           # Entry point
+├── app/
+│   ├── models.v     # Data models (Config, AppState, Wallet, demo data)
+│   └── handlers.v   # HTTP & WebSocket handlers
+├── templates/
+│   └── index.html   # Frontend UI
+└── README.md
+```
 
 ## Running
 
 ```bash
-# Compile (requires -enable-globals for __global)
+# Compile (requires -enable-globals for global state)
 v -enable-globals .
 
 # Run
@@ -86,7 +99,7 @@ curl http://localhost:8080/api/rate-limit
 ## Tech Stack
 
 - **V Language** - Fast, compiled language
-- **net module** - TCP/HTTP/WebSocket servers
-- **crypto.sha1** - WebSocket handshake key generation
+- **fasthttp** - High-performance HTTP server
+- **net.websocket** - WebSocket server
 - **sync** - Mutex for thread-safe state access
-- **Best Practices**: Global state with mutex protection, proper error handling
+- **Best Practices**: Module separation, global state with mutex protection
