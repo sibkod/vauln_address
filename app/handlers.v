@@ -4,6 +4,7 @@ import fasthttp
 import net.websocket
 import os
 import time
+import mysql
 
 // HTTP Handler using fasthttp append_handler
 pub fn create_http_handler(state &AppState) fasthttp.AppendHandler {
@@ -51,18 +52,18 @@ fn build_404(mut out []u8) fasthttp.Step {
 }
 
 // WebSocket Handler
-pub fn create_websocket_server(mut state AppState, port int) &websocket.Server {
+pub fn create_websocket_server(mut state AppState, db &mysql.Connection, port int) &websocket.Server {
 	mut ws_server := websocket.new_server(.ip, port, '/ws')
 	
-	ws_server.on_message(fn [mut state] (mut ws websocket.Client, msg &websocket.Message) ! {
+	ws_server.on_message(fn [mut state, db] (mut ws websocket.Client, msg &websocket.Message) ! {
 		data := msg.payload.bytestr()
 		if data == '' { return }
 		
 		// Get client IP from connection
 		client_ip := ws.conn.peer_ip() or { '127.0.0.1' }
 		
-		// Handle message using state
-		response := handle_ws_message(data, mut state, client_ip)
+		// Handle message using state and db
+		response := handle_ws_message(data, mut state, db, client_ip)
 		
 		if response.len > 0 {
 			ws.write_string(response) or { return }
@@ -76,7 +77,7 @@ pub fn create_websocket_server(mut state AppState, port int) &websocket.Server {
 	return ws_server
 }
 
-fn handle_ws_message(msg string, mut state AppState, client_ip string) string {
+fn handle_ws_message(msg string, mut state AppState, db &mysql.Connection, client_ip string) string {
 	if msg == '{"type":"ping"}' || msg == 'ping' {
 		return '{"type":"pong"}'
 	}
@@ -94,17 +95,20 @@ fn handle_ws_message(msg string, mut state AppState, client_ip string) string {
 		idx2 := rest.index('"') or { return '' }
 		addr := msg[start..start + idx2]
 		
-		result := check_wallet_json(addr)
+		// Query wallet from database
+		result := check_wallet_from_db(db, addr) or { return '{"type":"error","message":"Database error"}' }
 		remaining := get_remaining(&state, client_ip)
 		return '{"type":"wallet_result","wallet":${result},"remaining":${remaining}}'
 	}
 	
 	if msg == '{"type":"get_stats"}' || msg == 'get_stats' {
-		return '{"type":"stats",${get_stats_json().substr(1, get_stats_json().len - 1)}}'
+		stats := get_stats_from_db(db) or { '{"type":"stats","error":"Failed to get stats"}' }
+		return '{"type":"stats",${stats}}'
 	}
 	
 	if msg == '{"type":"get_wallets"}' || msg == 'get_wallets' {
-		return '{"type":"wallets","wallets":${get_wallets_json()}}'
+		wallets := get_wallets_from_db(db) or { '[]' }
+		return '{"type":"wallets","wallets":${wallets}}'
 	}
 	
 	if msg == '{"type":"get_rate_limit"}' || msg == 'get_rate_limit' {
@@ -115,42 +119,53 @@ fn handle_ws_message(msg string, mut state AppState, client_ip string) string {
 	return ''
 }
 
-// JSON helpers
-pub fn get_stats_json() string {
-	mut hacked := 0
-	mut vulnerable := 0
-	mut safe := 0
-	for w in demo_wallets {
-		match w.status {
-			'hacked' { hacked++ }
-			'vulnerable' { vulnerable++ }
-			'safe' { safe++ }
-			else {}
-		}
+// Database functions
+fn check_wallet_from_db(db &mysql.Connection, address string) !string {
+	// Query wallet by address
+	rows := db.query(sql_get_wallet_by_address, [address])!
+	defer { rows.free() }
+	
+	if rows.next()! {
+		status := rows.varchar_by_index(2)!
+		balance := rows.varchar_by_index(3)!
+		tokens := rows.varchar_by_index(4)!
+		return '{"address":"${address}","status":"${status}","balance":${balance},"tokens":"${tokens}","source":"database"}'
 	}
-	total := hacked + vulnerable + safe
-	return '{"hacked":${hacked},"vulnerable":${vulnerable},"safe":${safe},"total":${total},"total_checks":${total * 10 + 50}}'
+	
+	// Not found - return random status
+	idx := address.len % demo_data.len
+	w := demo_data[idx]
+	return '{"address":"${address}","status":"${w.status}","balance":${w.balance},"tokens":"${w.tokens}","source":"generated"}'
 }
 
-pub fn get_wallets_json() string {
+fn get_stats_from_db(db &mysql.Connection) !string {
+	// Get counts by status
+	hacked := db.query('SELECT COUNT(*) FROM wallets WHERE status = "hacked"', [])!.single_string() or { '0' }
+	vulnerable := db.query('SELECT COUNT(*) FROM wallets WHERE status = "vulnerable"', [])!.single_string() or { '0' }
+	safe := db.query('SELECT COUNT(*) FROM wallets WHERE status = "safe"', [])!.single_string() or { '0' }
+	total := db.query('SELECT COUNT(*) FROM wallets', [])!.single_string() or { '0' }
+	total_checks := db.query('SELECT COUNT(*) FROM check_logs', [])!.single_string() or { '0' }
+	
+	return '{"hacked":${hacked},"vulnerable":${vulnerable},"safe":${safe},"total":${total},"total_checks":${total_checks}}'
+}
+
+fn get_wallets_from_db(db &mysql.Connection) !string {
+	rows := db.query(sql_get_all_wallets, [])!
+	defer { rows.free() }
+	
 	mut items := '['
-	for i, w in demo_wallets {
-		if i > 0 { items += ',' }
-		items += '{"address":"${w.address}","status":"${w.status}","balance":${w.balance},"tokens":"${w.tokens}"}'
+	mut first := true
+	for rows.next()! {
+		if !first { items += ',' }
+		first = false
+		address := rows.varchar_by_index(1)!
+		status := rows.varchar_by_index(2)!
+		balance := rows.varchar_by_index(3)!
+		tokens := rows.varchar_by_index(4)!
+		items += '{"address":"${address}","status":"${status}","balance":${balance},"tokens":"${tokens}"}'
 	}
 	items += ']'
 	return items
-}
-
-pub fn check_wallet_json(address string) string {
-	for w in demo_wallets {
-		if w.address == address {
-			return '{"address":"${w.address}","status":"${w.status}","balance":${w.balance},"tokens":"${w.tokens}","source":"database"}'
-		}
-	}
-	idx := address.len % demo_wallets.len
-	w := demo_wallets[idx]
-	return '{"address":"${address}","status":"${w.status}","balance":${w.balance},"tokens":"${w.tokens}","source":"generated"}'
 }
 
 // Rate limiting using mutex lock
