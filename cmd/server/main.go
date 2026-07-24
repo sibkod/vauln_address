@@ -123,26 +123,28 @@ func main() {
 
 	// ========== API (JSON) ==========
 	api := router.Group("/api")
-	{
-		api.GET("/health", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "vauln-address-api", "time": time.Now().UTC().Format(time.RFC3339)})
-		})
-		api.GET("/chains", h.GetSupportedChains)
-		api.GET("/recent", h.GetRecentChecks)
-		api.GET("/pricing", h.GetPricing)
-		api.GET("/auth/nonce", h.GetNonce)
-		api.POST("/auth/login", h.Authenticate)
-		api.GET("/user/profile", middleware.RequireAuth(), h.GetUserProfile)
-		api.POST("/orders", middleware.RequireAuth(), h.CreateOrder)
-		api.GET("/orders/verify", h.VerifyPayment)
-		api.POST("/check", rateLimiter.Limit(), h.CheckWallet)
-		api.POST("/contact", h.SubmitContact)
 
-		// 404 for API (JSON)
-		api.NoRoute(func(c *gin.Context) {
+	// API 404 middleware
+	api.Use(func(c *gin.Context) {
+		c.Next()
+		if c.Writer.Status() == 404 && !c.Writer.Written() {
 			renderErrorJSON(c, 404, "Endpoint not found")
-		})
-	}
+		}
+	})
+
+	api.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "vauln-address-api", "time": time.Now().UTC().Format(time.RFC3339)})
+	})
+	api.GET("/chains", h.GetSupportedChains)
+	api.GET("/recent", h.GetRecentChecks)
+	api.GET("/pricing", h.GetPricing)
+	api.GET("/auth/nonce", h.GetNonce)
+	api.POST("/auth/login", h.Authenticate)
+	api.GET("/user/profile", middleware.RequireAuth(), h.GetUserProfile)
+	api.POST("/orders", middleware.RequireAuth(), h.CreateOrder)
+	api.GET("/orders/verify", h.VerifyPayment)
+	api.POST("/check", rateLimiter.Limit(), h.CheckWallet)
+	api.POST("/contact", h.SubmitContact)
 
 	server := &http.Server{Addr: ":" + cfg.ServerPort, Handler: router, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 
