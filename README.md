@@ -101,5 +101,33 @@ curl http://localhost:8080/api/rate-limit
 - **V Language** - Fast, compiled language
 - **fasthttp** - High-performance HTTP server
 - **net.websocket** - WebSocket server
+- **db.mysql** - MySQL ORM for V
 - **sync** - Mutex for thread-safe state access
-- **Best Practices**: Module separation, global state with mutex protection
+
+## Database (MySQL ORM)
+
+### MySQL Configuration
+
+Set these environment variables for MySQL connection:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DB_HOST` | localhost | MySQL host |
+| `DB_PORT` | 3306 | MySQL port |
+| `DB_USER` | root | MySQL user |
+| `DB_PASSWORD` | | MySQL password |
+| `DB_NAME` | wallet_checker | Database name |
+
+### Tables
+
+1. **wallets** - Wallet addresses with status
+   - address (VARCHAR, UNIQUE)
+   - status (ENUM: hacked/vulnerable/safe)
+   - balance (DECIMAL)
+   - tokens (JSON)
+
+2. **check_logs** - Audit log of all checks
+   - wallet_id (FK to wallets)
+   - ip_address
+   - check_result
+   - checked_at
