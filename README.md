@@ -41,7 +41,7 @@ v -enable-globals .
 | `PORT` | 8080 | HTTP server port |
 | `WS_PORT` | 8081 | WebSocket server port |
 | `MAX_CHECKS` | 3 | Max checks per IP |
-| `RATE_LIMIT_TTL` | 3600 | Rate limit TTL in seconds |
+| `RATE_LIMIT_TTL` | 86400 | Rate limit TTL in seconds (24 hours) |
 
 ## API Endpoints (HTTP)
 
@@ -91,10 +91,10 @@ curl http://localhost:8080/api/rate-limit
 
 ## Rate Limiting
 
-- **Limit**: 3 checks per IP address (configurable via `MAX_CHECKS`)
-- **TTL**: 1 hour (configurable via `RATE_LIMIT_TTL`)
+- **Limit**: 3 checks per IP address per day (configurable via `MAX_CHECKS`)
+- **TTL**: 24 hours (configurable via `RATE_LIMIT_TTL`)
 - **Storage**: In-memory map (auto-expires)
-- **Response**: HTTP 429 with `Retry-After` header when exceeded
+- **Response**: HTTP 429 with `Retry-After: 86400` header when exceeded
 
 ## Tech Stack
 
