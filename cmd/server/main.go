@@ -19,7 +19,7 @@ import (
 	"vauln-address/internal/repository"
 )
 
-//go:embed ../../templates/*
+//go:embed templates/*
 var templateFS embed.FS
 
 var tmpl *template.Template
