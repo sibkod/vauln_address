@@ -1,0 +1,97 @@
+{{define "content"}}
+<style>
+.contact-content { background: rgba(14, 19, 29, 0.5); backdrop-filter: blur(6px); border-radius: 1.5rem; padding: 2rem; border: 1px solid rgba(255,255,255,0.04); }
+.contact-content h2 { color: #f0f4ff; font-size: 1.6rem; font-weight: 600; margin-bottom: 1rem; letter-spacing: -0.02em; }
+.contact-content .sub { color: #9aabcf; line-height: 1.7; margin-bottom: 1rem; font-size: 0.95rem; }
+.contact-content .form-group { margin-bottom: 1.2rem; }
+.contact-content .form-group label { display: block; color: #b0bbd6; font-size: 0.85rem; font-weight: 500; margin-bottom: 0.3rem; }
+.contact-content .form-group input, .contact-content .form-group textarea, .contact-content .form-group select { width: 100%; padding: 0.8rem 1rem; background: rgba(18, 24, 36, 0.7); border: 1px solid rgba(255,255,255,0.06); border-radius: 0.8rem; color: #eef2fc; font-size: 0.95rem; outline: none; transition: 0.2s; }
+.contact-content .form-group input:focus, .contact-content .form-group textarea:focus, .contact-content .form-group select:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px #3b82f620; }
+.contact-content .form-group textarea { resize: vertical; min-height: 100px; }
+.contact-content .form-group select option { background: #0b0d11; }
+.contact-content .submit-btn { background: #3b82f6; border: none; color: white; font-weight: 600; padding: 0.8rem 2.5rem; border-radius: 60px; font-size: 0.95rem; cursor: pointer; transition: 0.15s; box-shadow: 0 4px 14px #3b82f640; width: 100%; }
+.contact-content .submit-btn:hover { background: #4f8df7; transform: scale(1.01); }
+.contact-content .submit-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.contact-content .contact-info { margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.04); display: flex; flex-direction: column; gap: 0.5rem; color: #6d7da0; font-size: 0.85rem; }
+.contact-content .contact-info .info-item { display: flex; align-items: center; gap: 0.8rem; }
+.contact-content .contact-info .info-item .emoji { font-size: 1.1rem; }
+@media (max-width: 768px) { .contact-content { padding: 1.2rem; } .contact-content h2 { font-size: 1.3rem; } }
+</style>
+
+<div class="contact-content">
+    <h2>📬 Contact & Suggest Data</h2>
+    <p class="sub">Have a hacked wallet to report or want to suggest new data? Reach out to us.</p>
+
+    <form id="contactForm">
+        <div class="form-group">
+            <label for="contactName">Your Name</label>
+            <input type="text" id="contactName" placeholder="Enter your name" required>
+        </div>
+        <div class="form-group">
+            <label for="contactEmail">Email Address</label>
+            <input type="email" id="contactEmail" placeholder="your@email.com" required>
+        </div>
+        <div class="form-group">
+            <label for="contactType">Message Type</label>
+            <select id="contactType" required>
+                <option value="">Select type...</option>
+                <option value="suggest">Suggest a hacked wallet</option>
+                <option value="report">Report an issue</option>
+                <option value="feedback">General feedback</option>
+                <option value="other">Other</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="contactMessage">Message</label>
+            <textarea id="contactMessage" placeholder="Describe the wallet or your suggestion in detail..." required></textarea>
+        </div>
+        <button type="submit" class="submit-btn">✉️ Send Message</button>
+    </form>
+
+    <div class="contact-info">
+        <div class="info-item"><span class="emoji">🐦</span><span>Twitter: @WalletChecker</span></div>
+        <div class="info-item"><span class="emoji">📧</span><span>Email: security@walletchecker.io</span></div>
+        <div class="info-item"><span class="emoji">💬</span><span>Telegram: t.me/WalletChecker</span></div>
+    </div>
+</div>
+
+<script>
+document.getElementById('contactForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const btn = form.querySelector('.submit-btn');
+    const originalText = btn.textContent;
+
+    const name = document.getElementById('contactName').value.trim();
+    const email = document.getElementById('contactEmail').value.trim();
+    const message = document.getElementById('contactMessage').value.trim();
+
+    if (!name || !email || !message) {
+        window.showToast('⚠️ Please fill in all fields.');
+        return;
+    }
+
+    btn.textContent = 'Sending...';
+    btn.disabled = true;
+
+    try {
+        const res = await fetch('/api/contact', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, email, message })
+        });
+        if (res.ok) {
+            window.showToast('✅ Message sent! We\'ll review your suggestion shortly.');
+            form.reset();
+        } else {
+            throw new Error('Failed to send');
+        }
+    } catch (error) {
+        window.showToast('❌ Failed to send message. Please try again.');
+    } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
+});
+</script>
+{{end}}

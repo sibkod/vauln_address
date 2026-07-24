@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -373,25 +374,38 @@ func (h *Handler) CheckWallet(c *gin.Context) {
 		BalanceLeft: balanceLeft,
 	}
 
+	var status string
 	if wallet != nil {
-		response.Status = string(wallet.Status)
+		status = string(wallet.Status)
+		response.Status = status
 		response.HasPK = wallet.HasPK
 		response.HasSeed = wallet.HasSeed
 	} else {
+		status = "safe"
 		response.Status = "not_found"
 	}
+
+	// Record check in history
+	go func() {
+		h.repo.RecordCheck(context.Background(), req.Address, req.Chain, status)
+	}()
 
 	c.JSON(http.StatusOK, response)
 }
 
 func (h *Handler) GetRecentChecks(c *gin.Context) {
-	checks, err := h.repo.GetRecentChecks(c.Request.Context(), 50)
+	// First try to get from check_history
+	checks, err := h.repo.GetCheckHistory(c.Request.Context(), 50)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-			Error: "database error",
-			Code:  "DB_ERROR",
-		})
-		return
+		// Fallback to wallets table
+		checks, err = h.repo.GetRecentChecks(c.Request.Context(), 50)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+				Error: "database error",
+				Code:  "DB_ERROR",
+			})
+			return
+		}
 	}
 
 	if checks == nil {

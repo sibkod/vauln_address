@@ -1,0 +1,95 @@
+{{define "content"}}
+<style>
+.roadmap-page-content { padding: 0.5rem 0; }
+.roadmap-header { text-align: center; margin-bottom: 2rem; }
+.roadmap-header h2 { color: #f0f4ff; font-size: 2rem; font-weight: 600; }
+.roadmap-header .roadmap-sub { color: #8892b0; font-size: 0.95rem; margin-top: 0.3rem; }
+.roadmap-timeline { display: flex; flex-direction: column; gap: 1.5rem; position: relative; padding-left: 2rem; }
+.roadmap-timeline::before { content: ''; position: absolute; left: 14px; top: 0; bottom: 0; width: 2px; background: rgba(255,255,255,0.06); }
+.roadmap-phase { display: flex; gap: 1.5rem; position: relative; }
+.phase-marker { display: flex; flex-direction: column; align-items: center; min-width: 80px; z-index: 1; }
+.phase-icon { font-size: 1.8rem; line-height: 1; }
+.phase-number { font-size: 0.65rem; color: #6d7da0; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.2rem; }
+.phase-content { flex: 1; background: rgba(18, 24, 36, 0.5); padding: 1.2rem 1.5rem; border-radius: 1rem; border: 1px solid rgba(255,255,255,0.04); }
+.phase-content h3 { color: #e3e9fc; font-size: 1.1rem; font-weight: 600; margin-bottom: 0.3rem; }
+.phase-content ul { list-style: none; padding: 0; margin: 0.3rem 0; }
+.phase-content ul li { color: #9aabcf; font-size: 0.9rem; padding: 0.2rem 0; }
+.phase-date { display: inline-block; font-size: 0.7rem; color: #6d7da0; background: #181f30; padding: 0.1rem 0.8rem; border-radius: 30px; margin-top: 0.3rem; }
+.progress-bar { width: 100%; height: 4px; background: #1a2135; border-radius: 4px; margin-top: 0.5rem; overflow: hidden; }
+.progress-fill { height: 100%; background: linear-gradient(90deg, #3b82f6, #60a5fa); border-radius: 4px; transition: width 0.5s ease; }
+.roadmap-phase.completed .phase-content { border-left: 3px solid #34d399; }
+.roadmap-phase.in-progress .phase-content { border-left: 3px solid #f59e0b; }
+.roadmap-phase.planned .phase-content { border-left: 3px solid #3b82f6; }
+.roadmap-phase.future .phase-content { border-left: 3px solid #6d7da0; }
+@media (max-width: 768px) { .roadmap-timeline { padding-left: 0; } .roadmap-timeline::before { display: none; } .roadmap-phase { flex-direction: column; gap: 0.5rem; } .phase-marker { flex-direction: row; gap: 0.5rem; min-width: auto; } }
+</style>
+
+<div class="roadmap-page-content">
+    <div class="roadmap-header">
+        <h2>🗺️ Project Roadmap</h2>
+        <p class="roadmap-sub">Our journey to build the ultimate wallet security tool</p>
+    </div>
+    <div class="roadmap-timeline">
+        <div class="roadmap-phase completed">
+            <div class="phase-marker"><span class="phase-icon">✅</span><span class="phase-number">Phase 1</span></div>
+            <div class="phase-content">
+                <h3>Multi-Chain Wallet Checker</h3>
+                <ul>
+                    <li>✅ Support for 5 chains: EVM, BTC, Solana, Sui, Tron</li>
+                    <li>✅ 1,000+ hacked/vulnerable wallets in database</li>
+                    <li>✅ Live alerts & real-time check feed</li>
+                    <li>✅ Web3 authentication</li>
+                    <li>✅ Credit system for paid checks</li>
+                </ul>
+                <span class="phase-date">Completed • Q1 2026</span>
+            </div>
+        </div>
+
+        <div class="roadmap-phase in-progress">
+            <div class="phase-marker"><span class="phase-icon">🔄</span><span class="phase-number">Phase 2</span></div>
+            <div class="phase-content">
+                <h3>Smart Contract Analysis & Drainer Detection</h3>
+                <ul>
+                    <li>🔲 Advanced drainer wallet detection</li>
+                    <li>🔲 Suspicious contract interaction alerts</li>
+                    <li>🔲 Real-time transaction monitoring</li>
+                    <li>🔲 Integration with blockchain explorers</li>
+                    <li>🔲 Enhanced wallet risk scoring</li>
+                </ul>
+                <span class="phase-date">In Progress • Q2 2026</span>
+                <div class="progress-bar"><div class="progress-fill" style="width: 40%;"></div></div>
+            </div>
+        </div>
+
+        <div class="roadmap-phase planned">
+            <div class="phase-marker"><span class="phase-icon">📅</span><span class="phase-number">Phase 3</span></div>
+            <div class="phase-content">
+                <h3>Hacker Address Database & Tracking</h3>
+                <ul>
+                    <li>🔲 Comprehensive database of known hacker addresses</li>
+                    <li>🔲 Cross-chain address clustering</li>
+                    <li>🔲 Transaction flow visualization</li>
+                    <li>🔲 Connected wallet network analysis</li>
+                    <li>🔲 API for developers & security firms</li>
+                </ul>
+                <span class="phase-date">Planned • Q3-Q4 2026</span>
+            </div>
+        </div>
+
+        <div class="roadmap-phase future">
+            <div class="phase-marker"><span class="phase-icon">🚀</span><span class="phase-number">Phase 4</span></div>
+            <div class="phase-content">
+                <h3>AI-Powered Threat Detection</h3>
+                <ul>
+                    <li>🔲 ML models for pattern recognition</li>
+                    <li>🔲 Predictive risk scoring</li>
+                    <li>🔲 Automated honeypot detection</li>
+                    <li>🔲 Community-driven threat intelligence</li>
+                    <li>🔲 Real-time alerts & notifications</li>
+                </ul>
+                <span class="phase-date">Future • 2027</span>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}

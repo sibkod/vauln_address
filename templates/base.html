@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>{{.Title}} | Wallet Checker</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        body { min-height: 100vh; background: #0b0d11; background-image: radial-gradient(circle at 30% 20%, #171e2c, #05070a 95%); display: flex; flex-direction: column; align-items: center; padding: 0; }
+
+        .nav { width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 0.8rem 2rem; background: rgba(10, 14, 22, 0.8); backdrop-filter: blur(12px); border-bottom: 1px solid rgba(255,255,255,0.04); flex-wrap: wrap; gap: 0.5rem; position: sticky; top: 0; z-index: 50; }
+        .nav-brand { color: #f0f4ff; font-weight: 600; font-size: 1.2rem; letter-spacing: -0.02em; display: flex; align-items: center; gap: 0.5rem; }
+        .nav-brand span { color: #3b82f6; }
+        .nav-center { display: flex; align-items: center; gap: 0.3rem; background: rgba(18, 24, 36, 0.5); padding: 0.2rem; border-radius: 60px; border: 1px solid rgba(255,255,255,0.04); }
+        .nav-link { padding: 0.45rem 1.2rem; border-radius: 40px; color: #8892b0; font-size: 0.8rem; font-weight: 500; cursor: pointer; transition: 0.2s; border: none; background: transparent; letter-spacing: 0.01em; white-space: nowrap; text-decoration: none; }
+        .nav-link:hover { color: #c8d2e8; }
+        .nav-link.active { background: #3b82f6; color: white; box-shadow: 0 2px 12px #3b82f640; }
+        .nav-right { display: flex; align-items: center; gap: 0.5rem; }
+        .connect-btn { background: rgba(26, 34, 50, 0.7); border: 1px solid rgba(255,255,255,0.06); color: #e8edfc; padding: 0.5rem 1.2rem 0.5rem 1rem; border-radius: 60px; font-weight: 500; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; transition: 0.2s; }
+        .connect-btn:hover { background: rgba(40, 50, 70, 0.8); border-color: rgba(255,255,255,0.12); }
+        .connect-btn .dot { width: 8px; height: 8px; border-radius: 10px; background: #4f5b77; display: inline-block; transition: 0.2s; }
+        .connect-btn .dot.active { background: #34d399; box-shadow: 0 0 10px #34d39960; }
+        .connect-btn .addr-short { max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; color: #b0bbd6; font-size: 0.8rem; }
+
+        .main-content { width: 100%; max-width: 700px; padding: 1.5rem 1.5rem 2rem; }
+
+        .footer { margin-top: 2rem; color: #3a4764; font-size: 0.75rem; letter-spacing: 0.02em; display: flex; justify-content: center; align-items: center; gap: 1.5rem; flex-wrap: wrap; }
+        .footer span { color: #5f6e91; }
+        .footer .counter { background: #181f30; padding: 0.15rem 0.9rem; border-radius: 40px; font-size: 0.7rem; color: #9aabcf; }
+
+        .toast { position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%); background: #1a2135; color: #e3e9fc; padding: 0.8rem 1.8rem; border-radius: 60px; font-size: 0.9rem; border: 1px solid rgba(255,255,255,0.06); box-shadow: 0 8px 30px rgba(0,0,0,0.6); opacity: 0; transition: opacity 0.3s ease; pointer-events: none; z-index: 999; backdrop-filter: blur(8px); }
+        .toast.show { opacity: 1; }
+
+        @media (max-width: 768px) {
+            .nav { flex-direction: column; padding: 0.6rem 1rem; }
+            .nav-center { flex-wrap: wrap; justify-content: center; border-radius: 60px; padding: 0.2rem 0.4rem; }
+            .nav-link { padding: 0.35rem 0.8rem; font-size: 0.7rem; }
+            .nav-right { width: 100%; justify-content: center; }
+            .main-content { padding: 1rem; }
+        }
+    </style>
+</head>
+<body>
+<div class="toast" id="toast"></div>
+
+<nav class="nav">
+    <a href="/" class="nav-brand">🔐 <span>Wallet</span>Checker</a>
+    <div class="nav-center">
+        <a href="/" class="nav-link {{if eq .ActivePage "home"}}active{{end}}">Home</a>
+        <a href="/roadmap" class="nav-link {{if eq .ActivePage "roadmap"}}active{{end}}">🗺️ Roadmap</a>
+        <a href="/about" class="nav-link {{if eq .ActivePage "about"}}active{{end}}">About</a>
+        <a href="/contact" class="nav-link {{if eq .ActivePage "contact"}}active{{end}}">Contact</a>
+        <a href="/support" class="nav-link {{if eq .ActivePage "support"}}active{{end}}">Support</a>
+    </div>
+    <div class="nav-right">
+        <button class="connect-btn" id="connectWalletBtn">
+            <span class="dot" id="connectDot"></span>
+            <span id="connectLabel">Connect</span>
+            <span class="addr-short" id="connectAddressShort"></span>
+        </button>
+    </div>
+</nav>
+
+<div class="main-content">
+    {{template .Content .}}
+</div>
+
+<div class="footer">
+    <span>⚡ Without connect — 1 check</span>
+    <span class="counter" id="checkCounter">0 / 1</span>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
+<script>
+(function() {
+    let isWalletConnected = false;
+    let connectedAddress = '';
+    let freeCheckUsed = false;
+    let web3 = null;
+
+    const connectBtn = document.getElementById('connectWalletBtn');
+    const connectDot = document.getElementById('connectDot');
+    const connectLabel = document.getElementById('connectLabel');
+    const connectAddressShort = document.getElementById('connectAddressShort');
+    const checkCounter = document.getElementById('checkCounter');
+    const toast = document.getElementById('toast');
+
+    function showToast(message) {
+        toast.textContent = message;
+        toast.classList.add('show');
+        clearTimeout(toast._timeout);
+        toast._timeout = setTimeout(() => toast.classList.remove('show'), 4000);
+    }
+
+    function updateConnectUI() {
+        if (isWalletConnected && connectedAddress) {
+            connectDot.className = 'dot active';
+            connectLabel.textContent = '';
+            connectAddressShort.textContent = connectedAddress.slice(0,6) + '...' + connectedAddress.slice(-4);
+        } else {
+            connectDot.className = 'dot';
+            connectLabel.textContent = 'Connect';
+            connectAddressShort.textContent = '';
+        }
+    }
+
+    async function connectWallet() {
+        if (typeof window.ethereum !== 'undefined' && window.ethereum.isMetaMask) {
+            try {
+                const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+                if (accounts.length === 0) { alert('No accounts found'); return; }
+                web3 = new Web3(window.ethereum);
+                connectedAddress = accounts[0];
+                isWalletConnected = true;
+                freeCheckUsed = true;
+                updateConnectUI();
+                updateCounter();
+                showToast('🔗 Wallet connected. Unlimited checks.');
+            } catch (error) {
+                console.error(error);
+                alert('Error: ' + (error.message || 'Unknown error'));
+            }
+        } else {
+            alert('Please install MetaMask!');
+        }
+    }
+
+    function updateCounter() {
+        if (isWalletConnected) {
+            checkCounter.textContent = '∞ / ∞';
+        } else {
+            checkCounter.textContent = (freeCheckUsed ? '1 / 1' : '0 / 1');
+        }
+    }
+
+    connectBtn.addEventListener('click', connectWallet);
+
+    // Re-export for pages
+    window.showToast = showToast;
+    window.isWalletConnected = function() { return isWalletConnected; };
+    window.getConnectedAddress = function() { return connectedAddress; };
+    window.updateCounter = updateCounter;
+    window.setFreeCheckUsed = function(v) { freeCheckUsed = v; };
+
+    updateCounter();
+})();
+</script>
+</body>
+</html>
