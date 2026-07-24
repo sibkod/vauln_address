@@ -5,129 +5,64 @@ import net.websocket
 import os
 import time
 
-// HTTP Handler using fasthttp classic handler
-pub fn create_http_handler() fn (fasthttp.HttpRequest) !fasthttp.HttpResponse {
-	return fn (req fasthttp.HttpRequest) !fasthttp.HttpResponse {
+// HTTP Handler using fasthttp append_handler
+pub fn create_http_handler(state &AppState) fasthttp.AppendHandler {
+	return fn (req fasthttp.HttpRequest, mut out []u8, ws voidptr, mut ctl fasthttp.ResponseControl) fasthttp.Step {
 		// Extract path from buffer using Slice
 		path_bytes := req.buffer[req.path.start..req.path.start + req.path.len]
 		path := path_bytes.bytestr()
 		
-		match path {
-			'/' {
-				html := os.read_file('templates/index.html') or {
-					return error('index.html not found')
-				}
-				return build_response(html, 'text/html')
+		if path == '/' {
+			html := os.read_file('templates/index.html') or {
+				return build_404(mut out)
 			}
-			'/api/health' {
-				body := '{"status":"ok","version":"1.0.0","engine":"fasthttp"}'
-				return build_json_response(body)
-			}
-			'/api/stats' {
-				body := get_stats_json()
-				return build_json_response(body)
-			}
-			'/api/wallets' {
-				body := get_wallets_json()
-				return build_json_response(body)
-			}
-			'/api/rate-limit' {
-				ip := get_client_ip(req)
-				remaining := get_remaining(ip)
-				body := '{"remaining":${remaining},"max":${g_state.config.max_checks_per_ip},"ttl":${g_state.config.rate_limit_ttl}}'
-				return build_json_response(body)
-			}
-			else {
-				if path.starts_with('/api/wallet/') {
-					addr := path[12..path.len]
-					ip := get_client_ip(req)
-					
-					if !check_rate_limit(ip) {
-						return build_429_response()
-					}
-					
-					result := check_wallet_json(addr)
-					remaining := get_remaining(ip)
-					body := '{"wallet":${result},"remaining":${remaining}}'
-					return build_json_response(body)
-				}
-				return build_404_response()
-			}
+			return build_html(mut out, html)
 		}
+		
+		if path == '/api/health' {
+			body := '{"status":"ok","version":"1.0.0","engine":"fasthttp"}'
+			return build_json(mut out, body)
+		}
+		
+		return .done
 	}
 }
 
-fn build_response(content string, content_type string) !fasthttp.HttpResponse {
-	header := 'HTTP/1.1 200 OK\r\nContent-Type: ${content_type}\r\nContent-Length: ${content.len}\r\n\r\n'
-	return fasthttp.HttpResponse{
-		content: (header + content).bytes()
-	}
+fn build_html(mut out []u8, html string) fasthttp.Step {
+	header := 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: ${html.len}\r\n\r\n'
+	out << header.bytes()
+	out << html.bytes()
+	return .done
 }
 
-fn build_json_response(body string) !fasthttp.HttpResponse {
+fn build_json(mut out []u8, body string) fasthttp.Step {
 	header := 'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: ${body.len}\r\n\r\n'
-	return fasthttp.HttpResponse{
-		content: (header + body).bytes()
-	}
+	out << header.bytes()
+	out << body.bytes()
+	return .done
 }
 
-fn build_404_response() !fasthttp.HttpResponse {
+fn build_404(mut out []u8) fasthttp.Step {
 	body := '{"error":"Not found"}'
 	header := 'HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\nContent-Length: ${body.len}\r\n\r\n'
-	return fasthttp.HttpResponse{
-		content: (header + body).bytes()
-	}
-}
-
-fn build_429_response() !fasthttp.HttpResponse {
-	body := '{"error":"Rate limit exceeded","message":"Maximum 3 checks per day"}'
-	header := 'HTTP/1.1 429 Too Many Requests\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: ${body.len}\r\nRetry-After: 86400\r\n\r\n'
-	return fasthttp.HttpResponse{
-		content: (header + body).bytes()
-	}
-}
-
-fn get_client_ip(req fasthttp.HttpRequest) string {
-	// Get headers from buffer - they come after the request line
-	headers_start := req.header_fields.start
-	headers_len := req.header_fields.len
-	if headers_len == 0 {
-		return '127.0.0.1'
-	}
-	
-	headers_bytes := req.buffer[headers_start..headers_start + headers_len]
-	headers := headers_bytes.bytestr()
-	
-	// Simple parsing for X-Forwarded-For and X-Real-IP
-	lines := headers.split('\n')
-	for line in lines {
-		if line.starts_with('X-Forwarded-For:') {
-			ip := line.substr(17, line.len).trim(' ')
-			if ip.contains(',') {
-				return ip.split(',')[0].trim(' ')
-			}
-			return ip.trim(' ')
-		}
-		if line.starts_with('X-Real-IP:') {
-			return line.substr(11, line.len).trim(' ')
-		}
-	}
-	return '127.0.0.1'
+	out << header.bytes()
+	out << body.bytes()
+	return .done
 }
 
 // WebSocket Handler
-pub fn create_websocket_server(port int) &websocket.Server {
-	mut ws_server := websocket.new_server(.ip, port, '')
+pub fn create_websocket_server(mut state AppState, port int) &websocket.Server {
+	mut ws_server := websocket.new_server(.ip, port, '/ws')
 	
-	ws_server.on_message(fn (mut ws websocket.Client, msg &websocket.Message) ! {
+	ws_server.on_message(fn [mut state] (mut ws websocket.Client, msg &websocket.Message) ! {
 		data := msg.payload.bytestr()
 		if data == '' { return }
 		
 		// Get client IP from connection
 		client_ip := ws.conn.peer_ip() or { '127.0.0.1' }
 		
-		// Handle message
-		response := handle_ws_message(data, client_ip)
+		// Handle message using state
+		response := handle_ws_message(data, mut state, client_ip)
 		
 		if response.len > 0 {
 			ws.write_string(response) or { return }
@@ -141,14 +76,14 @@ pub fn create_websocket_server(port int) &websocket.Server {
 	return ws_server
 }
 
-fn handle_ws_message(msg string, client_ip string) string {
+fn handle_ws_message(msg string, mut state AppState, client_ip string) string {
 	if msg == '{"type":"ping"}' || msg == 'ping' {
 		return '{"type":"pong"}'
 	}
 	
 	if msg.contains('"type":"check_wallet"') {
 		// Check rate limit
-		if !check_rate_limit(client_ip) {
+		if !check_rate_limit(mut state, client_ip) {
 			return '{"type":"error","message":"Rate limit exceeded"}'
 		}
 		
@@ -160,7 +95,7 @@ fn handle_ws_message(msg string, client_ip string) string {
 		addr := msg[start..start + idx2]
 		
 		result := check_wallet_json(addr)
-		remaining := get_remaining(client_ip)
+		remaining := get_remaining(&state, client_ip)
 		return '{"type":"wallet_result","wallet":${result},"remaining":${remaining}}'
 	}
 	
@@ -173,8 +108,8 @@ fn handle_ws_message(msg string, client_ip string) string {
 	}
 	
 	if msg == '{"type":"get_rate_limit"}' || msg == 'get_rate_limit' {
-		remaining := get_remaining(client_ip)
-		return '{"type":"rate_limit","remaining":${remaining},"max":${g_state.config.max_checks_per_ip}}'
+		remaining := get_remaining(&state, client_ip)
+		return '{"type":"rate_limit","remaining":${remaining},"max":${state.config.max_checks_per_ip}}'
 	}
 	
 	return ''
@@ -218,58 +153,53 @@ pub fn check_wallet_json(address string) string {
 	return '{"address":"${address}","status":"${w.status}","balance":${w.balance},"tokens":"${w.tokens}","source":"generated"}'
 }
 
-// Rate limiting - uses thread-safe access to g_state
-fn check_rate_limit(ip string) bool {
+// Rate limiting using mutex lock
+fn check_rate_limit(mut state AppState, ip string) bool {
 	now := time.now().unix()
 	
-	// Mutex lock/unlock for thread safety
-	g_state.lock.lock()
-	entry := g_state.rate_limits[ip]
+	state.lock.lock()
+	entry := state.rate_limits[ip]
 	if entry.reset_at == 0 {
-		g_state.rate_limits[ip] = RateLimitEntry{
+		state.rate_limits[ip] = RateLimitEntry{
 			count: 1
-			reset_at: now + i64(g_state.config.rate_limit_ttl)
+			reset_at: now + i64(state.config.rate_limit_ttl)
 		}
-		g_state.lock.unlock()
+		state.lock.unlock()
 		return true
 	}
 	
 	if now > entry.reset_at {
-		g_state.rate_limits[ip] = RateLimitEntry{
+		state.rate_limits[ip] = RateLimitEntry{
 			count: 1
-			reset_at: now + i64(g_state.config.rate_limit_ttl)
+			reset_at: now + i64(state.config.rate_limit_ttl)
 		}
-		g_state.lock.unlock()
+		state.lock.unlock()
 		return true
 	}
 	
-	if entry.count >= g_state.config.max_checks_per_ip {
-		g_state.lock.unlock()
+	if entry.count >= state.config.max_checks_per_ip {
+		state.lock.unlock()
 		return false
 	}
 	
-	g_state.rate_limits[ip] = RateLimitEntry{
+	state.rate_limits[ip] = RateLimitEntry{
 		count: entry.count + 1
 		reset_at: entry.reset_at
 	}
-	g_state.lock.unlock()
+	state.lock.unlock()
 	return true
 }
 
-fn get_remaining(ip string) int {
+fn get_remaining(state &AppState, ip string) int {
 	now := time.now().unix()
 	
-	g_state.lock.lock()
-	defer { g_state.lock.unlock() }
-	
-	entry := g_state.rate_limits[ip]
-	if entry.reset_at == 0 {
-		return g_state.config.max_checks_per_ip
+	state.lock.lock()
+	entry := state.rate_limits[ip]
+	remaining := if entry.reset_at == 0 || now > entry.reset_at {
+		state.config.max_checks_per_ip
+	} else {
+		state.config.max_checks_per_ip - entry.count
 	}
-	
-	if now > entry.reset_at {
-		return g_state.config.max_checks_per_ip
-	}
-	
-	return g_state.config.max_checks_per_ip - entry.count
+	state.lock.unlock()
+	return remaining
 }

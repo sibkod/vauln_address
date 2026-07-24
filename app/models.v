@@ -50,12 +50,9 @@ pub const demo_wallets = [
 	Wallet{'0x0716a17FBAeE714f1E6aB0f9d59edbC5f09815C0', 'safe', 15.6789, '["ETH","WBTC"]'},
 ]
 
-// Global state for use in handlers
-__global g_state AppState
-
 // Create AppState with configuration from environment
-pub fn create_app_state() AppState {
-	mut state := AppState{
+pub fn create_app_state() &AppState {
+	mut state := &AppState{
 		config: Config{
 			http_port: os.getenv('PORT').int()
 			ws_port: os.getenv('WS_PORT').int()
@@ -69,8 +66,7 @@ pub fn create_app_state() AppState {
 	if state.config.http_port == 0 { state.config.http_port = 8080 }
 	if state.config.ws_port == 0 { state.config.ws_port = 8081 }
 	if state.config.max_checks_per_ip == 0 { state.config.max_checks_per_ip = 3 }
-	if state.config.rate_limit_ttl == 0 { state.config.rate_limit_ttl = 86400 } // 24 hours
+	if state.config.rate_limit_ttl == 0 { state.config.rate_limit_ttl = 86400 }
 	
-	g_state = state
 	return state
 }
