@@ -123,6 +123,17 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_rate_limits_ip ON rate_limits(ip_address);
+
+	-- Check history table
+	CREATE TABLE IF NOT EXISTS check_history (
+		id BIGSERIAL PRIMARY KEY,
+		address VARCHAR(100) NOT NULL,
+		chain VARCHAR(20) NOT NULL,
+		status VARCHAR(20),
+		created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_check_history_created ON check_history(created_at);
 	`
 
 	_, err := r.db.Exec(ctx, schema)
@@ -342,7 +353,6 @@ func (r *Repository) GetRecentChecks(ctx context.Context, limit int) ([]models.R
 	rows, err := r.db.Query(ctx,
 		`SELECT id, address, chain, status, created_at 
 		FROM wallets 
-		WHERE status IN ('hacked', 'vulnerable', 'hacker') 
 		ORDER BY created_at DESC 
 		LIMIT $1`,
 		limit,
@@ -416,18 +426,26 @@ func (r *Repository) RecordCheck(ctx context.Context, address, chain, status str
 	return err
 }
 
-// ==================== Check History (missing table) ====================
+func (r *Repository) GetCheckHistory(ctx context.Context, limit int) ([]models.RecentCheck, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT id, address, chain, COALESCE(status, 'safe') as status, created_at 
+		FROM check_history 
+		ORDER BY created_at DESC 
+		LIMIT $1`,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
 
-func (r *Repository) InitCheckHistory(ctx context.Context) error {
-	_, err := r.db.Exec(ctx, `
-		CREATE TABLE IF NOT EXISTS check_history (
-			id BIGSERIAL PRIMARY KEY,
-			address VARCHAR(100) NOT NULL,
-			chain VARCHAR(20) NOT NULL,
-			status VARCHAR(20),
-			created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-		);
-		CREATE INDEX IF NOT EXISTS idx_check_history_created ON check_history(created_at);
-	`)
-	return err
+	var checks []models.RecentCheck
+	for rows.Next() {
+		var check models.RecentCheck
+		if err := rows.Scan(&check.ID, &check.Address, &check.Chain, &check.Status, &check.CheckedAt); err != nil {
+			return nil, err
+		}
+		checks = append(checks, check)
+	}
+	return checks, rows.Err()
 }
