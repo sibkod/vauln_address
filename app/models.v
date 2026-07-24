@@ -69,7 +69,7 @@ pub fn create_app_state() AppState {
 	if state.config.http_port == 0 { state.config.http_port = 8080 }
 	if state.config.ws_port == 0 { state.config.ws_port = 8081 }
 	if state.config.max_checks_per_ip == 0 { state.config.max_checks_per_ip = 3 }
-	if state.config.rate_limit_ttl == 0 { state.config.rate_limit_ttl = 3600 }
+	if state.config.rate_limit_ttl == 0 { state.config.rate_limit_ttl = 86400 } // 24 hours
 	
 	g_state = state
 	return state

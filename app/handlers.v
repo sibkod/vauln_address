@@ -80,8 +80,8 @@ fn build_404_response() !fasthttp.HttpResponse {
 }
 
 fn build_429_response() !fasthttp.HttpResponse {
-	body := '{"error":"Rate limit exceeded","message":"Maximum 3 checks per hour"}'
-	header := 'HTTP/1.1 429 Too Many Requests\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: ${body.len}\r\nRetry-After: 3600\r\n\r\n'
+	body := '{"error":"Rate limit exceeded","message":"Maximum 3 checks per day"}'
+	header := 'HTTP/1.1 429 Too Many Requests\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: ${body.len}\r\nRetry-After: 86400\r\n\r\n'
 	return fasthttp.HttpResponse{
 		content: (header + body).bytes()
 	}
