@@ -19,6 +19,42 @@ CREATE INDEX IF NOT EXISTS idx_wallets_chain ON wallets(chain);
 CREATE INDEX IF NOT EXISTS idx_wallets_status ON wallets(status);
 CREATE INDEX IF NOT EXISTS idx_wallets_chain_status ON wallets(chain, status);
 
+-- Users table (Web3 authenticated)
+CREATE TABLE IF NOT EXISTS users (
+    id BIGSERIAL PRIMARY KEY,
+    wallet_address VARCHAR(100) NOT NULL,
+    chain VARCHAR(20) NOT NULL,
+    nonce VARCHAR(100),
+    balance INTEGER DEFAULT 10,
+    is_premium BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    last_login_at TIMESTAMP WITH TIME ZONE,
+    UNIQUE(wallet_address, chain)
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_wallet ON users(wallet_address);
+
+-- Orders table
+CREATE TABLE IF NOT EXISTS orders (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT REFERENCES users(id),
+    order_uuid VARCHAR(100) UNIQUE NOT NULL,
+    checks_count INTEGER NOT NULL,
+    total_usd DECIMAL(10, 2) NOT NULL,
+    currency VARCHAR(20) NOT NULL,
+    token_amount DECIMAL(20, 8),
+    payment_address VARCHAR(200),
+    status VARCHAR(20) DEFAULT 'pending',
+    tx_hash VARCHAR(200),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    completed_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id);
+CREATE INDEX IF NOT EXISTS idx_orders_uuid ON orders(order_uuid);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+
 -- Contact messages table
 CREATE TABLE IF NOT EXISTS contact_messages (
     id BIGSERIAL PRIMARY KEY,

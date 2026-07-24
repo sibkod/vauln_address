@@ -28,11 +28,7 @@
             --purple-bg: rgba(168, 85, 247, 0.1);
         }
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -42,11 +38,7 @@
             line-height: 1.6;
         }
 
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 2rem;
-        }
+        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
 
         header {
             text-align: center;
@@ -65,10 +57,7 @@
             margin-bottom: 0.5rem;
         }
 
-        .tagline {
-            color: var(--text-secondary);
-            font-size: 1.1rem;
-        }
+        .tagline { color: var(--text-secondary); font-size: 1.1rem; }
 
         .main-grid {
             display: grid;
@@ -76,11 +65,7 @@
             gap: 2rem;
         }
 
-        @media (max-width: 768px) {
-            .main-grid {
-                grid-template-columns: 1fr;
-            }
-        }
+        @media (max-width: 768px) { .main-grid { grid-template-columns: 1fr; } }
 
         .card {
             background: var(--bg-card);
@@ -98,15 +83,9 @@
             gap: 0.75rem;
         }
 
-        .card-title svg {
-            width: 24px;
-            height: 24px;
-            color: var(--accent);
-        }
+        .card-title svg { width: 24px; height: 24px; color: var(--accent); }
 
-        .form-group {
-            margin-bottom: 1.5rem;
-        }
+        .form-group { margin-bottom: 1.5rem; }
 
         label {
             display: block;
@@ -134,14 +113,7 @@
             box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
         }
 
-        select {
-            cursor: pointer;
-        }
-
-        textarea {
-            min-height: 100px;
-            resize: vertical;
-        }
+        textarea { min-height: 100px; resize: vertical; }
 
         .btn {
             display: inline-flex;
@@ -160,25 +132,12 @@
             transition: all 0.2s;
         }
 
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 30px rgba(99, 102, 241, 0.3);
-        }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(99, 102, 241, 0.3); }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .btn-secondary { background: var(--bg-secondary); border: 1px solid var(--border); }
+        .btn-secondary:hover { box-shadow: none; }
 
-        .btn:active {
-            transform: translateY(0);
-        }
-
-        .btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .btn svg {
-            width: 20px;
-            height: 20px;
-        }
+        .btn svg { width: 20px; height: 20px; }
 
         .result {
             margin-top: 1.5rem;
@@ -188,22 +147,14 @@
             background: var(--bg-secondary);
         }
 
-        .result.show {
-            display: block;
-            animation: fadeIn 0.3s ease;
-        }
+        .result.show { display: block; animation: fadeIn 0.3s ease; }
 
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
         }
 
-        .result-header {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            margin-bottom: 1rem;
-        }
+        .result-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
 
         .status-badge {
             padding: 0.5rem 1rem;
@@ -221,17 +172,9 @@
         .status-drained { background: var(--info-bg); color: var(--info); border: 1px solid var(--info); }
         .status-not_found { background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border); }
 
-        .result-details {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1rem;
-        }
+        .result-details { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 
-        .detail-item {
-            background: var(--bg-primary);
-            padding: 1rem;
-            border-radius: 8px;
-        }
+        .detail-item { background: var(--bg-primary); padding: 1rem; border-radius: 8px; }
 
         .detail-label {
             font-size: 0.75rem;
@@ -241,37 +184,52 @@
             margin-bottom: 0.25rem;
         }
 
-        .detail-value {
-            font-size: 0.9rem;
-            font-weight: 500;
-            word-break: break-all;
-        }
-
+        .detail-value { font-size: 0.9rem; font-weight: 500; word-break: break-all; }
         .detail-value.yes { color: var(--danger); }
         .detail-value.no { color: var(--safe); }
 
-        .recent-section { margin-top: 3rem; }
-
-        .section-title {
-            font-size: 1.5rem;
-            font-weight: 600;
+        .user-panel {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(168, 85, 247, 0.1));
+            border: 1px solid var(--accent);
+            border-radius: 12px;
+            padding: 1rem;
             margin-bottom: 1.5rem;
+            display: none;
+        }
+
+        .user-panel.show { display: block; }
+
+        .user-info { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
+        .user-address { font-family: monospace; font-size: 0.9rem; }
+        .user-balance { text-align: right; }
+        .balance-number { font-size: 1.5rem; font-weight: 700; color: var(--accent); }
+        .balance-label { font-size: 0.75rem; color: var(--text-secondary); }
+
+        .pricing-section { margin-top: 2rem; }
+        .pricing-grid { display: grid; gap: 0.75rem; margin-top: 1rem; }
+        
+        .pricing-item {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 1rem;
             display: flex;
+            justify-content: space-between;
             align-items: center;
-            gap: 0.75rem;
         }
 
-        .section-title svg {
-            width: 28px;
-            height: 28px;
-            color: var(--danger);
-        }
+        .pricing-item.sui { border-color: var(--purple); background: var(--purple-bg); }
+        .pricing-item.sui .discount { background: var(--purple); color: white; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
 
-        .recent-list {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-            gap: 1rem;
-        }
+        .pricing-currency { font-weight: 600; text-transform: uppercase; }
+        .pricing-price { font-family: monospace; }
+        .pricing-discount { color: var(--safe); font-size: 0.8rem; }
+
+        .recent-section { margin-top: 3rem; }
+        .section-title { font-size: 1.5rem; font-weight: 600; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.75rem; }
+        .section-title svg { width: 28px; height: 28px; color: var(--danger); }
+
+        .recent-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 1rem; }
 
         .recent-item {
             background: var(--bg-card);
@@ -284,10 +242,7 @@
             transition: all 0.2s;
         }
 
-        .recent-item:hover {
-            border-color: var(--accent);
-            transform: translateX(5px);
-        }
+        .recent-item:hover { border-color: var(--accent); transform: translateX(5px); }
 
         .recent-icon {
             width: 40px;
@@ -304,16 +259,7 @@
         .recent-icon.hacker { background: var(--purple-bg); color: var(--purple); }
 
         .recent-info { flex: 1; min-width: 0; }
-
-        .recent-address {
-            font-family: monospace;
-            font-size: 0.85rem;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            margin-bottom: 0.25rem;
-        }
-
+        .recent-address { font-family: monospace; font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.25rem; }
         .recent-meta { font-size: 0.75rem; color: var(--text-secondary); }
 
         .recent-status {
@@ -328,24 +274,6 @@
         .recent-status.vulnerable { background: var(--warning-bg); color: var(--warning); }
         .recent-status.hacker { background: var(--purple-bg); color: var(--purple); }
 
-        .contact-section {
-            margin-top: 3rem;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 2rem;
-        }
-
-        .rate-limit-info {
-            text-align: center;
-            padding: 0.75rem;
-            background: var(--bg-secondary);
-            border-radius: 10px;
-            margin-top: 1rem;
-            font-size: 0.875rem;
-            color: var(--text-secondary);
-        }
-
         .error-message {
             background: var(--danger-bg);
             color: var(--danger);
@@ -354,7 +282,6 @@
             margin-top: 1rem;
             display: none;
         }
-
         .error-message.show { display: block; }
 
         .contact-success {
@@ -366,7 +293,6 @@
             display: none;
             margin-top: 1rem;
         }
-
         .contact-success.show { display: block; }
 
         .loading {
@@ -378,7 +304,6 @@
             border-top-color: white;
             animation: spin 1s linear infinite;
         }
-
         @keyframes spin { to { transform: rotate(360deg); } }
 
         .footer {
@@ -389,9 +314,49 @@
             color: var(--text-secondary);
             font-size: 0.875rem;
         }
-
         .footer a { color: var(--accent); text-decoration: none; }
         .footer a:hover { text-decoration: underline; }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.show { display: flex; }
+
+        .modal-content {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 2rem;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 1.5rem;
+        }
     </style>
 </head>
 <body>
@@ -407,8 +372,26 @@
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
                     Проверить кошелек
                 </h2>
-                
-                <form id="checkForm">
+
+                <div class="user-panel" id="userPanel">
+                    <div class="user-info">
+                        <div>
+                            <div class="user-address" id="userAddress">-</div>
+                            <div style="font-size: 0.75rem; color: var(--text-secondary);" id="userChain">-</div>
+                        </div>
+                        <div class="user-balance">
+                            <div class="balance-number" id="userBalance">0</div>
+                            <div class="balance-label">проверок</div>
+                        </div>
+                    </div>
+                </div>
+
+                <button class="btn btn-secondary" id="connectWalletBtn" onclick="connectWallet()">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
+                    Подключить кошелек
+                </button>
+
+                <form id="checkForm" style="margin-top: 1.5rem;">
                     <div class="form-group">
                         <label for="chain">Сеть</label>
                         <select id="chain" name="chain" required>
@@ -431,10 +414,6 @@
                     </button>
                 </form>
 
-                <div class="rate-limit-info">
-                    Осталось проверок: <span id="remainingChecks">10</span> / 10 сегодня
-                </div>
-
                 <div class="error-message" id="errorMessage"></div>
 
                 <div class="result" id="result">
@@ -448,11 +427,23 @@
 
             <div class="card">
                 <h2 class="card-title">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
-                    Поддерживаемые сети
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>
+                    Купить проверки
                 </h2>
-                
-                <div id="chainsList" style="display: grid; gap: 1rem;"></div>
+
+                <div class="pricing-section">
+                    <div class="form-group">
+                        <label for="checksCount">Количество проверок</label>
+                        <input type="number" id="checksCount" min="1" max="100" value="10">
+                    </div>
+
+                    <div class="pricing-grid" id="pricingGrid"></div>
+
+                    <button class="btn" style="margin-top: 1rem;" id="buyBtn" onclick="showBuyModal()">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                        Купить
+                    </button>
+                </div>
 
                 <div style="margin-top: 2rem;">
                     <h3 class="card-title" style="font-size: 1.1rem;">
@@ -495,49 +486,221 @@
 
         <footer class="footer">
             <p>Vauln Address API • Проверка кошельков • 2024</p>
-            <p style="margin-top: 0.5rem;">
-                <a href="/health">API Status</a> • 
-                <a href="/chains">Supported Chains</a>
-            </p>
         </footer>
+    </div>
+
+    <!-- Buy Modal -->
+    <div class="modal" id="buyModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Оплата</h3>
+                <button class="modal-close" onclick="closeBuyModal()">&times;</button>
+            </div>
+            <div id="buyModalContent"></div>
+        </div>
     </div>
 
     <script>
         const API_BASE = window.location.origin;
-        let remainingChecks = 10;
+        let authToken = localStorage.getItem('authToken');
+        let currentUser = null;
+        let currentPricing = [];
 
-        async function fetchWithRateLimit(url, options = {}) {
-            const response = await fetch(url, options);
-            
-            if (response.headers.has('X-RateLimit-Remaining')) {
-                remainingChecks = parseInt(response.headers.get('X-RateLimit-Remaining'));
-                document.getElementById('remainingChecks').textContent = remainingChecks;
+        // Check if user is logged in
+        function checkAuth() {
+            if (authToken) {
+                fetchUserProfile();
             }
-            
-            if (response.status === 429) {
-                const data = await response.json();
-                alert('Лимит проверок исчерпан!\n\n' + (data.details || 'Попробуйте позже.'));
-                throw new Error('Rate limit exceeded');
-            }
-            
-            return response;
         }
 
-        async function loadChains() {
+        async function fetchUserProfile() {
             try {
-                const response = await fetch(API_BASE + '/chains');
-                const data = await response.json();
-                
-                const chainsList = document.getElementById('chainsList');
-                chainsList.innerHTML = data.chains.map(chain => 
-                    '<div style="background: var(--bg-secondary); padding: 1rem; border-radius: 10px;">' +
-                        '<div style="font-weight: 600; margin-bottom: 0.25rem;">' + chain.name + '</div>' +
-                        '<div style="font-size: 0.8rem; color: var(--text-secondary);">' + chain.id.toUpperCase() + '</div>' +
-                        '<div style="font-family: monospace; font-size: 0.75rem; color: var(--accent); margin-top: 0.5rem; word-break: break-all;">' + chain.example + '</div>' +
-                    '</div>'
-                ).join('');
+                const response = await fetch(API_BASE + '/user/profile', {
+                    headers: { 'Authorization': 'Bearer ' + authToken }
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    currentUser = data.user;
+                    showUserPanel(data.user);
+                } else {
+                    logout();
+                }
             } catch (error) {
-                console.error('Failed to load chains:', error);
+                console.error('Failed to fetch profile:', error);
+            }
+        }
+
+        function showUserPanel(user) {
+            document.getElementById('userPanel').classList.add('show');
+            document.getElementById('userAddress').textContent = user.wallet_address;
+            document.getElementById('userChain').textContent = user.chain.toUpperCase();
+            document.getElementById('userBalance').textContent = user.balance;
+            document.getElementById('connectWalletBtn').innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg> Отключить';
+            document.getElementById('connectWalletBtn').onclick = logout;
+        }
+
+        function logout() {
+            authToken = null;
+            currentUser = null;
+            localStorage.removeItem('authToken');
+            document.getElementById('userPanel').classList.remove('show');
+            document.getElementById('connectWalletBtn').innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg> Подключить кошелек';
+            document.getElementById('connectWalletBtn').onclick = connectWallet;
+        }
+
+        async function connectWallet() {
+            if (window.ethereum) {
+                try {
+                    // Request account access
+                    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+                    const address = accounts[0];
+                    const chain = 'evm';
+
+                    // Get nonce from server
+                    const nonceRes = await fetch(API_BASE + '/auth/nonce?address=' + address + '&chain=' + chain);
+                    const nonceData = await nonceRes.json();
+
+                    // Sign message
+                    const message = nonceData.message;
+                    const signature = await window.ethereum.request({
+                        method: 'personal_sign',
+                        params: [message, address]
+                    });
+
+                    // Authenticate
+                    const authRes = await fetch(API_BASE + '/auth/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ address, chain, signature, message })
+                    });
+
+                    if (authRes.ok) {
+                        const authData = await authRes.json();
+                        authToken = authData.token;
+                        localStorage.setItem('authToken', authToken);
+                        showUserPanel(authData.user);
+                    } else {
+                        const error = await authRes.json();
+                        alert('Ошибка авторизации: ' + (error.details || error.error));
+                    }
+                } catch (error) {
+                    console.error('Wallet connection error:', error);
+                    alert('Ошибка подключения кошелька: ' + error.message);
+                }
+            } else {
+                alert('Пожалуйста, установите MetaMask или другой Web3 кошелек');
+            }
+        }
+
+        async function loadPricing() {
+            const checks = document.getElementById('checksCount').value || 10;
+            try {
+                const response = await fetch(API_BASE + '/pricing?checks=' + checks);
+                const data = await response.json();
+                currentPricing = data.payment_methods;
+                renderPricing(data);
+            } catch (error) {
+                console.error('Failed to load pricing:', error);
+            }
+        }
+
+        function renderPricing(data) {
+            const grid = document.getElementById('pricingGrid');
+            grid.innerHTML = data.payment_methods.map(method => {
+                const isSui = method.currency === 'sui';
+                return '<div class="pricing-item' + (isSui ? ' sui' : '') + '">' +
+                    '<div>' +
+                        '<div class="pricing-currency">' + method.currency.toUpperCase() + '</div>' +
+                        (isSui ? '<div class="pricing-discount">50% СКИДКА!</div>' : '') +
+                    '</div>' +
+                    '<div class="pricing-price">' +
+                        '$' + method.price_usd.toFixed(2) +
+                        (method.token_amount ? ' (' + method.token_amount.toFixed(4) + ' ' + method.currency.toUpperCase() + ')' : '') +
+                        (isSui ? ' <span class="discount">BEST VALUE</span>' : '') +
+                    '</div>' +
+                '</div>';
+            }).join('');
+        }
+
+        function showBuyModal() {
+            const modal = document.getElementById('buyModal');
+            const content = document.getElementById('buyModalContent');
+            
+            if (!currentUser) {
+                content.innerHTML = '<p style="color: var(--text-secondary);">Для покупки необходимо <a href="#" onclick="connectWallet(); closeBuyModal();" style="color: var(--accent);">подключить кошелек</a></p>';
+            } else {
+                content.innerHTML = currentPricing.map(method => {
+                    const isSui = method.currency === 'sui';
+                    return '<div class="pricing-item' + (isSui ? ' sui' : '') + '" style="margin-bottom: 0.5rem; cursor: pointer;" onclick="processPayment(\'' + method.currency + '\')">' +
+                        '<div>' +
+                            '<div class="pricing-currency">' + method.currency.toUpperCase() + '</div>' +
+                        '</div>' +
+                        '<div class="pricing-price">' +
+                            '$' + method.price_usd.toFixed(2) +
+                            (method.token_amount ? ' (' + method.token_amount.toFixed(4) + ' ' + method.currency.toUpperCase() + ')' : '') +
+                        '</div>' +
+                    '</div>';
+                }).join('') + '<p style="margin-top: 1rem; color: var(--text-secondary); font-size: 0.85rem;">После оплаты нажмите "Проверить оплату" для активации проверок.</p><button class="btn btn-secondary" style="margin-top: 1rem;" onclick="verifyPayment()">Проверить оплату</button>';
+            }
+            
+            modal.classList.add('show');
+        }
+
+        function closeBuyModal() {
+            document.getElementById('buyModal').classList.remove('show');
+        }
+
+        async function processPayment(currency) {
+            const checks = document.getElementById('checksCount').value || 10;
+            
+            try {
+                const response = await fetch(API_BASE + '/orders', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + authToken
+                    },
+                    body: JSON.stringify({ checks_count: parseInt(checks), currency })
+                });
+
+                if (response.ok) {
+                    const order = await response.json();
+                    alert('Ордер создан! ID: ' + order.order_id + '\n\nОплатите ' + order.token_amount + ' ' + currency.toUpperCase() + ' на адрес:\n' + order.payment_address);
+                    localStorage.setItem('lastOrderId', order.order_id);
+                } else {
+                    const error = await response.json();
+                    alert('Ошибка: ' + (error.details || error.error));
+                }
+            } catch (error) {
+                alert('Ошибка сети: ' + error.message);
+            }
+        }
+
+        async function verifyPayment() {
+            const orderId = localStorage.getItem('lastOrderId');
+            if (!orderId) {
+                alert('Сначала создайте ордер');
+                return;
+            }
+
+            const txHash = prompt('Введите хеш транзакции (для демо можно ввести любой текст):');
+            if (!txHash) return;
+
+            try {
+                const response = await fetch(API_BASE + '/orders/verify?order_id=' + orderId + '&tx_hash=' + txHash);
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    alert('Оплата подтверждена! +' + result.checks_added + ' проверок');
+                    localStorage.removeItem('lastOrderId');
+                    closeBuyModal();
+                    fetchUserProfile();
+                } else {
+                    const error = await response.json();
+                    alert('Ошибка: ' + (error.details || error.error));
+                }
+            } catch (error) {
+                alert('Ошибка сети: ' + error.message);
             }
         }
 
@@ -558,7 +721,7 @@
                     const chainLabel = check.chain.toUpperCase();
                     return '<div class="recent-item">' +
                         '<div class="recent-icon ' + check.status + '">' +
-                            '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>' +
+                            '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>' +
                         '</div>' +
                         '<div class="recent-info">' +
                             '<div class="recent-address">' + escapeHtml(check.address) + '</div>' +
@@ -604,14 +767,8 @@
                     statusBadge.textContent = 'NOT FOUND';
                     statusText.textContent = 'Кошелек не найден в базе угроз';
                     resultDetails.innerHTML = 
-                        '<div class="detail-item" style="grid-column: 1 / -1;">' +
-                            '<div class="detail-label">Адрес</div>' +
-                            '<div class="detail-value">' + escapeHtml(data.address) + '</div>' +
-                        '</div>' +
-                        '<div class="detail-item" style="grid-column: 1 / -1;">' +
-                            '<div class="detail-label">Сеть</div>' +
-                            '<div class="detail-value">' + data.chain.toUpperCase() + '</div>' +
-                        '</div>';
+                        '<div class="detail-item" style="grid-column: 1 / -1;"><div class="detail-label">Адрес</div><div class="detail-value">' + escapeHtml(data.address) + '</div></div>' +
+                        '<div class="detail-item" style="grid-column: 1 / -1;"><div class="detail-label">Сеть</div><div class="detail-value">' + data.chain.toUpperCase() + '</div></div>';
                 } else {
                     const statusClass = 'status-' + data.status;
                     statusBadge.className = 'status-badge ' + statusClass;
@@ -627,23 +784,16 @@
                     statusText.textContent = statusDescriptions[data.status] || '';
                     
                     resultDetails.innerHTML = 
-                        '<div class="detail-item">' +
-                            '<div class="detail-label">Адрес</div>' +
-                            '<div class="detail-value">' + escapeHtml(data.address) + '</div>' +
-                        '</div>' +
-                        '<div class="detail-item">' +
-                            '<div class="detail-label">Сеть</div>' +
-                            '<div class="detail-value">' + data.chain.toUpperCase() + '</div>' +
-                        '</div>' +
-                        '<div class="detail-item">' +
-                            '<div class="detail-label">Приватный ключ</div>' +
-                            '<div class="detail-value ' + (data.has_pk ? 'yes' : 'no') + '">' + (data.has_pk ? 'Обнаружен' : 'Неизвестно') + '</div>' +
-                        '</div>' +
-                        '<div class="detail-item">' +
-                            '<div class="detail-label">Seed фраза</div>' +
-                            '<div class="detail-value ' + (data.has_seed ? 'yes' : 'no') + '">' + (data.has_seed ? 'Обнаружена' : 'Неизвестно') + '</div>' +
-                        '</div>';
+                        '<div class="detail-item"><div class="detail-label">Адрес</div><div class="detail-value">' + escapeHtml(data.address) + '</div></div>' +
+                        '<div class="detail-item"><div class="detail-label">Сеть</div><div class="detail-value">' + data.chain.toUpperCase() + '</div></div>' +
+                        '<div class="detail-item"><div class="detail-label">Приватный ключ</div><div class="detail-value ' + (data.has_pk ? 'yes' : 'no') + '">' + (data.has_pk ? 'Обнаружен' : 'Неизвестно') + '</div></div>' +
+                        '<div class="detail-item"><div class="detail-label">Seed фраза</div><div class="detail-value ' + (data.has_seed ? 'yes' : 'no') + '">' + (data.has_seed ? 'Обнаружена' : 'Неизвестно') + '</div></div>';
                 }
+                
+                if (data.balance_left !== undefined && data.balance_left >= 0) {
+                    document.getElementById('userBalance').textContent = data.balance_left;
+                }
+                
                 result.classList.add('show');
             }, 100);
         }
@@ -656,7 +806,6 @@
 
         document.getElementById('checkForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const form = e.target;
             const btn = document.getElementById('checkBtn');
             const address = document.getElementById('address').value.trim();
             const chain = document.getElementById('chain').value;
@@ -672,22 +821,27 @@
             document.getElementById('result').classList.remove('show');
             
             try {
-                const response = await fetchWithRateLimit(API_BASE + '/check', {
+                const headers = { 'Content-Type': 'application/json' };
+                if (authToken) {
+                    headers['Authorization'] = 'Bearer ' + authToken;
+                }
+                
+                const response = await fetch(API_BASE + '/check', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers,
                     body: JSON.stringify({ address, chain })
                 });
+
                 const data = await response.json();
                 
                 if (!response.ok) {
                     showError(data.details || data.error || 'Произошла ошибка');
                     return;
                 }
+                
                 showResult(data);
             } catch (error) {
-                if (error.message !== 'Rate limit exceeded') {
-                    showError('Ошибка сети. Попробуйте позже.');
-                }
+                showError('Ошибка сети. Попробуйте позже.');
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg> Проверить';
@@ -729,9 +883,24 @@
             }
         });
 
-        loadChains();
+        document.getElementById('checksCount').addEventListener('change', loadPricing);
+
+        // Initialize
+        checkAuth();
+        loadPricing();
         loadRecentChecks();
         setInterval(loadRecentChecks, 30000);
+
+        // Listen for account changes
+        if (window.ethereum) {
+            window.ethereum.on('accountsChanged', function(accounts) {
+                if (accounts.length === 0) {
+                    logout();
+                } else {
+                    connectWallet();
+                }
+            });
+        }
     </script>
 </body>
 </html>

@@ -49,20 +49,39 @@ func main() {
 	rateLimiter := middleware.NewRateLimiter(repo, cfg)
 	h := handlers.New(repo)
 
-	api := router.Group("")
-	{
-		api.GET("/chains", h.GetSupportedChains)
-		api.GET("/recent", h.GetRecentChecks)
+	// Initialize auth service
+	authService := h.GetAuthService()
 
-		api.POST("/check", rateLimiter.Limit(), h.CheckWallet)
+	// Auth middleware for optional authentication
+	router.Use(middleware.AuthMiddleware(authService))
 
-		api.POST("/contact", h.SubmitContact)
-	}
-
+	// Public routes
 	router.GET("/", func(c *gin.Context) {
 		c.Header("Content-Type", "text/html; charset=utf-8")
 		c.File("index.html")
 	})
+
+	api := router.Group("")
+	{
+		// Public endpoints
+		api.GET("/chains", h.GetSupportedChains)
+		api.GET("/recent", h.GetRecentChecks)
+		api.GET("/pricing", h.GetPricing)
+
+		// Auth endpoints
+		api.GET("/auth/nonce", h.GetNonce)
+		api.POST("/auth/login", h.Authenticate)
+		
+		// Protected endpoints
+		api.GET("/user/profile", middleware.RequireAuth(), h.GetUserProfile)
+		api.POST("/orders", middleware.RequireAuth(), h.CreateOrder)
+		api.GET("/orders/verify", h.VerifyPayment)
+
+		// Check endpoint (rate limited, auth optional)
+		api.POST("/check", rateLimiter.Limit(), h.CheckWallet)
+
+		api.POST("/contact", h.SubmitContact)
+	}
 
 	server := &http.Server{
 		Addr:         ":" + cfg.ServerPort,

@@ -3,10 +3,12 @@ package middleware
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"vauln-address/internal/auth"
 	"vauln-address/internal/config"
 	"vauln-address/internal/models"
 	"vauln-address/internal/repository"
@@ -116,6 +118,51 @@ func CORS() gin.HandlerFunc {
 			return
 		}
 
+		c.Next()
+	}
+}
+
+// AuthMiddleware validates JWT tokens for protected routes
+func AuthMiddleware(authService *auth.AuthService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.Next()
+			return
+		}
+
+		// Extract token from "Bearer <token>"
+		parts := strings.SplitN(authHeader, " ", 2)
+		if len(parts) != 2 || parts[0] != "Bearer" {
+			c.Next()
+			return
+		}
+
+		tokenString := parts[1]
+		claims, err := authService.ValidateToken(tokenString)
+		if err != nil {
+			c.Next()
+			return
+		}
+
+		// Set user info in context
+		c.Set("userID", claims.UserID)
+		c.Set("userAddress", claims.Address)
+		c.Next()
+	}
+}
+
+// RequireAuth ensures the user is authenticated
+func RequireAuth() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if _, exists := c.Get("userID"); !exists {
+			c.JSON(http.StatusUnauthorized, models.ErrorResponse{
+				Error: "authentication required",
+				Code:  "UNAUTHORIZED",
+			})
+			c.Abort()
+			return
+		}
 		c.Next()
 	}
 }
