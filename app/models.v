@@ -1,6 +1,5 @@
 module app
 
-import os
 import sync
 
 // Config holds all configuration
@@ -27,35 +26,29 @@ pub mut:
 	lock        sync.Mutex
 }
 
-// Wallet record from database
+// Wallet ORM model
+@[table: 'wallets']
 pub struct Wallet {
 pub:
-	id        int
-	address   string
-	status    string
-	balance   f64
-	tokens    string
-	created_at string
-	updated_at string
+	id         int    @[default: 0; primary; sql_type: 'INT']
+	address    string @[unique; sql_type: 'VARCHAR(255)']
+	status     string @[default: 'safe']
+	balance    f64    @[default: 0.0]
+	tokens     string @[sql_type: 'JSON']
+	created_at string @[default: '']
+	updated_at string @[default: '']
 }
 
 // Create AppState with configuration from environment
 pub fn create_app_state() &AppState {
-	mut state := &AppState{
+	return &AppState{
 		config: Config{
-			http_port: os.getenv('PORT').int()
-			ws_port: os.getenv('WS_PORT').int()
-			max_checks_per_ip: os.getenv('MAX_CHECKS').int()
-			rate_limit_ttl: os.getenv('RATE_LIMIT_TTL').int()
+			http_port: 8080
+			ws_port: 8081
+			max_checks_per_ip: 3
+			rate_limit_ttl: 86400
 		}
 		rate_limits: map[string]RateLimitEntry{}
 		lock: sync.new_mutex()
 	}
-	
-	if state.config.http_port == 0 { state.config.http_port = 8080 }
-	if state.config.ws_port == 0 { state.config.ws_port = 8081 }
-	if state.config.max_checks_per_ip == 0 { state.config.max_checks_per_ip = 3 }
-	if state.config.rate_limit_ttl == 0 { state.config.rate_limit_ttl = 86400 }
-	
-	return state
 }

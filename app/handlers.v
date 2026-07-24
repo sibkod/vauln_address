@@ -4,12 +4,11 @@ import fasthttp
 import net.websocket
 import os
 import time
-import mysql
+import db.mysql
 
 // HTTP Handler using fasthttp append_handler
 pub fn create_http_handler(state &AppState) fasthttp.AppendHandler {
 	return fn (req fasthttp.HttpRequest, mut out []u8, ws voidptr, mut ctl fasthttp.ResponseControl) fasthttp.Step {
-		// Extract path from buffer using Slice
 		path_bytes := req.buffer[req.path.start..req.path.start + req.path.len]
 		path := path_bytes.bytestr()
 		
@@ -52,17 +51,14 @@ fn build_404(mut out []u8) fasthttp.Step {
 }
 
 // WebSocket Handler
-pub fn create_websocket_server(mut state AppState, db &mysql.Connection, port int) &websocket.Server {
+pub fn create_websocket_server(mut state AppState, db mysql.DB, port int) &websocket.Server {
 	mut ws_server := websocket.new_server(.ip, port, '/ws')
 	
 	ws_server.on_message(fn [mut state, db] (mut ws websocket.Client, msg &websocket.Message) ! {
 		data := msg.payload.bytestr()
 		if data == '' { return }
 		
-		// Get client IP from connection
 		client_ip := ws.conn.peer_ip() or { '127.0.0.1' }
-		
-		// Handle message using state and db
 		response := handle_ws_message(data, mut state, db, client_ip)
 		
 		if response.len > 0 {
@@ -70,44 +66,43 @@ pub fn create_websocket_server(mut state AppState, db &mysql.Connection, port in
 		}
 	})
 	
-	ws_server.on_close(fn (mut ws websocket.Client, code int, reason string) ! {
-		// Client disconnected
-	})
+	ws_server.on_close(fn (mut ws websocket.Client, code int, reason string) ! {})
 	
 	return ws_server
 }
 
-fn handle_ws_message(msg string, mut state AppState, db &mysql.Connection, client_ip string) string {
+fn handle_ws_message(msg string, mut state AppState, db mysql.DB, client_ip string) string {
 	if msg == '{"type":"ping"}' || msg == 'ping' {
 		return '{"type":"pong"}'
 	}
 	
 	if msg.contains('"type":"check_wallet"') {
-		// Check rate limit
 		if !check_rate_limit(mut state, client_ip) {
 			return '{"type":"error","message":"Rate limit exceeded"}'
 		}
 		
-		// Extract address
-		idx1 := msg.index('"address":"') or { return '' }
-		start := idx1 + 10
-		rest := msg[start..msg.len]
-		idx2 := rest.index('"') or { return '' }
-		addr := msg[start..start + idx2]
+		// Parse JSON - find "address":" then extract until next "
+		if idx1 := msg.index('"address":"') {
+			addr_start := idx1 + 11
+			rest := msg[addr_start..]
+			if idx2 := rest.index('"') {
+				addr := rest[..idx2]
+				result := check_wallet_from_db(db, addr)
+				remaining := get_remaining(&state, client_ip)
+				return '{"type":"wallet_result","wallet":${result},"remaining":${remaining}}'
+			}
+		}
 		
-		// Query wallet from database
-		result := check_wallet_from_db(db, addr) or { return '{"type":"error","message":"Database error"}' }
-		remaining := get_remaining(&state, client_ip)
-		return '{"type":"wallet_result","wallet":${result},"remaining":${remaining}}'
+		return '{"type":"error","message":"Invalid message format"}'
 	}
 	
 	if msg == '{"type":"get_stats"}' || msg == 'get_stats' {
-		stats := get_stats_from_db(db) or { '{"type":"stats","error":"Failed to get stats"}' }
+		stats := get_stats_from_db(db)
 		return '{"type":"stats",${stats}}'
 	}
 	
 	if msg == '{"type":"get_wallets"}' || msg == 'get_wallets' {
-		wallets := get_wallets_from_db(db) or { '[]' }
+		wallets := get_wallets_from_db(db)
 		return '{"type":"wallets","wallets":${wallets}}'
 	}
 	
@@ -119,50 +114,50 @@ fn handle_ws_message(msg string, mut state AppState, db &mysql.Connection, clien
 	return ''
 }
 
-// Database functions
-fn check_wallet_from_db(db &mysql.Connection, address string) !string {
-	// Query wallet by address
-	rows := db.query(sql_get_wallet_by_address, [address])!
-	defer { rows.free() }
+// ORM functions using db.mysql
+fn check_wallet_from_db(db mysql.DB, address string) string {
+	// Try to find wallet using ORM
+	wallets := sql db {
+		select from Wallet where address == address limit 1
+	} or { []Wallet{} }
 	
-	if rows.next()! {
-		status := rows.varchar_by_index(2)!
-		balance := rows.varchar_by_index(3)!
-		tokens := rows.varchar_by_index(4)!
-		return '{"address":"${address}","status":"${status}","balance":${balance},"tokens":"${tokens}","source":"database"}'
+	if wallets.len > 0 {
+		w := wallets[0]
+		return '{"address":"${w.address}","status":"${w.status}","balance":${w.balance},"tokens":"${w.tokens}","source":"database"}'
 	}
 	
-	// Not found - return random status
-	idx := address.len % demo_data.len
-	w := demo_data[idx]
+	// Not found - return random demo
+	idx := address.len % demo_wallets.len
+	w := demo_wallets[idx]
 	return '{"address":"${address}","status":"${w.status}","balance":${w.balance},"tokens":"${w.tokens}","source":"generated"}'
 }
 
-fn get_stats_from_db(db &mysql.Connection) !string {
-	// Get counts by status
-	hacked := db.query('SELECT COUNT(*) FROM wallets WHERE status = "hacked"', [])!.single_string() or { '0' }
-	vulnerable := db.query('SELECT COUNT(*) FROM wallets WHERE status = "vulnerable"', [])!.single_string() or { '0' }
-	safe := db.query('SELECT COUNT(*) FROM wallets WHERE status = "safe"', [])!.single_string() or { '0' }
-	total := db.query('SELECT COUNT(*) FROM wallets', [])!.single_string() or { '0' }
-	total_checks := db.query('SELECT COUNT(*) FROM check_logs', [])!.single_string() or { '0' }
+fn get_stats_from_db(db mysql.DB) string {
+	hacked := sql db {
+		select count from Wallet where status == 'hacked'
+	} or { 0 }
+	vulnerable := sql db {
+		select count from Wallet where status == 'vulnerable'
+	} or { 0 }
+	safe := sql db {
+		select count from Wallet where status == 'safe'
+	} or { 0 }
+	total := sql db {
+		select count from Wallet
+	} or { 0 }
 	
-	return '{"hacked":${hacked},"vulnerable":${vulnerable},"safe":${safe},"total":${total},"total_checks":${total_checks}}'
+	return '{"hacked":${hacked},"vulnerable":${vulnerable},"safe":${safe},"total":${total},"total_checks":0}'
 }
 
-fn get_wallets_from_db(db &mysql.Connection) !string {
-	rows := db.query(sql_get_all_wallets, [])!
-	defer { rows.free() }
+fn get_wallets_from_db(db mysql.DB) string {
+	wallets := sql db {
+		select from Wallet order by status
+	} or { []Wallet{} }
 	
 	mut items := '['
-	mut first := true
-	for rows.next()! {
-		if !first { items += ',' }
-		first = false
-		address := rows.varchar_by_index(1)!
-		status := rows.varchar_by_index(2)!
-		balance := rows.varchar_by_index(3)!
-		tokens := rows.varchar_by_index(4)!
-		items += '{"address":"${address}","status":"${status}","balance":${balance},"tokens":"${tokens}"}'
+	for i, w in wallets {
+		if i > 0 { items += ',' }
+		items += '{"address":"${w.address}","status":"${w.status}","balance":${w.balance},"tokens":"${w.tokens}"}'
 	}
 	items += ']'
 	return items

@@ -101,10 +101,10 @@ curl http://localhost:8080/api/rate-limit
 - **V Language** - Fast, compiled language
 - **fasthttp** - High-performance HTTP server
 - **net.websocket** - WebSocket server
-- **MySQL** - Database for wallets and audit logs
+- **db.mysql** - MySQL ORM for V
 - **sync** - Mutex for thread-safe state access
 
-## Database
+## Database (MySQL ORM)
 
 ### MySQL Configuration
 
