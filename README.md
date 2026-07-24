@@ -27,8 +27,8 @@ vauln_address/
 ## Running
 
 ```bash
-# Compile (requires -enable-globals for global state)
-v -enable-globals .
+# Compile
+v -prod .
 
 # Run
 ./vauln_address
