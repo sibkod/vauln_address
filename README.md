@@ -1,20 +1,21 @@
 # Wallet Checker Server
 
-A V Language web server for checking wallet addresses against a database of compromised wallets.
+A V Language web server with HTTP API and WebSocket support for checking wallet addresses against a database of compromised wallets.
 
 ## Features
 
 - **HTTP Server** (port 8080) - Serves the frontend UI and REST API
+- **WebSocket Server** (port 8081) - Real-time wallet checks
 - **IP Rate Limiting** - Maximum 3 checks per IP per hour (configurable)
 - **Demo Data** - 10 demo wallets with various security statuses
-- **REST API** - Check wallets via HTTP requests
-- **No external dependencies** - Self-contained binary
+- **Thread-safe** - Mutex-protected shared state
+- **HTML Frontend** - Served from `./assets/index.html`
 
 ## Running
 
 ```bash
-# Compile
-v .
+# Compile (requires -enable-globals for __global)
+v -enable-globals .
 
 # Run
 ./vauln_address
@@ -25,10 +26,11 @@ v .
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | 8080 | HTTP server port |
+| `WS_PORT` | 8081 | WebSocket server port |
 | `MAX_CHECKS` | 3 | Max checks per IP |
 | `RATE_LIMIT_TTL` | 3600 | Rate limit TTL in seconds |
 
-## API Endpoints
+## API Endpoints (HTTP)
 
 | Endpoint | Description |
 |----------|-------------|
@@ -36,9 +38,30 @@ v .
 | `GET /api/health` | Health check |
 | `GET /api/stats` | Get statistics (hacked/vulnerable/safe counts) |
 | `GET /api/wallets` | Get all demo wallets |
-| `GET /api/recent` | Get recent wallet checks |
 | `GET /api/rate-limit` | Check remaining API calls for your IP |
 | `GET /api/wallet/<address>` | Check specific wallet (rate limited) |
+
+## WebSocket API (port 8081)
+
+Connect to `ws://localhost:8081` and send JSON messages:
+
+```json
+// Ping/pong
+{"type":"ping"}
+{"type":"pong"}
+
+// Check wallet (rate limited)
+{"type":"check_wallet", "address": "0x742d35Cc6634C0532925a3b844Bc9e7595f1B2Eb"}
+
+// Get stats
+{"type":"get_stats"}
+
+// Get wallets
+{"type":"get_wallets"}
+
+// Get rate limit status
+{"type":"get_rate_limit"}
+```
 
 ## Example Usage
 
@@ -63,5 +86,7 @@ curl http://localhost:8080/api/rate-limit
 ## Tech Stack
 
 - **V Language** - Fast, compiled language
-- **net module** - TCP/HTTP server
-- **Best Practices**: No globals, state passed via struct, proper error handling
+- **net module** - TCP/HTTP/WebSocket servers
+- **crypto.sha1** - WebSocket handshake key generation
+- **sync** - Mutex for thread-safe state access
+- **Best Practices**: Global state with mutex protection, proper error handling

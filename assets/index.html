@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wallet Checker - V Lang + FastHTTP</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); min-height: 100vh; color: #fff; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+        h1 { text-align: center; margin-bottom: 2rem; color: #00d4ff; }
+        .card { background: rgba(255,255,255,0.1); border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem; }
+        .search-box { display: flex; gap: 1rem; margin-bottom: 2rem; }
+        input { flex: 1; padding: 1rem; border: 2px solid #00d4ff; border-radius: 8px; background: rgba(0,0,0,0.3); color: #fff; font-size: 1rem; }
+        button { padding: 1rem 2rem; background: #00d4ff; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #00b8e6; }
+        .status { display: flex; gap: 1rem; margin-bottom: 2rem; }
+        .stat { flex: 1; text-align: center; padding: 1rem; border-radius: 8px; }
+        .stat.hacked { background: rgba(255,0,0,0.3); }
+        .stat.vulnerable { background: rgba(255,165,0,0.3); }
+        .stat.safe { background: rgba(0,255,0,0.3); }
+        .result { font-size: 1.2rem; padding: 1.5rem; border-radius: 8px; margin-top: 1rem; }
+        .result.hacked { background: rgba(255,0,0,0.3); border: 2px solid #ff4444; }
+        .result.vulnerable { background: rgba(255,165,0,0.3); border: 2px solid #ffa500; }
+        .result.safe { background: rgba(0,255,0,0.3); border: 2px solid #44ff44; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        th { color: #00d4ff; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Wallet Checker</h1>
+        <div class="card">
+            <div class="search-box">
+                <input type="text" id="address" placeholder="Enter wallet address" />
+                <button onclick="checkWallet()">Check</button>
+            </div>
+            <div id="result" class="result" style="display:none;"></div>
+        </div>
+        <div class="status">
+            <div class="stat hacked">
+                <div style="font-size:2rem;font-weight:bold;" id="hacked">0</div>
+                <div>Hacked</div>
+            </div>
+            <div class="stat vulnerable">
+                <div style="font-size:2rem;font-weight:bold;" id="vulnerable">0</div>
+                <div>Vulnerable</div>
+            </div>
+            <div class="stat safe">
+                <div style="font-size:2rem;font-weight:bold;" id="safe">0</div>
+                <div>Safe</div>
+            </div>
+        </div>
+        <div class="card">
+            <h3>Demo Wallets</h3>
+            <table>
+                <thead><tr><th>Address</th><th>Status</th><th>Balance</th></tr></thead>
+                <tbody id="wallets"></tbody>
+            </table>
+        </div>
+    </div>
+    <script>
+        async function checkWallet() {
+            const addr = document.getElementById('address').value.trim();
+            if (!addr) return;
+            try {
+                const res = await fetch('/api/wallet/' + encodeURIComponent(addr));
+                const data = await res.json();
+                showResult(data.wallet || data);
+            } catch (e) { alert('Error: ' + e); }
+        }
+        function showResult(wallet) {
+            const el = document.getElementById('result');
+            el.style.display = 'block';
+            el.className = 'result ' + wallet.status;
+            el.innerHTML = '<strong>' + wallet.status.toUpperCase() + '</strong><br>Address: ' + wallet.address + '<br>Balance: ' + wallet.balance + ' ETH<br>Tokens: ' + wallet.tokens;
+        }
+        async function loadData() {
+            const [statsRes, walletsRes] = await Promise.all([
+                fetch('/api/stats'),
+                fetch('/api/wallets')
+            ]);
+            const stats = await statsRes.json();
+            document.getElementById('hacked').textContent = stats.hacked;
+            document.getElementById('vulnerable').textContent = stats.vulnerable;
+            document.getElementById('safe').textContent = stats.safe;
+            const wallets = await walletsRes.json();
+            const tbody = document.getElementById('wallets');
+            wallets.forEach(function(w) {
+                const row = tbody.insertRow();
+                row.innerHTML = '<td>' + w.address.substring(0,10) + '...</td><td>' + w.status + '</td><td>' + w.balance + '</td>';
+                row.style.cursor = 'pointer';
+                row.onclick = function() { document.getElementById('address').value = w.address; checkWallet(); };
+            });
+        }
+        document.getElementById('address').addEventListener('keypress', function(e) { if (e.key === 'Enter') checkWallet(); });
+        loadData();
+    </script>
+</body>
+</html>

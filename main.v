@@ -3,20 +3,24 @@ module main
 import net
 import os
 import time
+import crypto.sha1
+import sync
 
-// Config holds all configuration (no globals)
+// Config holds all configuration
 struct Config {
 mut:
-	port               int
+	http_port          int
+	ws_port           int
 	max_checks_per_ip int
-	rate_limit_ttl     int
+	rate_limit_ttl    int
 }
 
-// AppState holds all application state
+// AppState holds all application state (thread-safe with mutex)
 struct AppState {
 mut:
-	config       Config
-	rate_limits  map[string]RateLimitEntry
+	config      Config
+	rate_limits map[string]RateLimitEntry
+	lock        sync.Mutex
 }
 
 // RateLimitEntry for IP rate limiting
@@ -48,19 +52,24 @@ const demo_wallets = [
 	Wallet{'0x0716a17FBAeE714f1E6aB0f9d59edbC5f09815C0', 'safe', 15.6789, '["ETH","WBTC"]'},
 ]
 
+// Global state pointer for handlers
+__global g_state &AppState
+
 fn main() {
 	println('===========================================')
 	println('  Wallet Checker Server')
-	println('  V Language + Net HTTP')
+	println('  V Language + Net HTTP + WebSocket')
 	println('===========================================')
 	
 	mut config := Config{
-		port: os.getenv('PORT').int()
+		http_port: os.getenv('PORT').int()
+		ws_port: os.getenv('WS_PORT').int()
 		max_checks_per_ip: os.getenv('MAX_CHECKS').int()
 		rate_limit_ttl: os.getenv('RATE_LIMIT_TTL').int()
 	}
 	
-	if config.port == 0 { config.port = 8080 }
+	if config.http_port == 0 { config.http_port = 8080 }
+	if config.ws_port == 0 { config.ws_port = 8081 }
 	if config.max_checks_per_ip == 0 { config.max_checks_per_ip = 3 }
 	if config.rate_limit_ttl == 0 { config.rate_limit_ttl = 3600 }
 	
@@ -68,28 +77,42 @@ fn main() {
 	mut state := AppState{
 		config: config
 		rate_limits: map[string]RateLimitEntry{}
+		lock: sync.new_mutex()
 	}
+	g_state = &state
 	
-	// Create TCP listener
-	addr := '0.0.0.0:${config.port}'
+	// Start HTTP server
+	spawn http_server(config.http_port)
+	
+	// Start WebSocket server
+	spawn websocket_server(config.ws_port)
+	
+	println('')
+	println('HTTP Server:     http://localhost:${config.http_port}')
+	println('WebSocket:      ws://localhost:${config.ws_port}')
+	println('Rate limit:     ${config.max_checks_per_ip} checks per IP per ${config.rate_limit_ttl}s')
+	println('HTML:           ./assets/index.html')
+	println('')
+	println('Press Ctrl+C to stop')
+	
+	// Keep main thread alive
+	for {}
+}
+
+fn http_server(port int) {
+	addr := '0.0.0.0:${port}'
 	mut listener := net.listen_tcp(.ip, addr) or {
-		eprintln('Failed to listen on ${addr}: ${err}')
+		eprintln('HTTP: Failed to listen on ${addr}: ${err}')
 		return
 	}
 	
-	println('')
-	println('Server starting on port ${config.port}')
-	println('Rate limit: ${config.max_checks_per_ip} checks per IP per ${config.rate_limit_ttl}s')
-	println('MySQL: Not configured (demo mode)')
-	println('')
-	
 	for {
 		mut conn := listener.accept() or { continue }
-		handle_connection(mut conn, mut state)
+		spawn handle_http(mut conn)
 	}
 }
 
-fn handle_connection(mut conn net.TcpConn, mut state AppState) {
+fn handle_http(mut conn net.TcpConn) {
 	defer { conn.close() or {} }
 	
 	mut buf := []u8{len: 8192}
@@ -110,26 +133,26 @@ fn handle_connection(mut conn net.TcpConn, mut state AppState) {
 	client_ip := conn.peer_ip() or { '127.0.0.1' }
 	
 	match path {
-		'/' { send_html(mut conn) }
+		'/' { serve_html(mut conn) }
 		'/api/health' { send_json(mut conn, '{"status":"ok","version":"1.0.0"}') }
-		'/api/stats' { send_json(mut conn, get_stats()) }
-		'/api/wallets' { send_json(mut conn, get_wallets()) }
-		'/api/recent' { send_json(mut conn, get_recent()) }
+		'/api/stats' { send_json(mut conn, get_stats_json()) }
+		'/api/wallets' { send_json(mut conn, get_wallets_json()) }
 		'/api/rate-limit' {
-			remaining := get_remaining(mut state, client_ip)
-			send_json(mut conn, '{"remaining":${remaining},"max":${state.config.max_checks_per_ip},"ttl":${state.config.rate_limit_ttl}}')
+			remaining := get_remaining(client_ip)
+			send_json(mut conn, '{"remaining":${remaining},"max":${g_state.config.max_checks_per_ip},"ttl":${g_state.config.rate_limit_ttl}}')
 		}
 		else {
 			if path.starts_with('/api/wallet/') {
 				addr := path.substr(12, path.len)
 				
-				if !check_rate_limit(mut state, client_ip) {
+				if !check_rate_limit(client_ip) {
 					send_429(mut conn)
 					return
 				}
 				
-				remaining := get_remaining(mut state, client_ip)
-				send_json(mut conn, '{"wallet":${check_wallet(addr)},"remaining":${remaining}}')
+				result := check_wallet_json(addr)
+				remaining := get_remaining(client_ip)
+				send_json(mut conn, '{"wallet":${result},"remaining":${remaining}}')
 			} else {
 				send_404(mut conn)
 			}
@@ -137,37 +160,155 @@ fn handle_connection(mut conn net.TcpConn, mut state AppState) {
 	}
 }
 
-fn send_html(mut conn net.TcpConn) {
-	html := os.read_file('index.html') or { 
+fn serve_html(mut conn net.TcpConn) {
+	html := os.read_file('assets/index.html') or {
 		send_404(mut conn)
-		return 
+		return
 	}
 	header := 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: ${html.len}\r\n\r\n'
-	conn.write(header.bytes()) or {}
-	conn.write(html.bytes()) or {}
+	conn.write_string(header) or {}
+	conn.write_string(html) or {}
 }
 
 fn send_json(mut conn net.TcpConn, body string) {
 	header := 'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: ${body.len}\r\n\r\n'
-	conn.write(header.bytes()) or {}
-	conn.write(body.bytes()) or {}
+	conn.write_string(header) or {}
+	conn.write_string(body) or {}
 }
 
 fn send_429(mut conn net.TcpConn) {
 	body := '{"error":"Rate limit exceeded","message":"Maximum 3 checks per hour"}'
 	header := 'HTTP/1.1 429 Too Many Requests\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: ${body.len}\r\nRetry-After: 3600\r\n\r\n'
-	conn.write(header.bytes()) or {}
-	conn.write(body.bytes()) or {}
+	conn.write_string(header) or {}
+	conn.write_string(body) or {}
 }
 
 fn send_404(mut conn net.TcpConn) {
 	body := '{"error":"Not found"}'
 	header := 'HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\nContent-Length: ${body.len}\r\n\r\n'
-	conn.write(header.bytes()) or {}
-	conn.write(body.bytes()) or {}
+	conn.write_string(header) or {}
+	conn.write_string(body) or {}
 }
 
-fn get_stats() string {
+fn websocket_server(port int) {
+	addr := '0.0.0.0:${port}'
+	mut listener := net.listen_tcp(.ip, addr) or {
+		eprintln('WS: Failed to listen on ${addr}: ${err}')
+		return
+	}
+	
+	for {
+		mut conn := listener.accept() or { continue }
+		spawn handle_ws(mut conn)
+	}
+}
+
+fn handle_ws(mut conn net.TcpConn) {
+	defer { conn.close() or {} }
+	
+	client_ip := conn.peer_ip() or { '127.0.0.1' }
+	
+	// Read WebSocket handshake
+	mut buf := []u8{len: 8192}
+	n := conn.read(mut buf) or { return }
+	if n == 0 { return }
+	
+	request := buf[..n].bytestr()
+	
+	// Simple WebSocket handshake
+	if !request.contains('Upgrade: websocket') {
+		return
+	}
+	
+	// Get key for response
+	key_line := request.split('\n').filter(it.starts_with('Sec-WebSocket-Key:'))
+	if key_line.len == 0 { return }
+	
+	key := key_line[0].substr(19, key_line[0].len).trim(' ')
+	
+	// Send handshake response
+	accept_key := gen_ws_accept(key)
+	hs_response := 'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept_key}\r\n\r\n'
+	conn.write_string(hs_response) or { return }
+	
+	// WebSocket message loop
+	for {
+		mut msg_buf := []u8{len: 4096}
+		msg_len := conn.read(mut msg_buf) or { break }
+		if msg_len < 2 { break }
+		
+		// Parse WebSocket frame
+		if msg_buf[0] != 0x81 { continue } // Only text frames
+		
+		payload_len := int(msg_buf[1] & 0x7F)
+		if payload_len > 125 { continue }
+		
+		// Extract message
+		mut message := msg_buf[2..2 + payload_len].bytestr()
+		
+		// Handle message
+		ws_response := handle_ws_message(message, client_ip)
+		
+		if ws_response.len > 0 {
+			// Send WebSocket frame
+			mut frame := []u8{len: 2 + ws_response.len}
+			frame[0] = 0x81
+			frame[1] = u8(ws_response.len)
+			for i, b in ws_response.bytes() {
+				frame[2 + i] = b
+			}
+			conn.write(frame) or { break }
+		}
+	}
+}
+
+fn handle_ws_message(msg string, client_ip string) string {
+	if msg == '{"type":"ping"}' || msg == 'ping' {
+		return '{"type":"pong"}'
+	}
+	
+	if msg.contains('"type":"check_wallet"') {
+		// Check rate limit
+		if !check_rate_limit(client_ip) {
+			return '{"type":"error","message":"Rate limit exceeded"}'
+		}
+		
+		// Extract address
+		idx1 := msg.index('"address":"') or { return '' }
+		start := idx1 + 10
+		// Find closing quote after start position
+		rest := msg[start..msg.len]
+		idx2 := rest.index('"') or { return '' }
+		addr := msg[start..start + idx2]
+		
+		result := check_wallet_json(addr)
+		remaining := get_remaining(client_ip)
+		return '{"type":"wallet_result","wallet":${result},"remaining":${remaining}}'
+	}
+	
+	if msg == '{"type":"get_stats"}' || msg == 'get_stats' {
+		return '{"type":"stats",${get_stats_json().substr(1, get_stats_json().len - 1)}}'
+	}
+	
+	if msg == '{"type":"get_wallets"}' || msg == 'get_wallets' {
+		return '{"type":"wallets","wallets":${get_wallets_json()}}'
+	}
+	
+	if msg == '{"type":"get_rate_limit"}' || msg == 'get_rate_limit' {
+		remaining := get_remaining(client_ip)
+		return '{"type":"rate_limit","remaining":${remaining},"max":${g_state.config.max_checks_per_ip}}'
+	}
+	
+	return ''
+}
+
+fn gen_ws_accept(key string) string {
+	s := key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
+	h := sha1.sum(s.bytes())
+	return h.hex()
+}
+
+fn get_stats_json() string {
 	mut hacked := 0
 	mut vulnerable := 0
 	mut safe := 0
@@ -183,73 +324,75 @@ fn get_stats() string {
 	return '{"hacked":${hacked},"vulnerable":${vulnerable},"safe":${safe},"total":${total},"total_checks":${total * 10 + 50}}'
 }
 
-fn get_wallets() string {
+fn get_wallets_json() string {
 	mut items := '['
 	for i, w in demo_wallets {
 		if i > 0 { items += ',' }
-		items += '{"address":"${w.address}","status":"${w.status}","balance":${w.balance},"tokens":${w.tokens}}'
+		items += '{"address":"${w.address}","status":"${w.status}","balance":${w.balance},"tokens":"${w.tokens}"}'
 	}
 	items += ']'
 	return items
 }
 
-fn get_recent() string {
-	return get_wallets()
-}
-
-fn check_wallet(address string) string {
+fn check_wallet_json(address string) string {
 	for w in demo_wallets {
 		if w.address == address {
-			return '{"address":"${w.address}","status":"${w.status}","balance":${w.balance},"tokens":${w.tokens},"source":"database"}'
+			return '{"address":"${w.address}","status":"${w.status}","balance":${w.balance},"tokens":"${w.tokens}","source":"database"}'
 		}
 	}
 	idx := address.len % demo_wallets.len
 	w := demo_wallets[idx]
-	return '{"address":"${address}","status":"${w.status}","balance":${w.balance},"tokens":${w.tokens},"source":"generated"}'
+	return '{"address":"${address}","status":"${w.status}","balance":${w.balance},"tokens":"${w.tokens}","source":"generated"}'
 }
 
-fn check_rate_limit(mut state AppState, ip string) bool {
+fn check_rate_limit(ip string) bool {
 	now := time.now().unix()
 	
-	entry := state.rate_limits[ip]
+	g_state.lock.lock()
+	defer { g_state.lock.unlock() }
+	
+	entry := g_state.rate_limits[ip]
 	if entry.reset_at == 0 {
-		state.rate_limits[ip] = RateLimitEntry{
+		g_state.rate_limits[ip] = RateLimitEntry{
 			count: 1
-			reset_at: now + i64(state.config.rate_limit_ttl)
+			reset_at: now + i64(g_state.config.rate_limit_ttl)
 		}
 		return true
 	}
 	
 	if now > entry.reset_at {
-		state.rate_limits[ip] = RateLimitEntry{
+		g_state.rate_limits[ip] = RateLimitEntry{
 			count: 1
-			reset_at: now + i64(state.config.rate_limit_ttl)
+			reset_at: now + i64(g_state.config.rate_limit_ttl)
 		}
 		return true
 	}
 	
-	if entry.count >= state.config.max_checks_per_ip {
+	if entry.count >= g_state.config.max_checks_per_ip {
 		return false
 	}
 	
-	state.rate_limits[ip] = RateLimitEntry{
+	g_state.rate_limits[ip] = RateLimitEntry{
 		count: entry.count + 1
 		reset_at: entry.reset_at
 	}
 	return true
 }
 
-fn get_remaining(mut state AppState, ip string) int {
+fn get_remaining(ip string) int {
 	now := time.now().unix()
 	
-	entry := state.rate_limits[ip]
+	g_state.lock.lock()
+	defer { g_state.lock.unlock() }
+	
+	entry := g_state.rate_limits[ip]
 	if entry.reset_at == 0 {
-		return state.config.max_checks_per_ip
+		return g_state.config.max_checks_per_ip
 	}
 	
 	if now > entry.reset_at {
-		return state.config.max_checks_per_ip
+		return g_state.config.max_checks_per_ip
 	}
 	
-	return state.config.max_checks_per_ip - entry.count
+	return g_state.config.max_checks_per_ip - entry.count
 }
