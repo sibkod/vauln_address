@@ -107,19 +107,19 @@ type PaymentMethod struct {
 }
 
 type PurchaseRequest struct {
-	ChecksCount int    `json:"checks_count" binding:"required,min=1,max=100"`
-	Currency    string `json:"currency" binding:"required"`
+	ChecksCount   int    `json:"checks" binding:"required,min=1"`
+	Chain         string `json:"chain" binding:"required"`
+	WalletAddress string `json:"wallet_address" binding:"required"`
 }
 
 type PurchaseResponse struct {
-	OrderID     string `json:"order_id"`
-	ChecksCount int    `json:"checks_count"`
-	TotalUSD    float64 `json:"total_usd"`
-	Currency    string `json:"currency"`
-	TokenAmount float64 `json:"token_amount,omitempty"`
-	PaymentAddress string `json:"payment_address,omitempty"`
-	DueDate     time.Time `json:"due_date,omitempty"`
-	Status      string `json:"status"`
+	OrderID        string    `json:"order_id"`
+	ChecksCount    int       `json:"checks_count"`
+	TotalUSD       float64   `json:"total_usd"`
+	Amount         string    `json:"amount"`        // SOL amount for payment
+	PaymentAddress string    `json:"payment_address"`
+	DueDate        time.Time `json:"due_date,omitempty"`
+	Status         string    `json:"status"`
 }
 
 // Payment Status

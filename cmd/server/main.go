@@ -134,7 +134,7 @@ func main() {
 	router.Use(middleware.CORS())
 
 	rateLimiter := middleware.NewRateLimiter(repo, cfg)
-	h := handlers.New(repo)
+	h := handlers.New(repo, cfg)
 	authService := h.GetAuthService()
 	router.Use(middleware.AuthMiddleware(authService))
 
@@ -176,6 +176,7 @@ func main() {
 	api.POST("/auth/login", h.Authenticate)
 	api.GET("/user/profile", middleware.RequireAuth(), h.GetUserProfile)
 	api.POST("/orders", middleware.RequireAuth(), h.CreateOrder)
+	api.POST("/orders/:id/confirm", middleware.RequireAuth(), h.ConfirmOrder)
 	api.GET("/orders/verify", h.VerifyPayment)
 	api.POST("/check", rateLimiter.Limit(), h.CheckWallet)
 	api.POST("/contact", h.SubmitContact)

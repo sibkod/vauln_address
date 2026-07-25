@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"vauln-address/internal/auth"
+	"vauln-address/internal/config"
 	"vauln-address/internal/models"
 	"vauln-address/internal/repository"
 	"vauln-address/internal/validators"
@@ -23,12 +24,14 @@ func contains(s, substr string) bool {
 type Handler struct {
 	repo       *repository.Repository
 	authService *auth.AuthService
+	serverCfg  *config.Config
 }
 
-func New(repo *repository.Repository) *Handler {
+func New(repo *repository.Repository, serverCfg *config.Config) *Handler {
 	return &Handler{
 		repo:       repo,
 		authService: auth.NewAuthService(repo),
+		serverCfg:  serverCfg,
 	}
 }
 
@@ -186,45 +189,43 @@ func (h *Handler) CreateOrder(c *gin.Context) {
 		return
 	}
 
-	// Calculate price
+	// Get pricing for the checks count
 	pricing := models.GetPricing(req.ChecksCount)
-	var selectedMethod *models.PaymentMethod
-	
-	for _, method := range pricing {
-		if string(method.Currency) == req.Currency {
-			selectedMethod = &method
-			break
-		}
-	}
-
-	if selectedMethod == nil {
+	if len(pricing) == 0 {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
-			Error:   "unsupported currency",
-			Code:    "INVALID_CURRENCY",
-			Details: "supported currencies: usdc, usdt, eth, sui",
+			Error: "invalid checks count",
+			Code:  "INVALID_CHECKS",
 		})
 		return
 	}
 
-	// Get payment address based on currency
-	var paymentAddress string
-	switch req.Currency {
-	case "sui":
-		paymentAddress = "0x..." // SUI payment address (should be configured)
-	case "usdc", "usdt":
-		paymentAddress = "0x..." // USDC/USDT payment address (should be configured)
-	case "eth":
-		paymentAddress = "0x..." // ETH payment address (should be configured)
+	// Calculate price (USD)
+	priceUSD := float64(req.ChecksCount) * models.PricePerCheckUSD
+	if req.ChecksCount >= 1000 {
+		priceUSD = priceUSD * 0.5 // 50% discount for 1000+
+	} else if req.ChecksCount >= 500 {
+		priceUSD = priceUSD * 0.6 // 40% discount for 500+
 	}
+
+	// Get payment address
+	paymentAddress := h.serverCfg.SolanaPaymentAddr
+	if paymentAddress == "" {
+		// Demo mode - use a placeholder
+		paymentAddress = "DemoAddress123456789"
+	}
+
+	// Calculate SOL amount (testnet - approximate)
+	// 1 SOL ≈ $20 USD for demo
+	solAmount := fmt.Sprintf("%.4f", priceUSD/20.0)
 
 	// Create order
 	order, err := h.repo.CreateOrder(
 		c.Request.Context(),
 		int(userID.(int64)),
 		req.ChecksCount,
-		selectedMethod.PriceUSD,
-		req.Currency,
-		selectedMethod.TokenAmount,
+		priceUSD,
+		req.Chain,
+		solAmount,
 		paymentAddress,
 	)
 	if err != nil {
@@ -238,12 +239,80 @@ func (h *Handler) CreateOrder(c *gin.Context) {
 	c.JSON(http.StatusCreated, models.PurchaseResponse{
 		OrderID:        order.OrderUUID,
 		ChecksCount:    req.ChecksCount,
-		TotalUSD:       selectedMethod.PriceUSD,
-		Currency:       req.Currency,
-		TokenAmount:    selectedMethod.TokenAmount,
+		TotalUSD:       priceUSD,
+		Amount:         solAmount,
 		PaymentAddress: paymentAddress,
 		DueDate:        time.Now().Add(30 * time.Minute),
 		Status:         "pending",
+	})
+}
+
+// ConfirmOrder confirms a testnet payment (demo mode)
+func (h *Handler) ConfirmOrder(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
+			Error: "authentication required",
+			Code:  "UNAUTHORIZED",
+		})
+		return
+	}
+
+	orderID := c.Param("id")
+	if orderID == "" {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error: "order id required",
+			Code:  "INVALID_ORDER",
+		})
+		return
+	}
+
+	// Get order
+	order, err := h.repo.GetOrderByUUID(c.Request.Context(), orderID)
+	if err != nil || order == nil {
+		c.JSON(http.StatusNotFound, models.ErrorResponse{
+			Error: "order not found",
+			Code:  "NOT_FOUND",
+		})
+		return
+	}
+
+	// Verify ownership
+	if order.UserID != userID.(int64) {
+		c.JSON(http.StatusForbidden, models.ErrorResponse{
+			Error: "order does not belong to user",
+			Code:  "FORBIDDEN",
+		})
+		return
+	}
+
+	// Check if already completed
+	if order.Status == string(models.PaymentCompleted) {
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "already_completed",
+			"balance": order.ChecksCount,
+			"message": "Order was already confirmed",
+		})
+		return
+	}
+
+	// Complete the order (demo mode - instant confirmation)
+	err = h.repo.CompleteOrder(c.Request.Context(), order.OrderUUID, "testnet_demo_tx")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error: "failed to confirm order",
+			Code:  "DB_ERROR",
+		})
+		return
+	}
+
+	// Update user balance
+	h.repo.AddUserBalance(c.Request.Context(), userID.(int64), order.ChecksCount)
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "completed",
+		"balance": order.ChecksCount,
+		"message": "Payment confirmed! Checks added to your balance.",
 	})
 }
 
