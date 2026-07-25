@@ -93,8 +93,8 @@ async function payWithSolana() {
       return
     }
     
-    // Create order first (requires auth)
-    const orderRes = await fetch('/api/payment/create', {
+    // Create order first (requires auth) - endpoint is /orders
+    const orderRes = await fetch('/api/orders', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
