@@ -58,6 +58,7 @@
             <span id="connectLabel">Connect</span>
             <span class="addr-short" id="connectAddressShort"></span>
         </button>
+        <button class="nav-link" id="logoutBtn" style="display: none;" onclick="logout()">Logout</button>
     </div>
 </nav>
 
@@ -66,22 +67,27 @@
 </div>
 
 <div class="footer">
-    <span>⚡ Without connect — 1 check</span>
-    <span class="counter" id="checkCounter">0 / 1</span>
+    <span>⚡ Without connect — <span id="freeLimitDisplay">{{.FreeCheckLimit}}</span> check{{if ne .FreeCheckLimit 1}}s{{end}}</span>
+    <span class="counter" id="checkCounter">0 / {{.FreeCheckLimit}}</span>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
 <script>
 (function() {
+    const FREE_CHECK_LIMIT = {{.FreeCheckLimit}};
+    const freeLimitDisplay = document.getElementById('freeLimitDisplay');
+    if (freeLimitDisplay) freeLimitDisplay.textContent = FREE_CHECK_LIMIT;
+
     let isWalletConnected = false;
     let connectedAddress = '';
-    let freeCheckUsed = false;
+    let freeCheckUsed = localStorage.getItem('freeCheckUsed') === 'true';
     let web3 = null;
 
     const connectBtn = document.getElementById('connectWalletBtn');
     const connectDot = document.getElementById('connectDot');
     const connectLabel = document.getElementById('connectLabel');
     const connectAddressShort = document.getElementById('connectAddressShort');
+    const logoutBtn = document.getElementById('logoutBtn');
     const checkCounter = document.getElementById('checkCounter');
     const toast = document.getElementById('toast');
 
@@ -97,10 +103,45 @@
             connectDot.className = 'dot active';
             connectLabel.textContent = '';
             connectAddressShort.textContent = connectedAddress.slice(0,6) + '...' + connectedAddress.slice(-4);
+            logoutBtn.style.display = 'inline-block';
         } else {
             connectDot.className = 'dot';
             connectLabel.textContent = 'Connect';
             connectAddressShort.textContent = '';
+            logoutBtn.style.display = 'none';
+        }
+    }
+
+    function updateCounter() {
+        if (isWalletConnected) {
+            checkCounter.textContent = '∞ / ∞';
+        } else {
+            const remaining = freeCheckUsed ? 0 : FREE_CHECK_LIMIT;
+            checkCounter.textContent = remaining + ' / ' + FREE_CHECK_LIMIT;
+        }
+    }
+
+    window.logout = function() {
+        localStorage.removeItem('walletConnected');
+        localStorage.removeItem('freeCheckUsed');
+        localStorage.removeItem('authToken');
+        isWalletConnected = false;
+        connectedAddress = '';
+        freeCheckUsed = false;
+        updateConnectUI();
+        updateCounter();
+        showToast('👋 Wallet disconnected');
+    };
+
+    // Restore wallet state from localStorage
+    function restoreWalletState() {
+        const storedConnected = localStorage.getItem('walletConnected');
+        const storedAddress = localStorage.getItem('walletAddress');
+        
+        if (storedConnected === 'true' && storedAddress) {
+            // Try to restore session - wallet is still connected in MetaMask
+            isWalletConnected = true;
+            connectedAddress = storedAddress;
         }
     }
 
@@ -113,6 +154,12 @@
                 connectedAddress = accounts[0];
                 isWalletConnected = true;
                 freeCheckUsed = true;
+                
+                // Persist state
+                localStorage.setItem('walletConnected', 'true');
+                localStorage.setItem('walletAddress', connectedAddress);
+                localStorage.setItem('freeCheckUsed', 'true');
+                
                 updateConnectUI();
                 updateCounter();
                 showToast('🔗 Wallet connected. Unlimited checks.');
@@ -125,24 +172,37 @@
         }
     }
 
-    function updateCounter() {
-        if (isWalletConnected) {
-            checkCounter.textContent = '∞ / ∞';
-        } else {
-            checkCounter.textContent = (freeCheckUsed ? '1 / 1' : '0 / 1');
-        }
+    // Listen for account changes in MetaMask
+    if (typeof window.ethereum !== 'undefined') {
+        window.ethereum.on('accountsChanged', function(accounts) {
+            if (accounts.length === 0) {
+                logout();
+            } else if (accounts[0] !== connectedAddress) {
+                connectedAddress = accounts[0];
+                localStorage.setItem('walletAddress', connectedAddress);
+                updateConnectUI();
+            }
+        });
     }
 
     connectBtn.addEventListener('click', connectWallet);
+
+    // Initialize
+    restoreWalletState();
+    updateConnectUI();
+    updateCounter();
 
     // Re-export for pages
     window.showToast = showToast;
     window.isWalletConnected = function() { return isWalletConnected; };
     window.getConnectedAddress = function() { return connectedAddress; };
     window.updateCounter = updateCounter;
-    window.setFreeCheckUsed = function(v) { freeCheckUsed = v; };
-
-    updateCounter();
+    window.setFreeCheckUsed = function(v) { 
+        freeCheckUsed = v; 
+        localStorage.setItem('freeCheckUsed', v ? 'true' : 'false');
+        updateCounter();
+    };
+    window.getFreeCheckUsed = function() { return freeCheckUsed; };
 })();
 </script>
 </body>

@@ -31,6 +31,10 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 		ip := c.ClientIP()
 		ctx := c.Request.Context()
 
+		// Check if user is authenticated
+		userID, isAuthenticated := c.Get("userID")
+
+		// 1. Check IP rate limit
 		rl.checkAndResetWindow(ctx, ip)
 
 		rateLimit, err := rl.repo.GetRateLimit(ctx, ip)
@@ -45,33 +49,78 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 				c.Next()
 				return
 			}
-			c.Next()
-			return
+			rateLimit = &models.RateLimit{Count: 0, WindowStart: time.Now()}
 		}
 
+		// Check IP limit
 		if rateLimit.Count >= rl.cfg.RateLimitRequests {
+			// IP limit exhausted
+			// For authenticated users: try to use their balance as fallback
+			if isAuthenticated {
+				user, err := rl.repo.GetUserByID(ctx, userID.(int64))
+				if err == nil && user != nil && user.Balance > 0 {
+					// Use user's balance instead of IP limit
+					if err := rl.repo.DeductUserBalance(ctx, userID.(int64), 1); err == nil {
+						c.Set("remainingBalance", user.Balance-1)
+						c.Set("usingBalance", true)
+						c.Header("X-RateLimit-Source", "balance")
+						c.Next()
+						return
+					}
+				}
+
+				// No balance either
+				c.JSON(http.StatusPaymentRequired, models.ErrorResponse{
+					Error:   "no checks remaining",
+					Code:    "BALANCE_EXHAUSTED",
+					Details: "IP limit exhausted. Please purchase more checks.",
+				})
+				c.Abort()
+				return
+			}
+
+			// Anonymous user - IP limit is final
 			windowEnd := rateLimit.WindowStart.Add(time.Duration(rl.cfg.RateLimitHours) * time.Hour)
 			resetIn := time.Until(windowEnd)
 
 			c.JSON(http.StatusTooManyRequests, models.ErrorResponse{
-				Error: "rate limit exceeded",
-				Code:  "RATE_LIMIT_EXCEEDED",
+				Error:   "rate limit exceeded",
+				Code:    "RATE_LIMIT_EXCEEDED",
 				Details: formatRateLimitDetails(rateLimit.Count, rl.cfg.RateLimitRequests, resetIn),
 			})
 			c.Abort()
 			return
 		}
 
-		err = rl.repo.IncrementRateLimit(ctx, ip, rateLimit.WindowStart)
-		if err != nil {
+		// IP limit not exhausted - use IP-based check for everyone
+		if err := rl.repo.IncrementRateLimit(ctx, ip, rateLimit.WindowStart); err != nil {
 			c.Next()
 			return
 		}
 
+		// For authenticated users, also deduct from balance
+		if isAuthenticated {
+			user, err := rl.repo.GetUserByID(ctx, userID.(int64))
+			if err == nil && user != nil && user.Balance > 0 {
+				if err := rl.repo.DeductUserBalance(ctx, userID.(int64), 1); err == nil {
+					c.Set("remainingBalance", user.Balance-1)
+					c.Set("usingBalance", true)
+					c.Header("X-RateLimit-Source", "balance")
+				}
+			}
+		}
+
 		c.Header("X-RateLimit-Limit", formatInt(rl.cfg.RateLimitRequests))
-		c.Header("X-RateLimit-Remaining", formatInt(rl.cfg.RateLimitRequests-rateLimit.Count-1))
+		c.Header("X-RateLimit-Remaining", formatInt(max(0, rl.cfg.RateLimitRequests-rateLimit.Count-1)))
 		c.Next()
 	}
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func (rl *RateLimiter) checkAndResetWindow(ctx context.Context, ip string) {

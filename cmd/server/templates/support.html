@@ -1,51 +1,157 @@
 {{define "support"}}
 <style>
 .support-content { background: rgba(14, 19, 29, 0.5); backdrop-filter: blur(6px); border-radius: 1.5rem; padding: 2rem; border: 1px solid rgba(255,255,255,0.04); text-align: center; }
-.support-content .token-icon { font-size: 4rem; margin-bottom: 0.5rem; }
 .support-content h2 { color: #f0f4ff; font-size: 1.6rem; font-weight: 600; margin-bottom: 0.5rem; }
-.support-content .token-symbol { display: inline-block; background: #3b82f620; color: #3b82f6; padding: 0.2rem 1.2rem; border-radius: 40px; font-size: 0.9rem; font-weight: 600; border: 1px solid #3b82f630; margin-bottom: 1.5rem; }
-.support-content p { color: #9aabcf; line-height: 1.7; margin-bottom: 1.5rem; text-align: left; }
-.support-content .token-details { background: rgba(18, 24, 36, 0.5); border-radius: 1rem; padding: 1.5rem; margin: 1.5rem 0; border: 1px solid rgba(255,255,255,0.04); text-align: left; }
-.support-content .token-details .row { display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 0.9rem; }
-.support-content .token-details .row:last-child { border-bottom: none; }
-.support-content .token-details .row .label { color: #6d7da0; }
-.support-content .token-details .row .value { color: #c8d2e8; font-weight: 500; }
-.support-content .buy-btn { background: #34d399; border: none; color: #0b0d11; font-weight: 700; padding: 0.9rem 3rem; border-radius: 60px; font-size: 1rem; cursor: pointer; transition: 0.15s; box-shadow: 0 4px 20px #34d39940; margin-top: 1rem; }
-.support-content .buy-btn:hover { transform: scale(1.02); box-shadow: 0 6px 28px #34d39960; }
-.support-content .token-features { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.8rem; margin: 1.5rem 0; }
-.support-content .token-features .feature { background: rgba(18, 24, 36, 0.5); padding: 0.8rem; border-radius: 0.8rem; border: 1px solid rgba(255,255,255,0.04); }
-.support-content .token-features .feature .icon { font-size: 1.5rem; display: block; margin-bottom: 0.2rem; }
-.support-content .token-features .feature .label { color: #9aabcf; font-size: 0.75rem; }
-@media (max-width: 768px) { .support-content { padding: 1.2rem; } .support-content h2 { font-size: 1.3rem; } .support-content .token-features { grid-template-columns: 1fr 1fr; } }
+.support-content .subtitle { color: #9aabcf; margin-bottom: 1.5rem; }
+
+.packages-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin: 1.5rem 0; }
+.package-card { background: rgba(18, 24, 36, 0.7); border-radius: 1rem; padding: 1.5rem; border: 1px solid rgba(255,255,255,0.08); transition: 0.2s; cursor: pointer; }
+.package-card:hover { border-color: #3b82f6; transform: translateY(-2px); }
+.package-card.popular { border-color: #3b82f6; box-shadow: 0 0 20px #3b82f620; }
+.package-card .badge { background: #3b82f6; color: white; font-size: 0.65rem; padding: 0.2rem 0.6rem; border-radius: 20px; display: inline-block; margin-bottom: 0.5rem; }
+.package-card .checks { font-size: 2rem; font-weight: 700; color: #f0f4ff; }
+.package-card .checks-label { color: #6d7da0; font-size: 0.8rem; }
+.package-card .price { font-size: 1.3rem; color: #34d399; font-weight: 600; margin: 0.5rem 0; }
+.package-card .price-usd { color: #6d7da0; font-size: 0.75rem; }
+.package-card .per-check { color: #9aabcf; font-size: 0.7rem; }
+
+.buy-section { margin-top: 2rem; padding-top: 2rem; border-top: 1px solid rgba(255,255,255,0.08); }
+.buy-section h3 { color: #f0f4ff; font-size: 1.2rem; margin-bottom: 1rem; }
+.wallet-status { background: rgba(18, 24, 36, 0.5); padding: 1rem; border-radius: 0.8rem; margin-bottom: 1rem; }
+.wallet-status .address { color: #c8d2e8; font-family: monospace; }
+.wallet-status .balance { color: #34d399; font-weight: 600; }
+.buy-btn { background: #3b82f6; border: none; color: white; font-weight: 600; padding: 0.9rem 2rem; border-radius: 60px; font-size: 1rem; cursor: pointer; transition: 0.15s; width: 100%; }
+.buy-btn:hover { background: #4f8df7; }
+.buy-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.buy-btn.connected { background: #34d399; }
+
+@media (max-width: 768px) { .support-content { padding: 1.2rem; } .support-content h2 { font-size: 1.3rem; } .packages-grid { grid-template-columns: 1fr; } }
 </style>
 
 <div class="support-content">
-    <div class="token-icon">🪙</div>
-    <h2>Support the Project</h2>
-    <div class="token-symbol">$WCHK • Sui Network</div>
-    <p>Our native token <strong>$WCHK</strong> on the Sui blockchain powers the Wallet Checker ecosystem. Holding $WCHK grants you premium features, reduced fees, and a voice in the project's future direction.</p>
+    <h2>💎 Get More Checks</h2>
+    <p class="subtitle">Choose a package that works for you. More checks, better value!</p>
 
-    <div class="token-details">
-        <div class="row"><span class="label">Token Name</span><span class="value">Wallet Checker Token</span></div>
-        <div class="row"><span class="label">Symbol</span><span class="value">$WCHK</span></div>
-        <div class="row"><span class="label">Network</span><span class="value">Sui</span></div>
-        <div class="row"><span class="label">Total Supply</span><span class="value">100,000,000</span></div>
-        <div class="row"><span class="label">Price</span><span class="value">$0.10 USD</span></div>
+    <div class="packages-grid" id="packagesGrid">
+        <div class="package-card" data-checks="100" data-price="1" onclick="selectPackage(100, 1)">
+            <div class="checks">100</div>
+            <div class="checks-label">checks</div>
+            <div class="price">$1</div>
+            <div class="per-check">$0.01 / check</div>
+        </div>
+        <div class="package-card" data-checks="500" data-price="3" onclick="selectPackage(500, 3)">
+            <div class="checks">500</div>
+            <div class="checks-label">checks</div>
+            <div class="price">$3</div>
+            <div class="per-check">$0.006 / check</div>
+        </div>
+        <div class="package-card popular" data-checks="1000" data-price="5" onclick="selectPackage(1000, 5)">
+            <span class="badge">BEST VALUE</span>
+            <div class="checks">1,000</div>
+            <div class="checks-label">checks</div>
+            <div class="price">$5</div>
+            <div class="per-check">$0.005 / check</div>
+        </div>
+        <div class="package-card" data-checks="5000" data-price="20" onclick="selectPackage(5000, 20)">
+            <div class="checks">5,000</div>
+            <div class="checks-label">checks</div>
+            <div class="price">$20</div>
+            <div class="per-check">$0.004 / check</div>
+        </div>
     </div>
 
-    <div class="token-features">
-        <div class="feature"><span class="icon">👑</span><span class="label">Premium Access</span></div>
-        <div class="feature"><span class="icon">💰</span><span class="label">50% Fee Discount</span></div>
-        <div class="feature"><span class="icon">🗳️</span><span class="label">Governance Rights</span></div>
-        <div class="feature"><span class="icon">🎁</span><span class="label">Early Access</span></div>
+    <div class="buy-section">
+        <h3>Purchase</h3>
+        <div class="wallet-status" id="walletStatus">
+            <div id="walletNotConnected">Please connect your wallet to purchase checks</div>
+            <div id="walletConnected" style="display: none;">
+                <div>Connected: <span class="address" id="walletAddress"></span></div>
+                <div>Your balance: <span class="balance" id="userBalance">0</span> checks</div>
+            </div>
+        </div>
+        <button class="buy-btn" id="buyBtn" onclick="buyPackage()">Connect Wallet to Buy</button>
     </div>
-
-    <button class="buy-btn" id="buyTokenBtn">🪙 Buy $WCHK Token</button>
 </div>
 
 <script>
-document.getElementById('buyTokenBtn').addEventListener('click', () => {
-    window.showToast('🪙 $WCHK token purchase coming soon! Stay tuned.');
-});
+let selectedPackage = { checks: 1000, price: 5 };
+
+function selectPackage(checks, price) {
+    selectedPackage = { checks, price };
+    document.querySelectorAll('.package-card').forEach(card => {
+        card.style.borderColor = card.dataset.checks == checks ? '#3b82f6' : '';
+    });
+}
+
+function updateWalletStatus() {
+    const isConnected = window.isWalletConnected();
+    const address = window.getConnectedAddress();
+    
+    document.getElementById('walletNotConnected').style.display = isConnected ? 'none' : 'block';
+    document.getElementById('walletConnected').style.display = isConnected ? 'block' : 'none';
+    document.getElementById('walletAddress').textContent = address ? address.slice(0, 8) + '...' + address.slice(-4) : '';
+    
+    const btn = document.getElementById('buyBtn');
+    if (isConnected) {
+        btn.textContent = `Buy ${selectedPackage.checks} Checks for $${selectedPackage.price}`;
+        btn.classList.add('connected');
+        btn.disabled = false;
+        
+        // Fetch user balance
+        const authToken = localStorage.getItem('authToken');
+        if (authToken) {
+            fetch('/api/user/profile', {
+                headers: { 'Authorization': 'Bearer ' + authToken }
+            }).then(r => r.json()).then(data => {
+                if (data.balance !== undefined) {
+                    document.getElementById('userBalance').textContent = data.balance;
+                }
+            }).catch(() => {});
+        }
+    } else {
+        btn.textContent = 'Connect Wallet to Buy';
+        btn.classList.remove('connected');
+        btn.disabled = true;
+    }
+}
+
+async function buyPackage() {
+    if (!window.isWalletConnected()) {
+        document.getElementById('connectWalletBtn').click();
+        return;
+    }
+    
+    const btn = document.getElementById('buyBtn');
+    btn.textContent = 'Processing...';
+    btn.disabled = true;
+    
+    try {
+        // Get auth token first
+        const address = window.getConnectedAddress();
+        
+        // For demo, show success message - in production, this would create an order
+        window.showToast(`🪙 Purchase ${selectedPackage.checks} checks - Demo mode`);
+        
+        // In real implementation:
+        // 1. Fetch nonce from /api/auth/nonce
+        // 2. Sign message with wallet
+        // 3. Login via /api/auth/login to get JWT
+        // 4. Create order via /api/orders
+        // 5. Process payment (Sui blockchain or fiat)
+        
+    } catch (error) {
+        window.showToast('❌ Purchase failed: ' + error.message);
+    }
+    
+    updateWalletStatus();
+}
+
+// Update status periodically and on wallet changes
+updateWalletStatus();
+setInterval(updateWalletStatus, 3000);
+
+// Listen for custom wallet events
+document.addEventListener('walletConnected', updateWalletStatus);
+document.addEventListener('walletDisconnected', updateWalletStatus);
 </script>
 {{end}}

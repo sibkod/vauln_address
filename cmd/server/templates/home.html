@@ -146,13 +146,13 @@
             return;
         }
 
-        if (!window.isWalletConnected()) {
-            if (window.getCheckUsed && window.getCheckUsed()) {
-                resultBox.className = 'result-box';
-                resultText.innerHTML = '⛔ Limit reached. Connect your wallet.';
-                resultSub.textContent = 'One free check already used';
-                return;
-            }
+        // Check if user can perform check
+        const freeCheckUsed = window.getFreeCheckUsed ? window.getFreeCheckUsed() : false;
+        if (!window.isWalletConnected() && freeCheckUsed) {
+            resultBox.className = 'result-box';
+            resultText.innerHTML = '⛔ Limit reached. Connect your wallet.';
+            resultSub.innerHTML = 'Free check(s) exhausted. <a href="/support" style="color: #60a5fa;">Buy checks</a> or connect wallet.';
+            return;
         }
 
         resultBox.className = 'result-box';
@@ -160,12 +160,45 @@
         resultSub.textContent = 'Please wait';
 
         try {
+            const headers = { 'Content-Type': 'application/json' };
+            const authToken = localStorage.getItem('authToken');
+            if (authToken) {
+                headers['Authorization'] = 'Bearer ' + authToken;
+            }
+
             const res = await fetch('/api/check', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: headers,
                 body: JSON.stringify({ address, chain })
             });
             const data = await res.json();
+
+            // Handle rate limit error (429)
+            if (res.status === 429) {
+                resultBox.className = 'result-box';
+                resultText.innerHTML = '⛔ Rate limit reached';
+                resultSub.textContent = data.details || 'Too many requests. Please try again later.';
+                if (!window.isWalletConnected()) {
+                    if (window.setFreeCheckUsed) window.setFreeCheckUsed(true);
+                }
+                return;
+            }
+
+            // Handle balance exhausted
+            if (res.status === 402 || data.code === 'BALANCE_EXHAUSTED') {
+                resultBox.className = 'result-box';
+                resultText.innerHTML = '⛔ No checks remaining';
+                resultSub.innerHTML = 'Your check package is exhausted. <a href="/support" style="color: #60a5fa;">Buy more checks</a>';
+                return;
+            }
+
+            // Handle other errors
+            if (res.status >= 400) {
+                resultBox.className = 'result-box';
+                resultText.innerHTML = '❌ ' + (data.error || 'Check failed');
+                resultSub.textContent = 'Please try again or connect wallet for unlimited checks';
+                return;
+            }
 
             let statusText = '';
             let statusClass = 'success';
@@ -189,15 +222,15 @@
 
             addAlert(address, chain, data.status === 'not_found' ? 'safe' : data.status);
 
+            // Mark free check as used after successful check
+            if (!window.isWalletConnected()) {
+                if (window.setFreeCheckUsed) window.setFreeCheckUsed(true);
+            }
+
         } catch (error) {
             resultBox.className = 'result-box';
             resultText.innerHTML = '❌ Check failed';
             resultSub.textContent = error.message || 'Please try again';
-        }
-
-        if (!window.isWalletConnected()) {
-            if (window.setFreeCheckUsed) window.setFreeCheckUsed(true);
-            if (window.updateCounter) window.updateCounter();
         }
     }
 
@@ -241,6 +274,9 @@
             });
         }
     }).catch(() => {});
+
+    // Initialize counter
+    updateCounter();
 })();
 </script>
 {{end}}

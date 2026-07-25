@@ -446,6 +446,14 @@ func (r *Repository) AddUserBalance(ctx context.Context, userID int64, checks in
 	return err
 }
 
+func (r *Repository) DeductUserBalance(ctx context.Context, userID int64, checks int) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE users SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND balance >= ?`,
+		checks, userID, checks,
+	)
+	return err
+}
+
 // ==================== Order Methods ====================
 
 func (r *Repository) CreateOrder(ctx context.Context, userID int, checksCount int, totalUSD float64, currency string, tokenAmount float64, paymentAddress string) (*models.Order, error) {

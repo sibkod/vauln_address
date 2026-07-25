@@ -24,11 +24,13 @@ import (
 var templateFS embed.FS
 
 var tmpl *template.Template
+var serverCfg *config.Config
 
 type PageData struct {
-	Title      string
-	ActivePage string
-	Content    string
+	Title          string
+	ActivePage     string
+	Content        string
+	FreeCheckLimit int
 }
 
 func init() {
@@ -39,7 +41,7 @@ func init() {
 	}
 }
 
-func renderPage(c *gin.Context, pageTmpl, title, activePage string) {
+func renderPage(c *gin.Context, pageTmpl, title, activePage string, repo *repository.Repository) {
 	c.Header("Content-Type", "text/html; charset=utf-8")
 
 	// Render the content template to a buffer first
@@ -49,11 +51,21 @@ func renderPage(c *gin.Context, pageTmpl, title, activePage string) {
 		return
 	}
 
+	// Get user balance if authenticated
+	userBalance := 0
+	if userID, exists := c.Get("userID"); exists && repo != nil {
+		if user, err := repo.GetUserByID(c.Request.Context(), userID.(int64)); err == nil && user != nil {
+			userBalance = user.Balance
+		}
+	}
+
 	// Execute base.html with the rendered content as a string
-	tmpl.ExecuteTemplate(c.Writer, "base.html", PageData{
-		Title:      title,
-		ActivePage: activePage,
-		Content:    contentBuf.String(),
+	tmpl.ExecuteTemplate(c.Writer, "base.html", gin.H{
+		"Title":          title,
+		"ActivePage":     activePage,
+		"Content":        contentBuf.String(),
+		"FreeCheckLimit": serverCfg.FreeCheckLimit,
+		"UserBalance":    userBalance,
 	})
 }
 
@@ -94,6 +106,7 @@ func getErrorIcon(code int) string {
 
 func main() {
 	cfg := config.Load()
+	serverCfg = cfg
 
 	repo, err := repository.New(cfg)
 	if err != nil {
@@ -119,12 +132,15 @@ func main() {
 	authService := h.GetAuthService()
 	router.Use(middleware.AuthMiddleware(authService))
 
+	// Store repo reference for page rendering
+	r := repo
+
 	// ========== PAGES (HTML) ==========
-	router.GET("/", func(c *gin.Context) { renderPage(c, "home", "Home", "home") })
-	router.GET("/roadmap", func(c *gin.Context) { renderPage(c, "roadmap", "Roadmap", "roadmap") })
-	router.GET("/about", func(c *gin.Context) { renderPage(c, "about", "About", "about") })
-	router.GET("/contact", func(c *gin.Context) { renderPage(c, "contact", "Contact", "contact") })
-	router.GET("/support", func(c *gin.Context) { renderPage(c, "support", "Support", "support") })
+	router.GET("/", func(c *gin.Context) { renderPage(c, "home", "Home", "home", r) })
+	router.GET("/roadmap", func(c *gin.Context) { renderPage(c, "roadmap", "Roadmap", "roadmap", r) })
+	router.GET("/about", func(c *gin.Context) { renderPage(c, "about", "About", "about", r) })
+	router.GET("/contact", func(c *gin.Context) { renderPage(c, "contact", "Contact", "contact", r) })
+	router.GET("/support", func(c *gin.Context) { renderPage(c, "support", "Support", "support", r) })
 
 	// 404 for pages (HTML)
 	router.NoRoute(func(c *gin.Context) {
