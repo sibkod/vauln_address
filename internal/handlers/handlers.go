@@ -889,10 +889,12 @@ func (h *Handler) GetPaymentStatus(c *gin.Context) {
 			if err := h.repo.AddUserBalance(c.Request.Context(), userIDInt, pendingOrder.ChecksCount); err == nil {
 				log.Printf("[DEBUG] Balance added for user %d", userIDInt)
 				// Get new balance
-				user, _ := h.repo.GetUserByID(c.Request.Context(), userIDInt)
-				balance := 0
-				if user != nil {
+				user, err := h.repo.GetUserByID(c.Request.Context(), userIDInt)
+				balance := pendingOrder.ChecksCount // Default to added checks
+				if err == nil && user != nil {
 					balance = user.Balance
+				} else {
+					log.Printf("[WARN] Could not fetch user balance, using checks count: err=%v, user=%v", err, user)
 				}
 				c.JSON(http.StatusOK, gin.H{
 					"status":    "confirmed",
