@@ -314,8 +314,12 @@ async function deleteKey(keyId) {
     }
 }
 
-// Initialize
-loadKeys();
+// Initialize after DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', loadKeys);
+} else {
+    loadKeys();
+}
 
 // Listen for wallet changes
 document.addEventListener('walletAuthenticated', loadKeys);
