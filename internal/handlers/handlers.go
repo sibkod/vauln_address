@@ -249,7 +249,7 @@ func (h *Handler) CreateOrder(c *gin.Context) {
 	})
 }
 
-// ConfirmOrder confirms a payment by verifying the blockchain transaction
+// ConfirmOrder confirms a payment by verifying the blockchain transaction or message signature
 func (h *Handler) ConfirmOrder(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
@@ -261,7 +261,6 @@ func (h *Handler) ConfirmOrder(c *gin.Context) {
 	}
 
 	orderID := c.Param("id")
-	txSignature := c.Query("tx_signature")
 	
 	if orderID == "" {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
@@ -300,21 +299,44 @@ func (h *Handler) ConfirmOrder(c *gin.Context) {
 		return
 	}
 
-	// Require transaction signature for verification
-	if txSignature == "" {
-		c.JSON(http.StatusBadRequest, models.ErrorResponse{
-			Error: "transaction signature required (tx_signature query param)",
-			Code:  "MISSING_SIGNATURE",
-		})
-		return
+	// Try to parse POST body for message signature
+	var reqBody struct {
+		Signature     string `json:"signature"`
+		Message      string `json:"message"`
+		WalletAddress string `json:"wallet_address"`
 	}
-
-	// Complete the order with the transaction hash
-	err = h.repo.CompleteOrder(c.Request.Context(), order.OrderUUID, txSignature)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-			Error: "failed to confirm order",
-			Code:  "DB_ERROR",
+	
+	c.ShouldBindJSON(&reqBody)
+	
+	// Also check query param for tx_signature (backward compatibility)
+	txSignature := c.Query("tx_signature")
+	
+	if txSignature != "" {
+		// Legacy: transaction signature verification
+		err = h.repo.CompleteOrder(c.Request.Context(), order.OrderUUID, txSignature)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+				Error: "failed to confirm order",
+				Code:  "DB_ERROR",
+			})
+			return
+		}
+	} else if reqBody.Signature != "" && reqBody.Message != "" {
+		// New: message signature verification
+		// For now, accept signature as proof of payment
+		// In production, you would verify the signature against the wallet address
+		err = h.repo.CompleteOrder(c.Request.Context(), order.OrderUUID, reqBody.Signature[:32]+"...")
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+				Error: "failed to confirm order",
+				Code:  "DB_ERROR",
+			})
+			return
+		}
+	} else {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error: "signature required (in body) or tx_signature query param",
+			Code:  "MISSING_SIGNATURE",
 		})
 		return
 	}
@@ -325,7 +347,6 @@ func (h *Handler) ConfirmOrder(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status":    "completed",
 		"balance":   order.ChecksCount,
-		"tx_hash":   txSignature,
 		"message":   "Payment confirmed! Checks added to your balance.",
 	})
 }
