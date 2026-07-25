@@ -125,24 +125,12 @@
         }
     }
 
-    function updateCounter() {
-        if (isWalletConnected) {
-            checkCounter.textContent = '∞ / ∞';
-        } else {
-            checkCounter.textContent = (freeCheckUsed ? '1 / 1' : '0 / 1');
-        }
-    }
-
     connectBtn.addEventListener('click', connectWallet);
 
     // Re-export for pages
     window.showToast = showToast;
     window.isWalletConnected = function() { return isWalletConnected; };
     window.getConnectedAddress = function() { return connectedAddress; };
-    window.updateCounter = updateCounter;
-    window.setFreeCheckUsed = function(v) { freeCheckUsed = v; };
-
-    updateCounter();
 })();
 </script>
 </body>
