@@ -98,7 +98,7 @@ function updateWalletStatus() {
         btn.disabled = false;
         
         // Fetch user balance
-        const authToken = localStorage.getItem('authToken');
+        const authToken = window.getAuthToken ? window.getAuthToken() : null;
         if (authToken) {
             fetch('/api/user/profile', {
                 headers: { 'Authorization': 'Bearer ' + authToken }

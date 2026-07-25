@@ -82,6 +82,7 @@
     let connectedAddress = '';
     let freeCheckUsed = localStorage.getItem('freeCheckUsed') === 'true';
     let web3 = null;
+    let authToken = localStorage.getItem('authToken');
 
     const connectBtn = document.getElementById('connectWalletBtn');
     const connectDot = document.getElementById('connectDot');
@@ -113,18 +114,22 @@
     }
 
     function updateCounter() {
-        if (isWalletConnected) {
+        if (isWalletConnected && authToken) {
             checkCounter.textContent = '∞ / ∞';
+        } else if (isWalletConnected) {
+            checkCounter.textContent = '∞ / ∞ (no token)';
         } else {
             const remaining = freeCheckUsed ? 0 : FREE_CHECK_LIMIT;
             checkCounter.textContent = remaining + ' / ' + FREE_CHECK_LIMIT;
         }
     }
 
-    window.logout = function() {
+    window.logout = async function() {
         localStorage.removeItem('walletConnected');
+        localStorage.removeItem('walletAddress');
         localStorage.removeItem('freeCheckUsed');
         localStorage.removeItem('authToken');
+        authToken = null;
         isWalletConnected = false;
         connectedAddress = '';
         freeCheckUsed = false;
@@ -137,11 +142,56 @@
     function restoreWalletState() {
         const storedConnected = localStorage.getItem('walletConnected');
         const storedAddress = localStorage.getItem('walletAddress');
+        authToken = localStorage.getItem('authToken');
         
         if (storedConnected === 'true' && storedAddress) {
-            // Try to restore session - wallet is still connected in MetaMask
             isWalletConnected = true;
             connectedAddress = storedAddress;
+        }
+    }
+
+    async function authenticateWithBackend(address) {
+        try {
+            // 1. Get nonce from backend
+            const nonceRes = await fetch('/api/auth/nonce?address=' + address);
+            const nonceData = await nonceRes.json();
+            
+            if (nonceData.error) {
+                showToast('❌ Failed to get nonce');
+                return false;
+            }
+
+            // 2. Sign the message with wallet
+            const message = nonceData.message;
+            const signature = await window.ethereum.request({
+                method: 'personal_sign',
+                params: [message, address]
+            });
+
+            // 3. Send signature to backend and get JWT
+            const loginRes = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    address: address,
+                    signature: signature,
+                    message: message
+                })
+            });
+            const loginData = await loginRes.json();
+
+            if (loginData.token) {
+                authToken = loginData.token;
+                localStorage.setItem('authToken', authToken);
+                return true;
+            } else {
+                showToast('❌ Auth failed: ' + (loginData.error || 'Unknown error'));
+                return false;
+            }
+        } catch (error) {
+            console.error('Auth error:', error);
+            showToast('❌ Auth error: ' + (error.message || 'Unknown'));
+            return false;
         }
     }
 
@@ -162,7 +212,17 @@
                 
                 updateConnectUI();
                 updateCounter();
-                showToast('🔗 Wallet connected. Unlimited checks.');
+                showToast('🔗 Wallet connected. Authenticating...');
+
+                // Authenticate with backend
+                const authSuccess = await authenticateWithBackend(connectedAddress);
+                if (authSuccess) {
+                    showToast('✅ Authenticated! Unlimited checks.');
+                    updateCounter();
+                    document.dispatchEvent(new CustomEvent('walletAuthenticated'));
+                } else {
+                    showToast('⚠️ Wallet connected but auth failed');
+                }
             } catch (error) {
                 console.error(error);
                 alert('Error: ' + (error.message || 'Unknown error'));
@@ -180,6 +240,12 @@
             } else if (accounts[0] !== connectedAddress) {
                 connectedAddress = accounts[0];
                 localStorage.setItem('walletAddress', connectedAddress);
+                // Re-authenticate with new address
+                authenticateWithBackend(connectedAddress).then(success => {
+                    if (success) {
+                        showToast('✅ Re-authenticated with new address');
+                    }
+                });
                 updateConnectUI();
             }
         });
@@ -203,6 +269,8 @@
         updateCounter();
     };
     window.getFreeCheckUsed = function() { return freeCheckUsed; };
+    window.getAuthToken = function() { return authToken; };
+    window.isAuthenticated = function() { return !!authToken; };
 })();
 </script>
 </body>

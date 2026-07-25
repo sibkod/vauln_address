@@ -161,7 +161,7 @@
 
         try {
             const headers = { 'Content-Type': 'application/json' };
-            const authToken = localStorage.getItem('authToken');
+            const authToken = window.getAuthToken ? window.getAuthToken() : null;
             if (authToken) {
                 headers['Authorization'] = 'Bearer ' + authToken;
             }
