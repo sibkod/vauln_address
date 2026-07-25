@@ -2,790 +2,371 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>{{.Title}} | Wallet Checker</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}} | WalletChecker</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-        body { min-height: 100vh; background: #0b0d11; background-image: radial-gradient(circle at 30% 20%, #171e2c, #05070a 95%); display: flex; flex-direction: column; align-items: center; padding: 0; }
-
-        .nav { width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 0.8rem 2rem; background: rgba(10, 14, 22, 0.8); backdrop-filter: blur(12px); border-bottom: 1px solid rgba(255,255,255,0.04); flex-wrap: wrap; gap: 0.5rem; position: sticky; top: 0; z-index: 50; }
-        .nav-brand { color: #f0f4ff; font-weight: 600; font-size: 1.2rem; letter-spacing: -0.02em; display: flex; align-items: center; gap: 0.5rem; }
-        .nav-brand span { color: #3b82f6; }
-        .nav-center { display: flex; align-items: center; gap: 0.3rem; background: rgba(18, 24, 36, 0.5); padding: 0.2rem; border-radius: 60px; border: 1px solid rgba(255,255,255,0.04); }
-        .nav-link { padding: 0.45rem 1.2rem; border-radius: 40px; color: #8892b0; font-size: 0.8rem; font-weight: 500; cursor: pointer; transition: 0.2s; border: none; background: transparent; letter-spacing: 0.01em; white-space: nowrap; text-decoration: none; }
-        .nav-link:hover { color: #c8d2e8; }
-        .nav-link.active { background: #3b82f6; color: white; box-shadow: 0 2px 12px #3b82f640; }
-        .nav-right { display: flex; align-items: center; gap: 0.5rem; }
-        .connect-btn { background: rgba(26, 34, 50, 0.7); border: 1px solid rgba(255,255,255,0.06); color: #e8edfc; padding: 0.5rem 1.2rem 0.5rem 1rem; border-radius: 60px; font-weight: 500; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; transition: 0.2s; }
-        .connect-btn:hover { background: rgba(40, 50, 70, 0.8); border-color: rgba(255,255,255,0.12); }
-        .connect-btn .dot { width: 8px; height: 8px; border-radius: 10px; background: #4f5b77; display: inline-block; transition: 0.2s; }
-        .connect-btn .dot.active { background: #34d399; box-shadow: 0 0 10px #34d39960; }
-        .connect-btn .addr-short { max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; color: #b0bbd6; font-size: 0.8rem; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         
-        /* Dropdown menu */
-        .wallet-dropdown { position: relative; display: inline-block; }
-        .wallet-dropdown-content { display: none; position: absolute; right: 0; top: 100%; background: rgba(18, 24, 36, 0.98) !important; border: 1px solid rgba(255,255,255,0.1) !important; border-radius: 12px !important; min-width: 180px; box-shadow: 0 8px 30px rgba(0,0,0,0.5); overflow: hidden; z-index: 1000 !important; margin-top: 8px; }
-        .wallet-dropdown-content.show { display: block !important; }
-        .wallet-dropdown-item { padding: 12px 16px; color: #c8d2e8; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; transition: 0.15s; text-decoration: none; }
-        .wallet-dropdown-item:hover { background: rgba(59, 130, 246, 0.15); color: #fff; }
-        .wallet-dropdown-item.danger { color: #ff6b6b; }
-        .wallet-dropdown-item.danger:hover { background: rgba(255, 59, 59, 0.15); }
-        .wallet-dropdown-divider { height: 1px; background: rgba(255,255,255,0.06); margin: 4px 0; }
-
-        .main-content { width: 100%; max-width: 700px; padding: 1.5rem 1.5rem 2rem; }
-
-        .footer { margin-top: 2rem; color: #3a4764; font-size: 0.75rem; letter-spacing: 0.02em; display: flex; justify-content: center; align-items: center; gap: 1.5rem; flex-wrap: wrap; }
-        .footer span { color: #5f6e91; }
-        .footer .counter { background: #181f30; padding: 0.15rem 0.9rem; border-radius: 40px; font-size: 0.7rem; color: #9aabcf; }
-
-        .toast { position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%); background: #1a2135; color: #e3e9fc; padding: 0.8rem 1.8rem; border-radius: 60px; font-size: 0.9rem; border: 1px solid rgba(255,255,255,0.06); box-shadow: 0 8px 30px rgba(0,0,0,0.6); opacity: 0; transition: opacity 0.3s ease; pointer-events: none; z-index: 999; backdrop-filter: blur(8px); }
-        .toast.show { opacity: 1; }
-
-        @media (max-width: 768px) {
-            .nav { flex-direction: column; padding: 0.6rem 1rem; }
-            .nav-center { flex-wrap: wrap; justify-content: center; border-radius: 60px; padding: 0.2rem 0.4rem; }
-            .nav-link { padding: 0.35rem 0.8rem; font-size: 0.7rem; }
-            .nav-right { width: 100%; justify-content: center; }
-            .main-content { padding: 1rem; }
+        :root {
+            --bg: #000;
+            --fg: #0ff;
+            --fg-dim: #088;
+            --border: #0ff;
+            --error: #f00;
         }
+        
+        body {
+            background: var(--bg);
+            color: var(--fg);
+            font-family: 'Courier New', monospace;
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+        
+        a { color: var(--fg); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        
+        /* NAV */
+        nav {
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .brand {
+            font-size: 1.1rem;
+            font-weight: bold;
+            letter-spacing: 0.1em;
+        }
+        
+        .brand::before { content: '['; color: var(--fg-dim); }
+        .brand::after { content: ']'; color: var(--fg-dim); }
+        
+        .nav-links {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+        
+        .nav-link {
+            padding: 0.4rem 0.8rem;
+            border: 1px solid transparent;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+        
+        .nav-link:hover, .nav-link.active {
+            border-color: var(--border);
+            text-decoration: none;
+        }
+        
+        /* MAIN */
+        main {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        h1 {
+            font-size: 1.5rem;
+            margin-bottom: 1.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        h2 { font-size: 1.1rem; margin-bottom: 1rem; }
+        h3 { font-size: 1rem; color: var(--fg-dim); margin-bottom: 0.5rem; }
+        p { margin-bottom: 1rem; color: #088; }
+        
+        /* BUTTONS */
+        .btn {
+            display: inline-block;
+            padding: 0.6rem 1.2rem;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--fg);
+            font-family: inherit;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn:hover {
+            background: var(--fg);
+            color: var(--bg);
+        }
+        
+        .btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+        
+        .btn:disabled:hover {
+            background: transparent;
+            color: var(--fg);
+        }
+        
+        /* INPUTS */
+        input, textarea, select {
+            background: var(--bg);
+            border: 1px solid var(--fg);
+            color: var(--fg);
+            padding: 0.6rem;
+            font-family: inherit;
+            font-size: 0.9rem;
+            width: 100%;
+            margin-bottom: 1rem;
+        }
+        
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            box-shadow: 0 0 0 1px var(--fg);
+        }
+        
+        /* CARDS */
+        .card {
+            border: 1px solid var(--border);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .card-header {
+            font-size: 0.8rem;
+            color: var(--fg-dim);
+            margin-bottom: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+        
+        /* TABLES */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 1rem;
+        }
+        
+        th, td {
+            text-align: left;
+            padding: 0.6rem;
+            border: 1px solid #222;
+        }
+        
+        th {
+            color: var(--fg-dim);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+        }
+        
+        /* STATUS BADGES */
+        .status {
+            display: inline-block;
+            padding: 0.2rem 0.5rem;
+            font-size: 0.75rem;
+            border: 1px solid;
+        }
+        
+        .status-hacked { border-color: var(--error); color: var(--error); }
+        .status-safe { border-color: #0f0; color: #0f0; }
+        .status-vulnerable { border-color: #ff0; color: #ff0; }
+        
+        /* FOOTER */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 1rem 2rem;
+            margin-top: 3rem;
+            font-size: 0.75rem;
+            color: var(--fg-dim);
+            text-align: center;
+        }
+        
+        /* GRID */
+        .grid {
+            display: grid;
+            gap: 1.5rem;
+        }
+        
+        .grid-2 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+        .grid-3 { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+        
+        /* MOBILE */
+        @media (max-width: 600px) {
+            nav { flex-direction: column; padding: 1rem; }
+            main { padding: 1rem; }
+            .nav-links { width: 100%; justify-content: center; }
+        }
+        
+        /* TOAST */
+        #toast {
+            position: fixed;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--bg);
+            border: 1px solid var(--border);
+            padding: 0.8rem 1.5rem;
+            font-size: 0.85rem;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 100;
+        }
+        #toast.show { opacity: 1; }
+        
+        /* CODE */
+        code {
+            background: #111;
+            padding: 0.1rem 0.3rem;
+            font-size: 0.85em;
+        }
+        
+        pre {
+            background: #111;
+            padding: 1rem;
+            overflow-x: auto;
+            border: 1px solid #222;
+            margin-bottom: 1rem;
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        
+        /* UTILS */
+        .text-dim { color: var(--fg-dim); }
+        .text-error { color: var(--error); }
+        .text-success { color: #0f0; }
+        .mb-0 { margin-bottom: 0; }
+        .mb-1 { margin-bottom: 0.5rem; }
+        .mb-2 { margin-bottom: 1rem; }
+        .mb-3 { margin-bottom: 1.5rem; }
     </style>
 </head>
 <body>
-<div class="toast" id="toast"></div>
+    <div id="toast"></div>
 
-<nav class="nav">
-    <a href="/" class="nav-brand">🔐 <span>Wallet</span>Checker</a>
-    <div class="nav-center">
-        <a href="/" class="nav-link {{if eq .ActivePage "home"}}active{{end}}">Home</a>
-        <a href="/roadmap" class="nav-link {{if eq .ActivePage "roadmap"}}active{{end}}">🗺️ Roadmap</a>
-        <a href="/about" class="nav-link {{if eq .ActivePage "about"}}active{{end}}">About</a>
-        {{if .IsAuthenticated}}
-        <a href="/api-docs" class="nav-link {{if eq .ActivePage "api"}}active{{end}}">🔌 API</a>
-        {{end}}
-        <a href="/support" class="nav-link {{if eq .ActivePage "support"}}active{{end}}">💎 Buy</a>
-    </div>
-    <div class="nav-right">
-        <div class="wallet-dropdown" id="walletDropdown" style="display: none;">
-            <button class="connect-btn" id="connectWalletBtn" onclick="toggleWalletMenu(event)">
-                <span class="dot active" id="connectDot"></span>
-                <span id="connectLabel"></span>
-                <span class="addr-short" id="connectAddressShort"></span>
-            </button>
-            <div class="wallet-dropdown-content" id="walletDropdownMenu">
-                <a href="/api-keys" class="wallet-dropdown-item">
-                    <span>🔑</span> API Keys
-                </a>
-                <div class="wallet-dropdown-divider"></div>
-                <div class="wallet-dropdown-item danger" onclick="handleLogout(event)">
-                    <span>🚪</span> Logout
-                </div>
-            </div>
+    <nav>
+        <a href="/" class="brand">WALLET_CHECKER</a>
+        <div class="nav-links">
+            <a href="/" class="nav-link {{if eq .ActivePage "home"}}active{{end}}">HOME</a>
+            <a href="/roadmap" class="nav-link {{if eq .ActivePage "roadmap"}}active{{end}}">ROADMAP</a>
+            <a href="/about" class="nav-link {{if eq .ActivePage "about"}}active{{end}}">ABOUT</a>
+            <a href="/support" class="nav-link {{if eq .ActivePage "support"}}active{{end}}">BUY</a>
+            {{if .IsAuthenticated}}
+            <a href="/api-keys" class="nav-link {{if eq .ActivePage "api-keys"}}active{{end}}">API</a>
+            {{end}}
         </div>
-        <button class="connect-btn" id="connectWalletBtnNotAuth">
-            <span class="dot" id="connectDotNotAuth"></span>
-            <span id="connectLabelNotAuth">Connect</span>
-        </button>
-    </div>
-</nav>
-
-<div class="main-content">
-    {{.Content}}
-</div>
-
-<div class="footer">
-    <span>⚡ Without connect — <span id="freeLimitDisplay">{{.FreeCheckLimit}}</span> check{{if ne .FreeCheckLimit 1}}s{{end}}</span>
-    <span class="counter" id="checkCounter">0 / {{.FreeCheckLimit}}</span>
-</div>
-
-<!-- Chain Selector Modal -->
-<div id="chainModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center;">
-    <div style="background: #1a2135; border-radius: 1rem; padding: 1.5rem; max-width: 400px; width: 90%; border: 1px solid rgba(255,255,255,0.1);">
-        <h3 style="color: #f0f4ff; margin-bottom: 1rem; text-align: center;">🔗 Connect Wallet</h3>
-        <p style="color: #9aabcf; font-size: 0.85rem; margin-bottom: 1rem; text-align: center;">Connect with Solana Testnet</p>
-        <div style="display: flex; flex-direction: column; gap: 0.8rem;">
-            <button onclick="selectChainAndConnect('solana')" style="background: rgba(18, 24, 36, 0.7); border: 1px solid rgba(255,255,255,0.1); color: #f0f4ff; padding: 1rem; border-radius: 0.8rem; cursor: pointer; display: flex; align-items: center; gap: 0.8rem; transition: 0.2s;">
-                <span style="width: 32px; height: 32px; background: linear-gradient(135deg, #9945FF, #14F195); border-radius: 50%;"></span>
-                <div style="text-align: left;">
-                    <div style="font-weight: 600;">Solana Testnet</div>
-                    <div style="color: #6d7da0; font-size: 0.75rem;">Phantom, Solflare</div>
-                </div>
-            </button>
-            <div style="text-align: center; color: #fbbf24; font-size: 0.8rem; margin-top: 0.5rem;">⚠️ Testnet only - no real funds</div>
+        <div>
+            <button class="btn" id="connectBtn" onclick="connectWallet()">CONNECT</button>
         </div>
-        <button onclick="closeChainModal()" style="width: 100%; margin-top: 1rem; background: transparent; border: 1px solid rgba(255,255,255,0.1); color: #9aabcf; padding: 0.7rem; border-radius: 0.6rem; cursor: pointer;">Cancel</button>
-    </div>
-</div>
+    </nav>
 
-<style>
-#chainModal button:hover { border-color: #3b82f6 !important; }
-</style>
+    <main>
+        {{.Content}}
+    </main>
+
+    <footer>
+        WALLET_CHECKER v1.0 // WITHOUT SEED PHRASES STORED
+    </footer>
 
 <script>
-// Buffer polyfill for Solana Web3.js
-(function() {
-    function BufferPolyfill(arr, enc) {
-        if (typeof arr === 'number') {
-            this.length = 8;
-            this.data = new Uint8Array(8);
-            var val = arr;
-            for (var i = 7; i >= 0; i--) {
-                this.data[i] = val & 0xff;
-                val = Math.floor(val / 256);
-            }
-        } else if (Array.isArray(arr)) {
-            this.length = arr.length;
-            this.data = new Uint8Array(arr);
-        } else if (arr instanceof Uint8Array) {
-            this.length = arr.length;
-            this.data = arr;
-        } else if (typeof arr === 'string') {
-            var enc2 = new TextEncoder().encode(arr);
-            this.length = enc2.length;
-            this.data = enc2;
-        } else {
-            this.length = 0;
-            this.data = new Uint8Array(0);
-        }
+// ========== WALLET ==========
+const SERVER_AUTH = {{.IsAuthenticated}};
+const SERVER_ADDRESS = "{{.UserAddress}}";
+let authToken = localStorage.getItem('authToken') || '';
+let connectedAddress = localStorage.getItem('walletAddress') || '';
+let isWalletConnected = false;
+let serverAuthenticated = SERVER_AUTH;
+let userBalance = {{.UserBalance}};
+
+function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+function getSolanaProvider() {
+    if (window.solana && window.solana.isConnected) return window.solana;
+    if (window.solana && window.solana.isPhantom) return window.solana;
+    return null;
+}
+
+function updateConnectUI() {
+    const btn = document.getElementById('connectBtn');
+    if (serverAuthenticated && connectedAddress) {
+        btn.textContent = connectedAddress.slice(0, 6) + '...';
+        btn.onclick = () => logout();
+    } else {
+        btn.textContent = 'CONNECT';
+        btn.onclick = () => connectWallet();
     }
-    BufferPolyfill.prototype.writeBigInt64LE = function(val, offset) {
-        offset = offset || 0;
-        var v = typeof val === 'bigint' ? val : BigInt(val);
-        for (var i = 0; i < 8; i++) {
-            this.data[offset + i] = Number(v & BigInt(0xff));
-            v = v >> BigInt(8);
-        }
-    };
-    BufferPolyfill.prototype.reverse = function() {
-        this.data.reverse();
-        return this;
-    };
-    BufferPolyfill.prototype.slice = function(start, end) {
-        return new BufferPolyfill(this.data.slice(start, end));
-    };
-    BufferPolyfill.prototype.toString = function(enc, start, end) {
-        if (enc === 'hex') {
-            return Array.from(this.data.slice(start || 0, end || this.data.length).values())
-                .map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
-        }
-        return new TextDecoder().decode(this.data.slice(start || 0, end || this.data.length));
-    };
-    BufferPolyfill.from = function(arr, enc) {
-        if (arr instanceof BufferPolyfill) return arr;
-        if (typeof arr === 'string') return new BufferPolyfill(arr);
-        if (Array.isArray(arr)) return new BufferPolyfill(arr);
-        if (arr instanceof Uint8Array) return new BufferPolyfill(arr);
-        return new BufferPolyfill(0);
-    };
-    BufferPolyfill.alloc = function(size, fill, enc) {
-        var buf = new BufferPolyfill(size);
-        if (fill !== undefined) {
-            if (typeof fill === 'number') buf.data.fill(fill);
-            else if (typeof fill === 'string') {
-                var s = new TextEncoder().encode(fill);
-                buf.data.set(s);
-                buf.length = s.length;
-            }
-        }
-        return buf;
-    };
-    BufferPolyfill.allocUnsafe = function(size) { return new BufferPolyfill(size); };
-    BufferPolyfill.byteLength = function(str) { return new TextEncoder().encode(str).length; };
-    BufferPolyfill.concat = function(list, len) {
-        var total = 0;
-        list.forEach(function(b) { total += b.length; });
-        var result = new Uint8Array(total);
-        var pos = 0;
-        list.forEach(function(b) {
-            result.set(b.data || b, pos);
-            pos += b.length;
+}
+
+async function connectWallet() {
+    const provider = getSolanaProvider();
+    if (!provider) {
+        showToast('Install Phantom wallet first');
+        return;
+    }
+    try {
+        const resp = await provider.connect();
+        connectedAddress = resp.publicKey.toString();
+        localStorage.setItem('walletAddress', connectedAddress);
+        isWalletConnected = true;
+        
+        // Auth with backend
+        const nonceRes = await fetch('/api/auth/nonce?address=' + connectedAddress + '&chain=solana');
+        const { message } = await nonceRes.json();
+        const encoder = new TextEncoder();
+        const sig = await provider.signMessage(encoder.encode(message));
+        const sigHex = Array.from(sig.signature).map(b => b.toString(16).padStart(2,'0')).join('');
+        
+        const loginRes = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ address: connectedAddress, signature: sigHex, message, chain: 'solana' })
         });
-        return new BufferPolyfill(result);
-    };
-    BufferPolyfill.isBuffer = function(obj) { return obj instanceof BufferPolyfill; };
-    Object.defineProperty(BufferPolyfill.prototype, 'length', {
-        get: function() { return this.data ? this.data.length : 0; },
-        set: function(v) { if (this.data) this.data.length = v; }
-    });
-    
-    // Install before Solana Web3.js loads
-    window.Buffer = BufferPolyfill;
-    console.log('Buffer polyfill ready');
-})();
-</script>
-<!-- Solana Web3.js loaded dynamically -->
-<script>
-// Load Solana Web3.js and wait for it to set window.solanaWeb3
-(function() {
-    function checkSolanaWeb3() {
-        if (window.solanaWeb3 && window.solanaWeb3.Transaction) {
-            console.log('Solana Web3.js loaded from CDN');
-            return true;
+        const loginData = await loginRes.json();
+        if (loginData.token) {
+            authToken = loginData.token;
+            localStorage.setItem('authToken', authToken);
+            serverAuthenticated = true;
+            userBalance = loginData.user?.balance || 0;
         }
-        return false;
-    }
-    
-    if (checkSolanaWeb3()) return;
-    
-    // Dynamically load the script
-    var script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/npm/@solana/web3.js@1.95.8/lib/index.iife.min.js';
-    script.onload = function() {
-        console.log('Solana Web3.js script loaded');
-    };
-    script.onerror = function() {
-        console.error('Failed to load Solana Web3.js from jsdelivr');
-    };
-    document.head.appendChild(script);
-})();
-</script>
-<script>
-// Wait for any Solana wallet to provide solanaWeb3
-window.waitForSolanaWeb3 = function() {
-    return new Promise(function(resolve) {
-        // Check all possible wallet providers
-        function checkWallets() {
-            // First check if we loaded it from CDN
-            if (window.solanaWeb3 && window.solanaWeb3.Transaction) {
-                return window.solanaWeb3;
-            }
-            // Phantom - check multiple possible locations
-            if (window.phantom?.solana?.provider?.solanaWeb3) {
-                return window.phantom.solana.provider.solanaWeb3;
-            }
-            if (window.phantom?.provider?.solanaWeb3) {
-                return window.phantom.provider.solanaWeb3;
-            }
-            // Solflare
-            if (window.solflare?.solana?.provider?.solanaWeb3) {
-                return window.solflare.solana.provider.solanaWeb3;
-            }
-            if (window.solflare?.provider?.solanaWeb3) {
-                return window.solflare.provider.solanaWeb3;
-            }
-            // Backpack
-            if (window.backpack?.solana?.provider?.solanaWeb3) {
-                return window.backpack.solana.provider.solanaWeb3;
-            }
-            return null;
-        }
-        
-        var result = checkWallets();
-        if (result) {
-            resolve(result);
-            return;
-        }
-        
-        var attempts = 0;
-        var interval = setInterval(function() {
-            attempts++;
-            result = checkWallets();
-            if (result) {
-                clearInterval(interval);
-                resolve(result);
-            } else if (attempts > 50) {
-                clearInterval(interval);
-                resolve(null);
-            }
-        }, 100);
-    });
-};
-</script>
-<script>
-(function() {
-    const SERVER_AUTH = {{if .IsAuthenticated}}true{{else}}false{{end}};
-    const SERVER_ADDRESS = "{{.UserAddress}}";
-    const FREE_CHECK_LIMIT = {{.FreeCheckLimit}};
-    
-    const freeLimitDisplay = document.getElementById('freeLimitDisplay');
-    if (freeLimitDisplay) freeLimitDisplay.textContent = FREE_CHECK_LIMIT;
-
-    let isWalletConnected = false;
-    let connectedAddress = '';
-    let selectedChain = 'solana';
-    let freeCheckUsed = localStorage.getItem('freeCheckUsed') === 'true';
-    let authToken = localStorage.getItem('authToken');
-    let serverAuthenticated = SERVER_AUTH;
-    let userBalance = {{.UserBalance}};
-
-    const connectBtn = document.getElementById('connectWalletBtn');
-    const connectDot = document.getElementById('connectDot');
-    const connectLabel = document.getElementById('connectLabel');
-    const connectAddressShort = document.getElementById('connectAddressShort');
-    const connectWalletBtnNotAuth = document.getElementById('connectWalletBtnNotAuth');
-    const walletDropdown = document.getElementById('walletDropdown');
-    const walletDropdownMenu = document.getElementById('walletDropdownMenu');
-    const logoutBtn = document.getElementById('logoutBtn');
-    const checkCounter = document.getElementById('checkCounter');
-    const toast = document.getElementById('toast');
-
-    function showToast(message) {
-        toast.textContent = message;
-        toast.classList.add('show');
-        clearTimeout(toast._timeout);
-        toast._timeout = setTimeout(() => toast.classList.remove('show'), 4000);
-    }
-
-    // Chain selector modal functions
-    window.showChainModal = function() {
-        document.getElementById('chainModal').style.display = 'flex';
-    };
-
-    window.closeChainModal = function() {
-        document.getElementById('chainModal').style.display = 'none';
-    };
-
-    window.selectChainAndConnect = async function(chain) {
-        selectedChain = chain;
-        closeChainModal();
-        await connectSolana();
-    };
-
-    // Helper to find any available Solana wallet
-    function getSolanaProvider() {
-        // Check all known Solana wallet providers
-        const providers = [
-            window.phantom?.solana,
-            window.solflare,
-            window.backpack?.solana,
-            window.coinbase?.solana,
-            window.clover?.solana,
-            window.figment?.solana,
-            window.slope?.solana,
-            window.hydrogen?.solana,
-            window.owallet?.solana,
-            window.safa?.solana,
-        ];
-        
-        for (const provider of providers) {
-            if (provider && (provider.isConnected || provider.publicKey)) {
-                return provider;
-            }
-        }
-        
-        // Also try to detect any provider with connect method
-        for (const key of Object.keys(window)) {
-            const obj = window[key];
-            if (obj && typeof obj === 'object' && obj.solana && typeof obj.solana.connect === 'function') {
-                return obj.solana;
-            }
-        }
-        
-        return null;
-    }
-
-    async function connectSolana() {
-        showToast('🔗 Connecting to Solana...');
-        try {
-            const provider = getSolanaProvider();
-            
-            if (!provider) {
-                showToast('⚠️ No Solana wallet found. Please install Phantom or another Solana wallet.');
-                return;
-            }
-            
-            const resp = await provider.connect();
-            connectedAddress = resp.publicKey?.toString() || resp;
-            
-            // Authenticate FIRST - don't show address until auth is complete
-            const authSuccess = await authenticateWithBackend(connectedAddress, provider);
-            
-            if (authSuccess) {
-                // Only save and show after successful auth
-                isWalletConnected = true;
-                localStorage.setItem('walletConnected', 'true');
-                localStorage.setItem('walletAddress', connectedAddress);
-                localStorage.setItem('walletChain', 'solana');
-                
-                updateConnectUI();
-                updateCounter();
-                document.dispatchEvent(new CustomEvent('walletAuthenticated'));
-                showToast('🔐 Authenticated! Balance: ' + userBalance + ' checks');
-            } else {
-                // Auth failed - disconnect wallet and clear
-                connectedAddress = '';
-                isWalletConnected = false;
-                localStorage.removeItem('walletConnected');
-                localStorage.removeItem('walletAddress');
-                localStorage.removeItem('walletChain');
-                updateConnectUI();
-            }
-        } catch (error) {
-            console.error('Solana connection error:', error);
-            if (error.message?.includes('user rejected') || error.message?.includes('User rejected')) {
-                showToast('❌ Connection cancelled');
-            } else {
-                showToast('❌ Failed to connect wallet');
-            }
-            // Clear on error too
-            connectedAddress = '';
-            isWalletConnected = false;
-            updateConnectUI();
-        }
-    }
-
-    function updateConnectUI() {
-        console.log('updateConnectUI called:', { serverAuthenticated, connectedAddress, isWalletConnected });
-        
-        // Show address if authenticated OR wallet is connected
-        const displayAddress = serverAuthenticated ? (connectedAddress || SERVER_ADDRESS) : connectedAddress;
-        console.log('displayAddress:', displayAddress);
-        
-        if (displayAddress) {
-            console.log('Showing authenticated UI with address:', displayAddress);
-            // Show dropdown menu with address
-            walletDropdown.style.display = 'inline-block';
-            connectWalletBtnNotAuth.style.display = 'none';
-            connectAddressShort.textContent = displayAddress.slice(0,6) + '...' + displayAddress.slice(-4);
-            if (connectDot) connectDot.classList.add('active');
-        } else {
-            console.log('Showing connect button');
-            // Show simple connect button
-            walletDropdown.style.display = 'none';
-            connectWalletBtnNotAuth.style.display = 'inline-flex';
-        }
-    }
-    
-    // Wallet dropdown menu functions
-    window.toggleWalletMenu = function(e) {
-        if (e) e.stopPropagation();
-        const isShown = walletDropdownMenu.style.display === 'block';
-        console.log('toggleWalletMenu called, current display:', walletDropdownMenu.style.display);
-        
-        if (isShown) {
-            walletDropdownMenu.style.display = 'none';
-        } else {
-            walletDropdownMenu.style.display = 'block';
-            walletDropdownMenu.style.position = 'absolute';
-            walletDropdownMenu.style.right = '0';
-            walletDropdownMenu.style.top = '100%';
-            walletDropdownMenu.style.background = 'rgba(18, 24, 36, 0.98)';
-            walletDropdownMenu.style.border = '1px solid rgba(255,255,255,0.1)';
-            walletDropdownMenu.style.borderRadius = '12px';
-            walletDropdownMenu.style.minWidth = '180px';
-            walletDropdownMenu.style.zIndex = '1000';
-        }
-    };
-    
-    window.handleLogout = function(e) {
-        if (e) e.stopPropagation();
-        walletDropdownMenu.style.display = 'none';
-        logout();
-    };
-    
-    // Close dropdown when clicking outside
-    document.addEventListener('click', function(e) {
-        if (walletDropdown && walletDropdownMenu && !walletDropdown.contains(e.target)) {
-            walletDropdownMenu.style.display = 'none';
-        }
-    });
-    
-    // Auto-reconnect Phantom wallet if previously connected
-    async function tryAutoReconnect() {
-        const storedAddress = localStorage.getItem('walletAddress');
-        const storedConnected = localStorage.getItem('walletConnected');
-        
-        if (storedConnected === 'true' && storedAddress && serverAuthenticated) {
-            console.log('Attempting auto-reconnect to Phantom...');
-            const provider = getSolanaProvider();
-            if (provider) {
-                try {
-                    const resp = await provider.connect({ onlyIfTrusted: true });
-                    connectedAddress = resp.publicKey?.toString() || resp;
-                    isWalletConnected = true;
-                    console.log('Auto-reconnected, address:', connectedAddress);
-                    updateConnectUI();
-                } catch (e) {
-                    console.log('Auto-reconnect skipped (user rejected or not trusted)');
-                    // Keep showing the address from localStorage
-                }
-            }
-        }
-    }
-
-    function updateCounter() {
-        if (serverAuthenticated) {
-            checkCounter.textContent = userBalance + ' credits';
-        } else if (isWalletConnected) {
-            checkCounter.textContent = '∞ / ∞ (not authed)';
-        } else {
-            const remaining = freeCheckUsed ? 0 : FREE_CHECK_LIMIT;
-            checkCounter.textContent = remaining + ' / ' + FREE_CHECK_LIMIT;
-        }
-    }
-
-    // Validate session with backend
-    async function validateSession() {
-        if (!authToken) {
-            return false;
-        }
-        
-        try {
-            const res = await fetch('/api/user/profile', {
-                headers: { 'Authorization': 'Bearer ' + authToken }
-            });
-            
-            if (res.ok) {
-                const data = await res.json();
-                userBalance = (data.user && data.user.balance) || 0;
-                return true;
-            } else {
-                // Token invalid or expired - clear localStorage
-                clearAuthData();
-                return false;
-            }
-        } catch (error) {
-            console.error('Session validation failed:', error);
-            return false;
-        }
-    }
-
-    function clearAuthData() {
-        localStorage.removeItem('authToken');
-        authToken = null;
-        serverAuthenticated = false;
-        userBalance = 0;
-    }
-
-    window.logout = async function() {
-        // Close any modals
-        closeChainModal();
-        if (walletDropdownMenu) {
-            walletDropdownMenu.classList.remove('show');
-        }
-        
-        // Disconnect from wallet if possible
-        const provider = getSolanaProvider();
-        if (provider && provider.isConnected) {
-            try {
-                await provider.disconnect();
-            } catch (e) {
-                console.log('Wallet disconnect error:', e);
-            }
-        }
-        
-        // Clear local state
-        clearAuthData();
-        localStorage.removeItem('walletConnected');
-        localStorage.removeItem('walletAddress');
-        localStorage.removeItem('walletChain');
-        localStorage.removeItem('freeCheckUsed');
-        isWalletConnected = false;
-        connectedAddress = '';
-        freeCheckUsed = false;
-        serverAuthenticated = false;
-        
-        showToast('👋 Wallet disconnected');
         updateConnectUI();
-        updateCounter();
-    };
-
-    // Restore wallet state from localStorage
-    async function restoreWalletState() {
-        const storedConnected = localStorage.getItem('walletConnected');
-        const storedAddress = localStorage.getItem('walletAddress');
-        
-        console.log('Restoring wallet state:', { storedConnected, storedAddress, hasAuthToken: !!authToken });
-        
-        // Always restore stored address for display purposes
-        if (storedAddress) {
-            connectedAddress = storedAddress;
-            console.log('Restored address from localStorage:', connectedAddress);
-        }
-        
-        if (storedConnected === 'true' && storedAddress) {
-            isWalletConnected = true;
-            console.log('Wallet was connected, address:', connectedAddress);
-        }
-        
-        // Check if we have a token to validate
-        if (authToken) {
-            const valid = await validateSession();
-            if (valid) {
-                // Token is valid - mark as authenticated
-                serverAuthenticated = true;
-                console.log('Token valid, serverAuthenticated:', serverAuthenticated);
-                // Use server address if we don't have a stored address
-                if (!connectedAddress && SERVER_ADDRESS) {
-                    connectedAddress = SERVER_ADDRESS;
-                }
-                // Mark wallet as connected for UI purposes
-                if (connectedAddress) {
-                    isWalletConnected = true;
-                }
-            } else {
-                // Token invalid or expired - clear localStorage
-                clearAuthData();
-                serverAuthenticated = false;
-                isWalletConnected = false;
-                connectedAddress = '';
-                console.log('Token invalid, cleared');
-            }
-        } else if (connectedAddress) {
-            // No token but we have address - might be Phantom disconnected
-            // Keep address for display but don't mark as connected
-            isWalletConnected = false;
-        }
-        
-        console.log('Final state:', { isWalletConnected, connectedAddress, serverAuthenticated });
+        showToast('Connected: ' + connectedAddress.slice(0, 8) + '...');
+    } catch (e) {
+        showToast('Error: ' + e.message);
     }
+}
 
-    async function authenticateWithBackend(address, provider) {
-        try {
-            // 1. Get nonce from backend
-            const nonceRes = await fetch('/api/auth/nonce?address=' + address + '&chain=solana');
-            const nonceData = await nonceRes.json();
-            
-            if (nonceData.error) {
-                showToast('❌ Failed to get nonce');
-                return false;
-            }
+function logout() {
+    localStorage.removeItem('walletAddress');
+    localStorage.removeItem('authToken');
+    connectedAddress = '';
+    authToken = '';
+    isWalletConnected = false;
+    serverAuthenticated = false;
+    updateConnectUI();
+    showToast('Disconnected');
+}
 
-            // 2. Sign the message with wallet
-            const message = nonceData.message;
-            let signature;
-            
-            if (provider) {
-                // Solana wallet - encode message to bytes and sign
-                const encoder = new TextEncoder();
-                const messageBytes = encoder.encode(message);
-                let sig = await provider.signMessage(messageBytes);
-                
-                // Handle different wallet signature formats
-                if (typeof sig === 'string') {
-                    // Some wallets return base58 encoded string
-                    signature = sig;
-                } else if (sig && sig.signature) {
-                    // Some wallets return { signature: Uint8Array }
-                    sig = sig.signature;
-                    signature = Array.from(sig).map(b => b.toString(16).padStart(2, '0')).join('');
-                } else if (sig instanceof Uint8Array) {
-                    // Standard Uint8Array format
-                    signature = Array.from(sig).map(b => b.toString(16).padStart(2, '0')).join('');
-                } else {
-                    signature = sig.toString('hex');
-                }
-            } else if (window.ethereum) {
-                // EVM wallet fallback
-                signature = await window.ethereum.request({
-                    method: 'personal_sign',
-                    params: [message, address]
-                });
-            } else {
-                showToast('❌ No wallet available to sign');
-                return false;
-            }
+// Init
+updateConnectUI();
+if (connectedAddress && window.solana?.isConnected) {
+    isWalletConnected = true;
+    updateConnectUI();
+}
 
-            // 3. Send signature to backend and get JWT
-            const loginBody = {
-                address: address,
-                signature: signature,
-                message: message,
-                chain: 'solana'
-            };
-            console.log('Auth request:', loginBody);
-            
-            const loginRes = await fetch('/api/auth/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(loginBody)
-            });
-            const loginData = await loginRes.json();
-            console.log('Auth response:', loginData);
-
-            if (loginData.token) {
-                authToken = loginData.token;
-                localStorage.setItem('authToken', authToken);
-                serverAuthenticated = true;
-                userBalance = (loginData.user && loginData.user.balance) || 0;
-                return true;
-            } else if (loginData.error) {
-                const errMsg = loginData.detail || loginData.error;
-                showToast('❌ Auth failed: ' + errMsg);
-                console.error('Auth error:', loginData);
-                return false;
-            } else {
-                showToast('❌ Auth failed: Unknown response');
-                console.error('Auth failed - unknown response:', loginData);
-                return false;
-            }
-        } catch (error) {
-            console.error('Auth error:', error);
-            showToast('❌ Auth error: ' + (error.message || 'Unknown'));
-            return false;
-        }
-    }
-
-    async function connectWallet() {
-        // If wallet already connected, skip modal
-        if (isWalletConnected && connectedAddress) {
-            return;
-        }
-        // Show chain selector modal first
-        showChainModal();
-    }
-
-    // Listen for account changes in MetaMask
-    if (typeof window.ethereum !== 'undefined') {
-        window.ethereum.on('accountsChanged', function(accounts) {
-            if (accounts.length === 0) {
-                logout();
-            } else if (accounts[0] !== connectedAddress) {
-                connectedAddress = accounts[0];
-                localStorage.setItem('walletAddress', connectedAddress);
-                // Re-authenticate with new address
-                const provider = getSolanaProvider();
-                authenticateWithBackend(connectedAddress, provider).then(success => {
-                    if (success) {
-                        showToast('✅ Re-authenticated with new address');
-                    }
-                });
-                updateConnectUI();
-            }
-        });
-    }
-
-    connectBtn.addEventListener('click', function(e) {
-        if (isWalletConnected && connectedAddress) {
-            // Toggle dropdown if wallet is connected
-            e.stopPropagation();
-            walletDropdownMenu.classList.toggle('show');
-        } else {
-            // Show chain selector modal
-            connectWallet();
-        }
-    });
-    if (connectWalletBtnNotAuth) {
-        connectWalletBtnNotAuth.addEventListener('click', connectWallet);
-    }
-
-    // Initialize
-    console.log('Initial state:', { SERVER_AUTH, SERVER_ADDRESS, hasAuthToken: !!authToken });
-    restoreWalletState().then(() => {
-        console.log('After restore:', { serverAuthenticated, connectedAddress, isWalletConnected });
-        updateConnectUI();
-        updateCounter();
-        // Try to auto-reconnect Phantom after restoring state
-        setTimeout(tryAutoReconnect, 500);
-    });
-
-    // Re-export for pages
-    window.showToast = showToast;
-    window.isWalletConnected = function() { return isWalletConnected; };
-    window.getConnectedAddress = function() { return connectedAddress; };
-    window.updateCounter = updateCounter;
-    window.setFreeCheckUsed = function(v) { 
-        freeCheckUsed = v; 
-        localStorage.setItem('freeCheckUsed', v ? 'true' : 'false');
-        updateCounter();
-    };
-    window.getFreeCheckUsed = function() { return freeCheckUsed; };
-    window.getAuthToken = function() { return authToken || localStorage.getItem('authToken'); };
-    window.isAuthenticated = function() { 
-        return serverAuthenticated || !!localStorage.getItem('authToken'); 
-    };
-    window.getUserBalance = function() { return userBalance; };
-    window.getSolanaProvider = getSolanaProvider;
-})();
+window.showToast = showToast;
+window.connectWallet = connectWallet;
+window.logout = logout;
+window.getAuthToken = () => authToken;
+window.isAuthenticated = () => serverAuthenticated;
 </script>
 </body>
 </html>

@@ -1,60 +1,39 @@
-{{define "about"}}
-<style>
-.about-content { background: rgba(14, 19, 29, 0.5); backdrop-filter: blur(6px); border-radius: 1.5rem; padding: 2rem; border: 1px solid rgba(255,255,255,0.04); }
-.about-content h2 { color: #f0f4ff; font-size: 1.6rem; font-weight: 600; margin-bottom: 1rem; letter-spacing: -0.02em; }
-.about-content p { color: #9aabcf; line-height: 1.7; margin-bottom: 1rem; font-size: 0.95rem; }
-.about-content .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem; margin: 1.5rem 0; }
-.about-content .stat-card { background: rgba(18, 24, 36, 0.5); padding: 1rem; border-radius: 1rem; text-align: center; border: 1px solid rgba(255,255,255,0.04); }
-.about-content .stat-card .number { color: #f0f4ff; font-size: 1.8rem; font-weight: 700; display: block; }
-.about-content .stat-card .label { color: #6d7da0; font-size: 0.75rem; margin-top: 0.2rem; }
-.about-content .feature-list { list-style: none; padding: 0; margin: 1rem 0; }
-.about-content .feature-list li { color: #b0bbd6; padding: 0.5rem 0; border-bottom: 1px solid rgba(255,255,255,0.04); display: flex; align-items: center; gap: 0.8rem; }
-.about-content .feature-list li:last-child { border-bottom: none; }
-.about-content .feature-list .icon { font-size: 1.2rem; }
-.about-content h3 { color: #e3e9fc; font-size: 1rem; margin: 1.5rem 0 0.5rem; }
-.about-content .disclaimer { margin-top: 1.5rem; font-size: 0.85rem; color: #6d7da0; padding: 1rem; background: rgba(18, 24, 36, 0.5); border-radius: 1rem; border: 1px solid rgba(255,255,255,0.04); }
-@media (max-width: 768px) { .about-content { padding: 1.2rem; } .about-content h2 { font-size: 1.3rem; } .about-content .stats { grid-template-columns: 1fr 1fr; } }
-</style>
+{{define "content"}}
+<h1>// ABOUT</h1>
+<p class="text-dim mb-3">Wallet security checker service.</p>
 
-<div class="about-content">
-    <h2>About This Project</h2>
-    <p><strong>Wallet Checker</strong> is a multi-chain security tool designed to help you verify if a wallet address has been compromised across multiple blockchains.</p>
-
-    <div class="stats">
-        <div class="stat-card"><span class="number" id="statTotal">0</span><span class="label">Total Wallets</span></div>
-        <div class="stat-card"><span class="number" id="statHacked">0</span><span class="label">Hacked</span></div>
-        <div class="stat-card"><span class="number" id="statVulnerable">0</span><span class="label">Vulnerable</span></div>
-        <div class="stat-card"><span class="number" id="statSafe">0</span><span class="label">Safe</span></div>
-    </div>
-
-    <h3>Supported Chains</h3>
-    <ul class="feature-list">
-        <li><span class="icon">🟣</span> <strong>EVM</strong> — Ethereum, Polygon, BSC, Arbitrum, Optimism, and more</li>
-        <li><span class="icon">🟠</span> <strong>Bitcoin</strong> — BTC and all UTXO-based chains</li>
-        <li><span class="icon">🟢</span> <strong>Solana</strong> — High-performance layer 1 blockchain</li>
-        <li><span class="icon">🔵</span> <strong>Sui</strong> — Move-based layer 1 blockchain</li>
-        <li><span class="icon">🔴</span> <strong>Tron</strong> — High-throughput blockchain</li>
+<div class="card mb-2">
+    <div class="card-header">WHAT WE DO</div>
+    <p>We check if wallet addresses have been compromised by searching through:</p>
+    <ul style="color: #088; padding-left: 1.5rem; margin-top: 0.5rem;">
+        <li>Public data breaches</li>
+        <li>GitHub commits with exposed keys</li>
+        <li>Pastebin and similar dumps</li>
+        <li>Social media posts</li>
     </ul>
-
-    <div class="disclaimer">
-        <strong>⚠️ Disclaimer:</strong> This tool is for educational and security awareness purposes only. Always verify information through multiple sources before making security decisions.
-    </div>
 </div>
 
-<script>
-fetch('/api/recent').then(r => r.json()).then(data => {
-    const total = data.checks ? data.checks.length : 0;
-    const hacked = data.checks ? data.checks.filter(c => c.status === 'hacked').length : 0;
-    const vulnerable = data.checks ? data.checks.filter(c => c.status === 'vulnerable').length : 0;
-    document.getElementById('statTotal').textContent = total;
-    document.getElementById('statHacked').textContent = hacked;
-    document.getElementById('statVulnerable').textContent = vulnerable;
-    document.getElementById('statSafe').textContent = total - hacked - vulnerable;
-}).catch(() => {
-    document.getElementById('statTotal').textContent = '1,000+';
-    document.getElementById('statHacked').textContent = '500+';
-    document.getElementById('statVulnerable').textContent = '300+';
-    document.getElementById('statSafe').textContent = '200+';
-});
-</script>
+<div class="card mb-2">
+    <div class="card-header">HOW IT WORKS</div>
+    <p class="mb-0">
+        When you check a wallet, we compare the address against our database of known compromised wallets.
+        If found, we show you the status and potential exposure sources.
+    </p>
+</div>
+
+<div class="card mb-2">
+    <div class="card-header">PRIVACY</div>
+    <p class="mb-0">
+        We do <strong>NOT</strong> store seed phrases or private keys.
+        Our database only contains addresses that have been publicly leaked,
+        linked to their source and discovery date.
+    </p>
+</div>
+
+<div class="card">
+    <div class="card-header">SUPPORT</div>
+    <p class="mb-0">
+        For questions or issues: <a href="/contact">Contact form</a>
+    </p>
+</div>
 {{end}}
