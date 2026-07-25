@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 
 	"vauln-address/internal/config"
@@ -463,7 +463,7 @@ func (r *Repository) GetOrCreateUser(address, chain string) (*models.User, error
 
 func (r *Repository) UpsertUserNonce(address, chain, nonce string) error {
 	ctx := context.Background()
-	
+
 	var err error
 	if r.dbType == config.DBTypeSQLite {
 		_, err = r.db.ExecContext(ctx,
@@ -621,25 +621,17 @@ func (r *Repository) CancelOrder(ctx context.Context, orderUUID string) error {
 // GetOrderByTxHash finds an order by its transaction hash
 func (r *Repository) GetOrderByTxHash(ctx context.Context, txHash string) (*models.Order, error) {
 	var order models.Order
-	var txHashNull sql.NullString
-	var updatedAtNull sql.NullTime
 	err := r.db.QueryRowContext(ctx,
 		`SELECT id, user_id, order_uuid, status, checks_count, total_usd, currency, token_amount, payment_address, tx_hash, created_at, updated_at
 		FROM orders WHERE tx_hash = ? LIMIT 1`,
 		txHash,
-	).Scan(&order.ID, &order.UserID, &order.UUID, &order.Status, &order.ChecksCount, &order.TotalUSD, &order.Currency, &order.TokenAmount, &order.PaymentAddress, &txHashNull, &order.CreatedAt, &updatedAtNull)
+	).Scan(&order.ID, &order.UserID, &order.OrderUUID, &order.Status, &order.ChecksCount, &order.TotalUSD, &order.Currency, &order.TokenAmount, &order.PaymentAddress, &order.TxHash, &order.CreatedAt, &order.UpdatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
-	}
-	if txHashNull.Valid {
-		order.TxHash = txHashNull.String
-	}
-	if updatedAtNull.Valid {
-		order.UpdatedAt = updatedAtNull.Time
 	}
 	return &order, nil
 }
@@ -647,25 +639,17 @@ func (r *Repository) GetOrderByTxHash(ctx context.Context, txHash string) (*mode
 // GetPendingOrderByUser finds a pending order for a user
 func (r *Repository) GetPendingOrderByUser(ctx context.Context, userID int64) (*models.Order, error) {
 	var order models.Order
-	var txHashNull sql.NullString
-	var updatedAtNull sql.NullTime
 	err := r.db.QueryRowContext(ctx,
 		`SELECT id, user_id, order_uuid, status, checks_count, total_usd, currency, token_amount, payment_address, tx_hash, created_at, updated_at
 		FROM orders WHERE user_id = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1`,
 		userID,
-	).Scan(&order.ID, &order.UserID, &order.UUID, &order.Status, &order.ChecksCount, &order.TotalUSD, &order.Currency, &order.TokenAmount, &order.PaymentAddress, &txHashNull, &order.CreatedAt, &updatedAtNull)
+	).Scan(&order.ID, &order.UserID, &order.OrderUUID, &order.Status, &order.ChecksCount, &order.TotalUSD, &order.Currency, &order.TokenAmount, &order.PaymentAddress, &order.TxHash, &order.CreatedAt, &order.UpdatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
-	}
-	if txHashNull.Valid {
-		order.TxHash = txHashNull.String
-	}
-	if updatedAtNull.Valid {
-		order.UpdatedAt = updatedAtNull.Time
 	}
 	return &order, nil
 }

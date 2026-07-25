@@ -45,7 +45,7 @@ func main() {
 	router.Use(middleware.AuthMiddleware(authService))
 
 	// Serve React frontend from frontend/dist
-	frontendDist := "../frontend/dist"
+	frontendDist := "./frontend/dist"
 	if _, err := os.Stat(frontendDist); err == nil {
 		router.Static("/assets", frontendDist+"/assets")
 		router.GET("/", func(c *gin.Context) {

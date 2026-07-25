@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -24,16 +25,16 @@ func contains(s, substr string) bool {
 }
 
 type Handler struct {
-	repo       *repository.Repository
+	repo        *repository.Repository
 	authService *auth.AuthService
-	serverCfg  *config.Config
+	serverCfg   *config.Config
 }
 
 func New(repo *repository.Repository, serverCfg *config.Config) *Handler {
 	return &Handler{
-		repo:       repo,
+		repo:        repo,
 		authService: auth.NewAuthService(repo),
-		serverCfg:  serverCfg,
+		serverCfg:   serverCfg,
 	}
 }
 
@@ -82,7 +83,7 @@ func (h *Handler) GetNonce(c *gin.Context) {
 	}
 
 	// Create the message to sign
-	message := fmt.Sprintf("Sign this message to authenticate with Vauln Address.\n\nNonce: %s\nTimestamp: %d", 
+	message := fmt.Sprintf("Sign this message to authenticate with Vauln Address.\n\nNonce: %s\nTimestamp: %d",
 		nonce, time.Now().Unix())
 
 	c.JSON(http.StatusOK, models.NonceResponse{
@@ -96,8 +97,8 @@ func (h *Handler) Authenticate(c *gin.Context) {
 	var req models.AuthRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid request body",
-			"code":  "INVALID_REQUEST",
+			"error":  "invalid request body",
+			"code":   "INVALID_REQUEST",
 			"detail": err.Error(),
 		})
 		return
@@ -138,13 +139,13 @@ func (h *Handler) GetUserProfile(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"user": gin.H{
-			"id":              user.ID,
-			"wallet_address":  user.WalletAddress,
-			"chain":           user.Chain,
-			"balance":         user.Balance,
-			"is_premium":      user.Balance > 10,
-			"created_at":      user.CreatedAt,
-			"last_login_at":   user.LastLoginAt,
+			"id":             user.ID,
+			"wallet_address": user.WalletAddress,
+			"chain":          user.Chain,
+			"balance":        user.Balance,
+			"is_premium":     user.Balance > 10,
+			"created_at":     user.CreatedAt,
+			"last_login_at":  user.LastLoginAt,
 		},
 	})
 }
@@ -154,7 +155,7 @@ func (h *Handler) GetUserProfile(c *gin.Context) {
 // GetPricing returns the pricing for different payment methods
 func (h *Handler) GetPricing(c *gin.Context) {
 	checksStr := c.DefaultQuery("checks", "10")
-	
+
 	var checks int
 	if _, err := fmt.Sscanf(checksStr, "%d", &checks); err != nil || checks < 1 {
 		checks = 10
@@ -166,9 +167,9 @@ func (h *Handler) GetPricing(c *gin.Context) {
 	pricing := models.GetPricing(checks)
 
 	c.JSON(http.StatusOK, gin.H{
-		"checks":        checks,
+		"checks":              checks,
 		"price_per_check_usd": models.PricePerCheckUSD,
-		"payment_methods": pricing,
+		"payment_methods":     pricing,
 	})
 }
 
@@ -263,7 +264,7 @@ func (h *Handler) ConfirmOrder(c *gin.Context) {
 	}
 
 	orderID := c.Param("id")
-	
+
 	if orderID == "" {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
 			Error: "order id required",
@@ -304,15 +305,15 @@ func (h *Handler) ConfirmOrder(c *gin.Context) {
 	// Try to parse POST body for message signature
 	var reqBody struct {
 		Signature     string `json:"signature"`
-		Message      string `json:"message"`
+		Message       string `json:"message"`
 		WalletAddress string `json:"wallet_address"`
 	}
-	
+
 	c.ShouldBindJSON(&reqBody)
-	
+
 	// Also check query param for tx_signature (backward compatibility)
 	txSignature := c.Query("tx_signature")
-	
+
 	if txSignature != "" {
 		// Legacy: transaction signature verification
 		err = h.repo.CompleteOrder(c.Request.Context(), order.OrderUUID, txSignature)
@@ -347,9 +348,9 @@ func (h *Handler) ConfirmOrder(c *gin.Context) {
 	h.repo.AddUserBalance(c.Request.Context(), userID.(int64), order.ChecksCount)
 
 	c.JSON(http.StatusOK, gin.H{
-		"status":    "completed",
-		"balance":   order.ChecksCount,
-		"message":   "Payment confirmed! Checks added to your balance.",
+		"status":  "completed",
+		"balance": order.ChecksCount,
+		"message": "Payment confirmed! Checks added to your balance.",
 	})
 }
 
@@ -386,7 +387,7 @@ func (h *Handler) VerifyPayment(c *gin.Context) {
 
 	// In production, you would verify the transaction on-chain here
 	// For now, we auto-complete the order
-	
+
 	// Complete order
 	if err := h.repo.CompleteOrder(c.Request.Context(), orderUUID, txHash); err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
@@ -844,7 +845,7 @@ func (h *Handler) GetPaymentStatus(c *gin.Context) {
 
 	if txStatus.Err != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"status":   "failed",
+			"status":    "failed",
 			"confirmed": false,
 			"message":   "transaction failed on chain",
 		})
@@ -853,11 +854,11 @@ func (h *Handler) GetPaymentStatus(c *gin.Context) {
 
 	if txStatus.Confirmations != "confirmed" && txStatus.Confirmations != "finalized" {
 		c.JSON(http.StatusOK, gin.H{
-			"status":      "pending",
-			"confirmed":    false,
-			"slot":         txStatus.Slot,
+			"status":        "pending",
+			"confirmed":     false,
+			"slot":          txStatus.Slot,
 			"confirmations": txStatus.Confirmations,
-			"message":      "transaction is processing",
+			"message":       "transaction is processing",
 		})
 		return
 	}
@@ -868,10 +869,10 @@ func (h *Handler) GetPaymentStatus(c *gin.Context) {
 	if existingOrder != nil && existingOrder.Status == "completed" {
 		// Already processed
 		c.JSON(http.StatusOK, gin.H{
-			"status":       "already_claimed",
-			"confirmed":     true,
-			"balance":       existingOrder.ChecksCount,
-			"message":       "checks already credited",
+			"status":    "already_claimed",
+			"confirmed": true,
+			"balance":   existingOrder.ChecksCount,
+			"message":   "checks already credited",
 		})
 		return
 	}
@@ -880,9 +881,9 @@ func (h *Handler) GetPaymentStatus(c *gin.Context) {
 	pendingOrder, err := h.repo.GetPendingOrderByUser(c.Request.Context(), userIDInt)
 	log.Printf("[DEBUG] GetPaymentStatus: userID=%d, pendingOrder=%v, err=%v", userIDInt, pendingOrder, err)
 	if err == nil && pendingOrder != nil {
-		log.Printf("[DEBUG] Found pending order: UUID=%s, ChecksCount=%d", pendingOrder.UUID, pendingOrder.ChecksCount)
+		log.Printf("[DEBUG] Found pending order: UUID=%s, ChecksCount=%d", pendingOrder.OrderUUID, pendingOrder.ChecksCount)
 		// Complete the order
-		if err := h.repo.CompleteOrder(c.Request.Context(), pendingOrder.UUID, signature); err == nil {
+		if err := h.repo.CompleteOrder(c.Request.Context(), pendingOrder.OrderUUID, signature); err == nil {
 			log.Printf("[DEBUG] Order completed, adding balance for user %d", userIDInt)
 			// Add balance
 			if err := h.repo.AddUserBalance(c.Request.Context(), userIDInt, pendingOrder.ChecksCount); err == nil {
@@ -894,10 +895,10 @@ func (h *Handler) GetPaymentStatus(c *gin.Context) {
 					balance = user.Balance
 				}
 				c.JSON(http.StatusOK, gin.H{
-					"status":   "confirmed",
+					"status":    "confirmed",
 					"confirmed": true,
-					"balance":  balance,
-					"message":  fmt.Sprintf("Payment confirmed! %d checks added.", pendingOrder.ChecksCount),
+					"balance":   balance,
+					"message":   fmt.Sprintf("Payment confirmed! %d checks added.", pendingOrder.ChecksCount),
 				})
 				return
 			} else {
@@ -913,7 +914,7 @@ func (h *Handler) GetPaymentStatus(c *gin.Context) {
 	// Transaction confirmed but no order found for this user
 	c.JSON(http.StatusOK, gin.H{
 		"status":    "confirmed",
-		"confirmed":  true,
+		"confirmed": true,
 		"message":   "transaction confirmed on blockchain",
 	})
 }
@@ -950,9 +951,9 @@ func (h *Handler) querySolanaTransaction(rpcURL, signature string) (*SolanaTrans
 		JSONRPC string `json:"jsonrpc"`
 		ID      int    `json:"id"`
 		Result  struct {
-			Slot        uint64 `json:"slot"`
+			Slot          uint64  `json:"slot"`
 			Confirmations *string `json:"confirmationStatus"`
-			Meta        *struct {
+			Meta          *struct {
 				Err any `json:"err"`
 			} `json:"meta"`
 		} `json:"result"`
