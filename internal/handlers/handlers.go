@@ -878,11 +878,15 @@ func (h *Handler) GetPaymentStatus(c *gin.Context) {
 
 	// Find pending order for this user
 	pendingOrder, err := h.repo.GetPendingOrderByUser(c.Request.Context(), userIDInt)
+	log.Printf("[DEBUG] GetPaymentStatus: userID=%d, pendingOrder=%v, err=%v", userIDInt, pendingOrder, err)
 	if err == nil && pendingOrder != nil {
+		log.Printf("[DEBUG] Found pending order: UUID=%s, ChecksCount=%d", pendingOrder.UUID, pendingOrder.ChecksCount)
 		// Complete the order
 		if err := h.repo.CompleteOrder(c.Request.Context(), pendingOrder.UUID, signature); err == nil {
+			log.Printf("[DEBUG] Order completed, adding balance for user %d", userIDInt)
 			// Add balance
 			if err := h.repo.AddUserBalance(c.Request.Context(), userIDInt, pendingOrder.ChecksCount); err == nil {
+				log.Printf("[DEBUG] Balance added for user %d", userIDInt)
 				// Get new balance
 				user, _ := h.repo.GetUserByID(c.Request.Context(), userIDInt)
 				balance := 0
@@ -896,8 +900,14 @@ func (h *Handler) GetPaymentStatus(c *gin.Context) {
 					"message":  fmt.Sprintf("Payment confirmed! %d checks added.", pendingOrder.ChecksCount),
 				})
 				return
+			} else {
+				log.Printf("[ERROR] Failed to add balance: %v", err)
 			}
+		} else {
+			log.Printf("[ERROR] Failed to complete order: %v", err)
 		}
+	} else {
+		log.Printf("[WARN] No pending order found for user %d", userIDInt)
 	}
 
 	// Transaction confirmed but no order found for this user
