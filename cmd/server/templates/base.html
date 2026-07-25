@@ -123,7 +123,6 @@
 <script>
 // Buffer polyfill for Solana Web3.js
 (function() {
-    var _Buffer = window.Buffer;
     function BufferPolyfill(arr, enc) {
         if (typeof arr === 'number') {
             this.length = 8;
@@ -155,6 +154,20 @@
             this.data[offset + i] = Number(v & BigInt(0xff));
             v = v >> BigInt(8);
         }
+    };
+    BufferPolyfill.prototype.reverse = function() {
+        this.data.reverse();
+        return this;
+    };
+    BufferPolyfill.prototype.slice = function(start, end) {
+        return new BufferPolyfill(this.data.slice(start, end));
+    };
+    BufferPolyfill.prototype.toString = function(enc, start, end) {
+        if (enc === 'hex') {
+            return Array.from(this.data.slice(start || 0, end || this.data.length).values())
+                .map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
+        }
+        return new TextDecoder().decode(this.data.slice(start || 0, end || this.data.length));
     };
     BufferPolyfill.from = function(arr, enc) {
         if (arr instanceof BufferPolyfill) return arr;
