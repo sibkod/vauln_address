@@ -249,7 +249,7 @@ async function authenticateSolana(provider: any, address: string) {
     const authRes = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address, chain: 'solana', signature, message })
+      body: JSON.stringify({ address, chain: 'solana', Signature: signature, Message: message })
     })
     
     const authData = await authRes.json()
@@ -301,7 +301,7 @@ async function authenticateEVM(provider: any, address: string) {
     const authRes = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address, chain: 'evm', signature: signatureBase64, message })
+      body: JSON.stringify({ address, chain: 'evm', Signature: signatureBase64, Message: message })
     })
     
     const authData = await authRes.json()
