@@ -121,19 +121,16 @@
 </style>
 
 <script src="https://cdn.jsdelivr.net/npm/buffer@6.0.3/umd/browser-bundle.min.js"></script>
-<script>
-(function() {
-    // Set global Buffer for Solana Web3.js
-    if (typeof window !== 'undefined') {
-        window.Buffer = Buffer;
-    }
-</script>
 <script src="https://cdn.jsdelivr.net/npm/@solana/web3.js@1.95.8/lib/index.iife.min.js"></script>
 <script>
 (function() {
+    // Set global Buffer for Solana Web3.js
+    window.Buffer = window.Buffer || Buffer;
+    
     const SERVER_AUTH = {{if .IsAuthenticated}}true{{else}}false{{end}};
     const SERVER_ADDRESS = "{{.UserAddress}}";
     const FREE_CHECK_LIMIT = {{.FreeCheckLimit}};
+    
     const freeLimitDisplay = document.getElementById('freeLimitDisplay');
     if (freeLimitDisplay) freeLimitDisplay.textContent = FREE_CHECK_LIMIT;
 
@@ -262,18 +259,19 @@
     }
 
     function updateConnectUI() {
-        console.log('updateConnectUI called:', { serverAuthenticated, connectedAddress, SERVER_ADDRESS });
+        console.log('updateConnectUI called:', { serverAuthenticated, connectedAddress, isWalletConnected });
         
-        // If server says authenticated, use server address OR connected wallet address
+        // Show address if authenticated OR wallet is connected
         const displayAddress = serverAuthenticated ? (connectedAddress || SERVER_ADDRESS) : connectedAddress;
         console.log('displayAddress:', displayAddress);
         
         if (displayAddress) {
-            console.log('Showing authenticated UI');
+            console.log('Showing authenticated UI with address:', displayAddress);
             // Show dropdown menu with address
             walletDropdown.style.display = 'inline-block';
             connectWalletBtnNotAuth.style.display = 'none';
             connectAddressShort.textContent = displayAddress.slice(0,6) + '...' + displayAddress.slice(-4);
+            if (connectDot) connectDot.classList.add('active');
         } else {
             console.log('Showing connect button');
             // Show simple connect button
@@ -296,6 +294,29 @@
                 walletDropdownMenu.classList.remove('show');
             }
         });
+    }
+    
+    // Auto-reconnect Phantom wallet if previously connected
+    async function tryAutoReconnect() {
+        const storedAddress = localStorage.getItem('walletAddress');
+        const storedConnected = localStorage.getItem('walletConnected');
+        
+        if (storedConnected === 'true' && storedAddress && serverAuthenticated) {
+            console.log('Attempting auto-reconnect to Phantom...');
+            const provider = getSolanaProvider();
+            if (provider) {
+                try {
+                    const resp = await provider.connect({ onlyIfTrusted: true });
+                    connectedAddress = resp.publicKey?.toString() || resp;
+                    isWalletConnected = true;
+                    console.log('Auto-reconnected, address:', connectedAddress);
+                    updateConnectUI();
+                } catch (e) {
+                    console.log('Auto-reconnect skipped (user rejected or not trusted)');
+                    // Keep showing the address from localStorage
+                }
+            }
+        }
     }
 
     function updateCounter() {
@@ -382,10 +403,15 @@
         
         console.log('Restoring wallet state:', { storedConnected, storedAddress, hasAuthToken: !!authToken });
         
+        // Always restore stored address for display purposes
+        if (storedAddress) {
+            connectedAddress = storedAddress;
+            console.log('Restored address from localStorage:', connectedAddress);
+        }
+        
         if (storedConnected === 'true' && storedAddress) {
             isWalletConnected = true;
-            connectedAddress = storedAddress;
-            console.log('Wallet connected, address:', connectedAddress);
+            console.log('Wallet was connected, address:', connectedAddress);
         }
         
         // Check if we have a token to validate
@@ -395,17 +421,26 @@
                 // Token is valid - mark as authenticated
                 serverAuthenticated = true;
                 console.log('Token valid, serverAuthenticated:', serverAuthenticated);
-                // Use server address if wallet not connected in this session
+                // Use server address if we don't have a stored address
                 if (!connectedAddress && SERVER_ADDRESS) {
                     connectedAddress = SERVER_ADDRESS;
+                }
+                // Mark wallet as connected for UI purposes
+                if (connectedAddress) {
                     isWalletConnected = true;
                 }
             } else {
                 // Token invalid or expired - clear localStorage
                 clearAuthData();
                 serverAuthenticated = false;
+                isWalletConnected = false;
+                connectedAddress = '';
                 console.log('Token invalid, cleared');
             }
+        } else if (connectedAddress) {
+            // No token but we have address - might be Phantom disconnected
+            // Keep address for display but don't mark as connected
+            isWalletConnected = false;
         }
         
         console.log('Final state:', { isWalletConnected, connectedAddress, serverAuthenticated });
@@ -544,6 +579,8 @@
     restoreWalletState().then(() => {
         updateConnectUI();
         updateCounter();
+        // Try to auto-reconnect Phantom after restoring state
+        setTimeout(tryAutoReconnect, 500);
     });
 
     // Re-export for pages
