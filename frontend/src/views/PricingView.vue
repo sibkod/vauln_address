@@ -101,7 +101,7 @@ async function payWithSolana() {
         'Authorization': `Bearer ${authToken}`
       },
       body: JSON.stringify({
-        checks_count: selectedPackage.value.checks
+        checks: selectedPackage.value.checks
       })
     })
     
