@@ -19,6 +19,7 @@ const connecting = ref(false)
 const connectError = ref('')
 
 const stats = ref({ evm: 0, btc: 0, solana: 0, sui: 0, tron: 0 })
+const showWalletMenu = ref(false)
 
 const walletOptions = [
   // Browser Extensions
@@ -372,12 +373,22 @@ function disconnectWallet() {
   
   connected.value = false
   walletAddress.value = ''
+  walletChain.value = ''
   userBalance.value = 0
   authToken.value = ''
+  showWalletMenu.value = false
   localStorage.removeItem('authToken')
   localStorage.removeItem('walletAddress')
   localStorage.removeItem('walletChain')
   localStorage.removeItem('userBalance')
+}
+
+function toggleWalletMenu() {
+  showWalletMenu.value = !showWalletMenu.value
+}
+
+function closeWalletMenu() {
+  showWalletMenu.value = false
 }
 
 function getTotal() {
@@ -408,11 +419,29 @@ function getTotal() {
       <span class="network-badge">{{ IS_MAINNET ? 'Mainnet' : 'Devnet' }}</span>
       <button class="theme-toggle" @click="toggleTheme">{{ darkMode ? '◐' : '◑' }}</button>
       
-      <!-- Connected state -->
-      <div v-if="connected" class="wallet-connected" @click="disconnectWallet">
-        <span class="dot active"></span>
-        <span class="wallet-addr">{{ formatAddress(walletAddress) }}</span>
-        <span v-if="userBalance > 0" class="wallet-balance">{{ userBalance }}</span>
+      <!-- Connected state with dropdown -->
+      <div v-if="connected" class="wallet-dropdown">
+        <div class="wallet-connected" @click.stop="toggleWalletMenu">
+          <span class="dot active"></span>
+          <span class="wallet-addr">{{ formatAddress(walletAddress) }}</span>
+          <span v-if="userBalance > 0" class="wallet-balance">{{ userBalance }}</span>
+          <span class="dropdown-arrow">▼</span>
+        </div>
+        
+        <!-- Dropdown menu -->
+        <div v-if="showWalletMenu" class="wallet-menu" @click.stop>
+          <div class="menu-header">
+            <div class="menu-address">{{ walletAddress }}</div>
+            <div class="menu-chain">{{ walletChain.toUpperCase() }}</div>
+          </div>
+          <div v-if="userBalance > 0" class="menu-balance">
+            <span>Balance:</span>
+            <span class="balance-value">{{ userBalance }} checks</span>
+          </div>
+          <button class="menu-item logout" @click="disconnectWallet">
+            🚪 Logout
+          </button>
+        </div>
       </div>
       
       <!-- Not connected - click to open modal -->
@@ -517,6 +546,91 @@ function getTotal() {
   font-size: 0.7rem;
   color: #4bc9a0;
   font-weight: 600;
+}
+.dropdown-arrow {
+  font-size: 0.6rem;
+  color: #6b7a9e;
+  margin-left: 0.25rem;
+}
+
+/* Wallet Dropdown */
+.wallet-dropdown {
+  position: relative;
+}
+
+.wallet-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: #1a1f2e;
+  border: 1px solid #2a3548;
+  border-radius: 12px;
+  min-width: 220px;
+  padding: 0.75rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+}
+
+.menu-header {
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #2a3548;
+  margin-bottom: 0.75rem;
+}
+
+.menu-address {
+  color: #e7ecf5;
+  font-size: 0.8rem;
+  font-family: monospace;
+  word-break: break-all;
+  margin-bottom: 0.25rem;
+}
+
+.menu-chain {
+  color: #667eea;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.menu-balance {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0;
+  color: #6b7a9e;
+  font-size: 0.8rem;
+}
+
+.balance-value {
+  color: #4bc9a0;
+  font-weight: 600;
+}
+
+.menu-item {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: #e7ecf5;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.menu-item:hover {
+  background: #252d3d;
+}
+
+.menu-item.logout {
+  margin-top: 0.5rem;
+  color: #ff6b6b;
+  border-top: 1px solid #2a3548;
+  padding-top: 0.75rem;
+}
+
+.menu-item.logout:hover {
+  background: #2a1f1f;
 }
 
 /* Wallet Modal */
