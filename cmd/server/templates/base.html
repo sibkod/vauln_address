@@ -120,7 +120,6 @@
 #chainModal button:hover { border-color: #3b82f6 !important; }
 </style>
 
-<script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
 <script>
 (function() {
     const SERVER_AUTH = {{if .IsAuthenticated}}true{{else}}false{{end}};
@@ -131,9 +130,8 @@
 
     let isWalletConnected = false;
     let connectedAddress = '';
-    let selectedChain = 'evm'; // Default chain
+    let selectedChain = 'solana';
     let freeCheckUsed = localStorage.getItem('freeCheckUsed') === 'true';
-    let web3 = null;
     let authToken = localStorage.getItem('authToken');
     let serverAuthenticated = SERVER_AUTH;
     let userBalance = {{.UserBalance}};
@@ -171,19 +169,51 @@
         await connectSolana();
     };
 
+    // Helper to find any available Solana wallet
+    function getSolanaProvider() {
+        // Check all known Solana wallet providers
+        const providers = [
+            window.phantom?.solana,
+            window.solflare,
+            window.backpack?.solana,
+            window.coinbase?.solana,
+            window.clover?.solana,
+            window.figment?.solana,
+            window.slope?.solana,
+            window.hydrogen?.solana,
+            window.owallet?.solana,
+            window.safa?.solana,
+        ];
+        
+        for (const provider of providers) {
+            if (provider && (provider.isConnected || provider.publicKey)) {
+                return provider;
+            }
+        }
+        
+        // Also try to detect any provider with connect method
+        for (const key of Object.keys(window)) {
+            const obj = window[key];
+            if (obj && typeof obj === 'object' && obj.solana && typeof obj.solana.connect === 'function') {
+                return obj.solana;
+            }
+        }
+        
+        return null;
+    }
+
     async function connectSolana() {
         showToast('🔗 Connecting to Solana...');
         try {
-            // Check for Solana wallet (Phantom, Solflare)
-            const provider = window.phantom?.solana || window.solflare;
+            const provider = getSolanaProvider();
             
-            if (!provider?.isConnected) {
-                showToast('⚠️ Please install Phantom or Solflare wallet');
+            if (!provider) {
+                showToast('⚠️ No Solana wallet found. Please install Phantom or another Solana wallet.');
                 return;
             }
             
             const resp = await provider.connect();
-            connectedAddress = resp.publicKey.toString();
+            connectedAddress = resp.publicKey?.toString() || resp;
             isWalletConnected = true;
             
             localStorage.setItem('walletConnected', 'true');
@@ -191,16 +221,20 @@
             localStorage.setItem('walletChain', 'solana');
             
             updateConnectUI();
-            showToast('✅ Solana wallet connected!');
+            showToast('✅ Wallet connected!');
             
             // Authenticate
-            const authSuccess = await authenticateWithBackend(connectedAddress);
+            const authSuccess = await authenticateWithBackend(connectedAddress, provider);
             if (authSuccess) {
                 document.dispatchEvent(new CustomEvent('walletAuthenticated'));
             }
         } catch (error) {
             console.error('Solana connection error:', error);
-            showToast('❌ Failed to connect Solana wallet');
+            if (error.message?.includes('user rejected') || error.message?.includes('User rejected')) {
+                showToast('❌ Connection cancelled');
+            } else {
+                showToast('❌ Failed to connect wallet');
+            }
         }
     }
 
@@ -328,10 +362,10 @@
         }
     }
 
-    async function authenticateWithBackend(address) {
+    async function authenticateWithBackend(address, provider) {
         try {
             // 1. Get nonce from backend
-            const nonceRes = await fetch('/api/auth/nonce?address=' + address);
+            const nonceRes = await fetch('/api/auth/nonce?address=' + address + '&chain=solana');
             const nonceData = await nonceRes.json();
             
             if (nonceData.error) {
@@ -341,10 +375,24 @@
 
             // 2. Sign the message with wallet
             const message = nonceData.message;
-            const signature = await window.ethereum.request({
-                method: 'personal_sign',
-                params: [message, address]
-            });
+            let signature;
+            
+            if (provider) {
+                // Solana wallet - encode message to bytes and sign
+                const encoder = new TextEncoder();
+                const messageBytes = encoder.encode(message);
+                const sig = await provider.signMessage(messageBytes);
+                signature = Array.from(sig).map(b => b.toString(16).padStart(2, '0')).join('');
+            } else if (window.ethereum) {
+                // EVM wallet fallback
+                signature = await window.ethereum.request({
+                    method: 'personal_sign',
+                    params: [message, address]
+                });
+            } else {
+                showToast('❌ No wallet available to sign');
+                return false;
+            }
 
             // 3. Send signature to backend and get JWT
             const loginRes = await fetch('/api/auth/login', {
@@ -353,7 +401,8 @@
                 body: JSON.stringify({
                     address: address,
                     signature: signature,
-                    message: message
+                    message: message,
+                    chain: 'solana'
                 })
             });
             const loginData = await loginRes.json();
@@ -389,7 +438,8 @@
                 connectedAddress = accounts[0];
                 localStorage.setItem('walletAddress', connectedAddress);
                 // Re-authenticate with new address
-                authenticateWithBackend(connectedAddress).then(success => {
+                const provider = getSolanaProvider();
+                authenticateWithBackend(connectedAddress, provider).then(success => {
                     if (success) {
                         showToast('✅ Re-authenticated with new address');
                     }
