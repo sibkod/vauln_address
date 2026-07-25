@@ -12,6 +12,7 @@ const router = createRouter({
     { path: '/about', name: 'about', component: () => import('./views/AboutView.vue') },
     { path: '/contact', name: 'contact', component: () => import('./views/ContactView.vue') },
     { path: '/support', name: 'support', component: () => import('./views/SupportView.vue') },
+    { path: '/purchases', name: 'purchases', component: () => import('./views/PurchasesView.vue') },
     { path: '/backend-error', name: 'backend-error', component: () => import('./views/BackendErrorView.vue') },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('./views/NotFoundView.vue') }
   ]

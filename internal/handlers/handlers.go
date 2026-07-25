@@ -416,6 +416,104 @@ func (h *Handler) VerifyPayment(c *gin.Context) {
 	})
 }
 
+// GetBalance returns the current user's balance (or remaining rate limit for anonymous)
+func (h *Handler) GetBalance(c *gin.Context) {
+	// Check if user is authenticated
+	walletAddress, exists := c.Get("userAddress")
+	chain, _ := c.Get("userChain")
+	chainStr, _ := chain.(string)
+
+	// Get rate limit remaining
+	ip := c.ClientIP()
+	rateLimit, _ := h.repo.GetRateLimit(c.Request.Context(), ip)
+	rateLimitRemaining := h.serverCfg.RateLimitRequests
+	if rateLimit != nil {
+		rateLimitRemaining = h.serverCfg.RateLimitRequests - rateLimit.Count
+		if rateLimitRemaining < 0 {
+			rateLimitRemaining = 0
+		}
+	}
+
+	// Validate that user is actually authenticated (not just token present)
+	if exists && walletAddress != nil && walletAddress != "" && chainStr != "" {
+		// Authenticated user
+		purchasedBalance, err := h.repo.GetUserBalance(c.Request.Context(), walletAddress.(string), chainStr)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+				Error: "failed to get balance",
+				Code:  "DB_ERROR",
+			})
+			return
+		}
+
+		// If user has purchased checks, show purchased balance
+		// Otherwise, show rate limit remaining (free checks for authenticated users)
+		if purchasedBalance > 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"balance":               purchasedBalance,
+				"purchased_balance":     purchasedBalance,
+				"rate_limit_remaining":  rateLimitRemaining,
+				"source":                "purchased",
+			})
+		} else {
+			c.JSON(http.StatusOK, gin.H{
+				"balance":               rateLimitRemaining,
+				"purchased_balance":     0,
+				"rate_limit_remaining": rateLimitRemaining,
+				"source":                "rate_limit",
+			})
+		}
+		return
+	}
+
+	// Anonymous user - return IP-based rate limit remaining only
+	c.JSON(http.StatusOK, gin.H{
+		"balance":               rateLimitRemaining,
+		"purchased_balance":     0,
+		"rate_limit_remaining": rateLimitRemaining,
+		"source":               "rate_limit",
+	})
+}
+
+// GetPurchaseHistory returns the user's order history
+func (h *Handler) GetPurchaseHistory(c *gin.Context) {
+	walletAddress, exists := c.Get("userAddress")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
+			Error: "unauthorized",
+			Code:  "UNAUTHORIZED",
+		})
+		return
+	}
+
+	limitStr := c.DefaultQuery("limit", "50")
+	var limit int
+	if _, err := fmt.Sscanf(limitStr, "%d", &limit); err != nil || limit < 1 {
+		limit = 50
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	orders, err := h.repo.GetOrdersByWallet(c.Request.Context(), walletAddress.(string), limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error: "failed to get orders",
+			Code:  "DB_ERROR",
+		})
+		return
+	}
+
+	if orders == nil {
+		orders = []models.Order{}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"orders": orders,
+		"count":  len(orders),
+	})
+}
+
 // ==================== Wallet Checking ====================
 
 func (h *Handler) CheckWallet(c *gin.Context) {
