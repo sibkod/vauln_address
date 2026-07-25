@@ -194,7 +194,11 @@ function updateWalletStatus() {
 }
 
 async function buyPackage() {
-    if (!window.isWalletConnected() && !(window.isAuthenticated && window.isAuthenticated())) {
+    const isConnected = window.isWalletConnected ? window.isWalletConnected() : false;
+    const isAuthed = window.isAuthenticated ? window.isAuthenticated() : false;
+    
+    if (!isConnected && !isAuthed) {
+        // Trigger connect
         document.getElementById('connectWalletBtnNotAuth').click();
         return;
     }
@@ -210,33 +214,47 @@ async function buyPackage() {
         
         // 1. Create order on backend
         const headers = { 'Content-Type': 'application/json' };
-        if (authToken) headers['Authorization'] = 'Bearer ' + authToken';
+        if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
         
         const orderRes = await fetch('/api/orders', {
             method: 'POST',
             headers,
             body: JSON.stringify({
                 checks: selectedPackage.checks,
-                chain: selectedChain,
+                chain: 'solana',
                 wallet_address: address
             })
         });
         
         if (!orderRes.ok) {
-            throw new Error('Failed to create order');
+            const err = await orderRes.json();
+            throw new Error(err.error || 'Failed to create order');
         }
         
         const orderData = await orderRes.json();
         
-        // For testnet: show payment instructions
-        window.showToast(`🪙 Send $${selectedPackage.price} via Solana Testnet. Order ID: ${orderData.order_id}`);
-        // In production: integrate with Solana payment SDK
+        // Show payment instructions for testnet
+        window.showToast(`🪙 Send ${orderData.amount} SOL to ${orderData.payment_address}`);
         
-        // For now: simulate instant delivery for demo
-        setTimeout(() => {
-            window.showToast(`✅ ${selectedPackage.checks} checks added!`);
-            updateWalletStatus();
-        }, 1500);
+        // For testnet demo: add credits immediately after showing address
+        // In production: wait for blockchain confirmation
+        setTimeout(async () => {
+            // Confirm payment (demo mode - instant delivery)
+            try {
+                const confirmRes = await fetch(`/api/orders/${orderData.order_id}/confirm`, {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + (authToken || '') }
+                });
+                
+                if (confirmRes.ok) {
+                    const confirmData = await confirmRes.json();
+                    window.showToast(`✅ ${selectedPackage.checks} checks added! Balance: ${confirmData.balance}`);
+                    updateWalletStatus();
+                }
+            } catch (e) {
+                console.error('Confirm error:', e);
+            }
+        }, 2000);
         
     } catch (error) {
         window.showToast('❌ Purchase failed: ' + error.message);

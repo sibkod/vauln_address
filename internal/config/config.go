@@ -30,6 +30,7 @@ type Config struct {
 	RateLimitRequests int
 	RateLimitHours    int
 	FreeCheckLimit    int
+	SolanaPaymentAddr string
 }
 
 func Load() *Config {
@@ -51,6 +52,7 @@ func Load() *Config {
 		RateLimitRequests: getEnvInt("RATE_LIMIT_REQUESTS", 10),
 		RateLimitHours:    getEnvInt("RATE_LIMIT_WINDOW_HOURS", 24),
 		FreeCheckLimit:    getEnvInt("FREE_CHECK_LIMIT", 1),
+		SolanaPaymentAddr: getEnv("SOLANA_PAYMENT_ADDR", ""),
 	}
 }
 

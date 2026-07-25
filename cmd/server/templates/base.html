@@ -314,23 +314,36 @@
     }
 
     window.logout = async function() {
+        // Close any modals
+        closeChainModal();
+        if (walletDropdownMenu) {
+            walletDropdownMenu.classList.remove('show');
+        }
+        
+        // Disconnect from wallet if possible
+        const provider = getSolanaProvider();
+        if (provider && provider.isConnected) {
+            try {
+                await provider.disconnect();
+            } catch (e) {
+                console.log('Wallet disconnect error:', e);
+            }
+        }
+        
+        // Clear local state
         clearAuthData();
         localStorage.removeItem('walletConnected');
         localStorage.removeItem('walletAddress');
+        localStorage.removeItem('walletChain');
         localStorage.removeItem('freeCheckUsed');
         isWalletConnected = false;
         connectedAddress = '';
         freeCheckUsed = false;
         serverAuthenticated = false;
         
-        // Close dropdown
-        if (walletDropdownMenu) {
-            walletDropdownMenu.classList.remove('show');
-        }
-        
-        // Reload page to reflect server-side auth state
-        window.location.reload();
         showToast('👋 Wallet disconnected');
+        updateConnectUI();
+        updateCounter();
     };
 
     // Restore wallet state from localStorage
@@ -425,6 +438,10 @@
     }
 
     async function connectWallet() {
+        // If wallet already connected, skip modal
+        if (isWalletConnected && connectedAddress) {
+            return;
+        }
         // Show chain selector modal first
         showChainModal();
     }
@@ -449,7 +466,16 @@
         });
     }
 
-    connectBtn.addEventListener('click', connectWallet);
+    connectBtn.addEventListener('click', function(e) {
+        if (isWalletConnected && connectedAddress) {
+            // Toggle dropdown if wallet is connected
+            e.stopPropagation();
+            walletDropdownMenu.classList.toggle('show');
+        } else {
+            // Show chain selector modal
+            connectWallet();
+        }
+    });
     if (connectWalletBtnNotAuth) {
         connectWalletBtnNotAuth.addEventListener('click', connectWallet);
     }
