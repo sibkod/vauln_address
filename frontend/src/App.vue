@@ -22,12 +22,12 @@ const stats = ref({ evm: 0, btc: 0, solana: 0, sui: 0, tron: 0 })
 
 const walletOptions = [
   // Browser Extensions
-  { id: 'phantom', name: 'Phantom', icon: '👻', url: 'https://phantom.app/', type: 'extension' },
-  { id: 'solflare', name: 'Solflare', icon: '☀️', url: 'https://solflare.com/', type: 'extension' },
-  { id: 'slope', name: 'Slope', icon: '🛡️', url: 'https://slope.finance/', type: 'extension' },
-  { id: 'glow', name: 'Glow', icon: '✨', url: 'https://glow.app/', type: 'extension' },
-  { id: 'coinbase', name: 'Coinbase Wallet', icon: '💰', url: 'https://www.coinbase.com/wallet', type: 'extension' },
-  { id: 'backpack', name: 'Backpack', icon: '🎒', url: 'https://backpack.app/', type: 'extension' },
+  { id: 'phantom', name: 'Phantom', icon: '👻', url: 'https://phantom.app/', type: 'extension', chain: 'solana' },
+  { id: 'solflare', name: 'Solflare', icon: '☀️', url: 'https://solflare.com/', type: 'extension', chain: 'solana' },
+  { id: 'metamask', name: 'MetaMask', icon: '🦊', url: 'https://metamask.io/', type: 'extension', chain: 'evm' },
+  { id: 'slope', name: 'Slope', icon: '🛡️', url: 'https://slope.finance/', type: 'extension', chain: 'solana' },
+  { id: 'glow', name: 'Glow', icon: '✨', url: 'https://glow.app/', type: 'extension', chain: 'solana' },
+  { id: 'coinbase', name: 'Coinbase Wallet', icon: '💰', url: 'https://www.coinbase.com/wallet', type: 'extension', chain: 'evm' },
   // Mobile & Hardware
   { id: 'walletconnect', name: 'WalletConnect', icon: '🔗', url: 'https://walletconnect.com/', type: 'mobile' },
   { id: 'exodus', name: 'Exodus', icon: '🚀', url: 'https://exodus.com/', type: 'mobile' },
@@ -101,24 +101,85 @@ async function connectWallet(walletId: string) {
   connectError.value = ''
   
   try {
-    const providers: Record<string, any> = {
-      phantom: (window as any).solana,
-      solflare: (window as any).solflare,
-      slope: (window as any).slope,
-      glow: (window as any).glow,
+    const wallet = walletOptions.find(w => w.id === walletId)
+    if (!wallet) {
+      connectError.value = 'Wallet not found'
+      connecting.value = false
+      return
     }
     
-    if (providers[walletId]) {
-      const provider = providers[walletId]
+    // Solana wallets
+    if (wallet.chain === 'solana') {
+      const solanaProviders: Record<string, any> = {
+        phantom: (window as any).solana,
+        solflare: (window as any).solflare,
+        slope: (window as any).slope,
+        glow: (window as any).glow,
+      }
+      
+      const provider = solanaProviders[walletId]
       if (provider?.connect) {
         await provider.connect()
         if (provider.publicKey) {
-          await authenticateWithBackend(provider, provider.publicKey.toString())
+          const address = provider.publicKey.toString()
+          await authenticateSolana(provider, address)
           return
         }
+      } else {
+        window.open(wallet.url, '_blank')
+        connectError.value = `Install ${wallet.name} wallet`
+        connecting.value = false
+        return
       }
     }
     
+    // EVM wallets (MetaMask, Coinbase)
+    if (wallet.chain === 'evm') {
+      if (walletId === 'metamask') {
+        const ethereum = (window as any).ethereum
+        if (ethereum?.isMetaMask) {
+          try {
+            const accounts = await ethereum.request({ method: 'eth_requestAccounts' })
+            if (accounts.length > 0) {
+              await authenticateEVM(ethereum, accounts[0])
+              return
+            }
+          } catch (err: any) {
+            if (err.code === 4001) {
+              connectError.value = 'User rejected connection'
+            } else {
+              connectError.value = err.message || 'Connection failed'
+            }
+            connecting.value = false
+            return
+          }
+        }
+      }
+      
+      if (walletId === 'coinbase') {
+        const coinbase = (window as any).ethereum
+        if (coinbase?.isCoinbaseWallet) {
+          try {
+            const accounts = await coinbase.request({ method: 'eth_requestAccounts' })
+            if (accounts.length > 0) {
+              await authenticateEVM(coinbase, accounts[0])
+              return
+            }
+          } catch (err: any) {
+            connectError.value = err.message || 'Connection failed'
+            connecting.value = false
+            return
+          }
+        }
+      }
+      
+      window.open(wallet.url, '_blank')
+      connectError.value = `Install ${wallet.name} wallet`
+      connecting.value = false
+      return
+    }
+    
+    // Mobile wallets
     if (walletId === 'walletconnect') {
       connectError.value = 'WalletConnect - coming soon'
       connecting.value = false
@@ -138,11 +199,8 @@ async function connectWallet(walletId: string) {
       return
     }
     
-    const wallet = walletOptions.find(w => w.id === walletId)
-    if (wallet) {
-      window.open(wallet.url, '_blank')
-      connectError.value = `Install ${wallet.name}`
-    }
+    window.open(wallet.url, '_blank')
+    connectError.value = `Install ${wallet.name}`
   } catch (err: any) {
     connectError.value = err.message || 'Failed to connect'
   }
@@ -150,7 +208,29 @@ async function connectWallet(walletId: string) {
   connecting.value = false
 }
 
-async function authenticateWithBackend(wallet: any, address: string) {
+// Convert Uint8Array to base64 (browser compatible)
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  const len = bytes.byteLength
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  return btoa(binary)
+}
+
+// Convert hex to base64 (for EVM signatures)
+function hexToBase64(hex: string): string {
+  // Remove 0x prefix if present
+  const cleanHex = hex.startsWith('0x') ? hex.slice(2) : hex
+  // Convert hex to binary
+  let binary = ''
+  for (let i = 0; i < cleanHex.length; i += 2) {
+    binary += String.fromCharCode(parseInt(cleanHex.substr(i, 2), 16))
+  }
+  return btoa(binary)
+}
+
+async function authenticateSolana(provider: any, address: string) {
   try {
     const nonceRes = await fetch(`/api/auth/nonce?address=${address}&chain=solana`)
     const nonceData = await nonceRes.json()
@@ -161,10 +241,10 @@ async function authenticateWithBackend(wallet: any, address: string) {
       return
     }
     
-    const message = nonceData.nonce
+    const message = nonceData.message || nonceData.nonce
     const encodedMessage = new TextEncoder().encode(message)
-    const signedMessage = await wallet.signMessage(encodedMessage)
-    const signature = Buffer.from(signedMessage).toString('base64')
+    const signedMessage = await provider.signMessage(encodedMessage)
+    const signature = uint8ArrayToBase64(signedMessage)
     
     const authRes = await fetch('/api/auth/login', {
       method: 'POST',
@@ -179,6 +259,7 @@ async function authenticateWithBackend(wallet: any, address: string) {
       authToken.value = authData.token
       userBalance.value = authData.user?.balance || 0
       connected.value = true
+      walletChain.value = 'solana'
       
       localStorage.setItem('authToken', authData.token)
       localStorage.setItem('walletAddress', address)
@@ -196,11 +277,72 @@ async function authenticateWithBackend(wallet: any, address: string) {
   connecting.value = false
 }
 
+async function authenticateEVM(provider: any, address: string) {
+  try {
+    const nonceRes = await fetch(`/api/auth/nonce?address=${address}&chain=evm`)
+    const nonceData = await nonceRes.json()
+    
+    if (!nonceData.nonce) {
+      connectError.value = 'Failed to get nonce'
+      connecting.value = false
+      return
+    }
+    
+    const message = nonceData.message || nonceData.nonce
+    
+    // Sign message using personal_sign
+    const signature = await provider.request({
+      method: 'personal_sign',
+      params: [message, address]
+    })
+    
+    const signatureBase64 = hexToBase64(signature)
+    
+    const authRes = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address, chain: 'evm', signature: signatureBase64, message })
+    })
+    
+    const authData = await authRes.json()
+    
+    if (authData.token) {
+      walletAddress.value = address
+      authToken.value = authData.token
+      userBalance.value = authData.user?.balance || 0
+      connected.value = true
+      walletChain.value = 'evm'
+      
+      localStorage.setItem('authToken', authData.token)
+      localStorage.setItem('walletAddress', address)
+      localStorage.setItem('walletChain', 'evm')
+      localStorage.setItem('userBalance', String(authData.user?.balance || 0))
+      
+      closeWalletModal()
+    } else {
+      connectError.value = authData.error || 'Auth failed'
+    }
+  } catch (err: any) {
+    if (err.code === 4001) {
+      connectError.value = 'User rejected signing'
+    } else {
+      connectError.value = err.message || 'Auth failed'
+    }
+  }
+  
+  connecting.value = false
+}
+
 function disconnectWallet() {
   // Disconnect from wallet if possible
-  const phantom = (window as any).solana
-  if (phantom?.disconnect) {
-    phantom.disconnect()
+  if (walletChain.value === 'solana') {
+    const phantom = (window as any).solana
+    if (phantom?.disconnect) {
+      phantom.disconnect()
+    }
+  } else if (walletChain.value === 'evm') {
+    const ethereum = (window as any).ethereum
+    // EVM wallets don't have a standard disconnect method
   }
   
   connected.value = false
@@ -266,10 +408,10 @@ function getTotal() {
         </div>
         
         <div class="wallet-section">
-          <div class="wallet-section-title">Browser Extensions</div>
+          <div class="wallet-section-title">🟢 Solana</div>
           <div class="wallet-options">
             <button 
-              v-for="wallet in walletOptions.filter(w => w.type === 'extension')" 
+              v-for="wallet in walletOptions.filter(w => w.chain === 'solana')" 
               :key="wallet.id"
               class="wallet-option"
               @click="connectWallet(wallet.id)"
@@ -282,10 +424,10 @@ function getTotal() {
         </div>
         
         <div class="wallet-section">
-          <div class="wallet-section-title">Mobile & Hardware</div>
+          <div class="wallet-section-title">🟣 Ethereum / EVM</div>
           <div class="wallet-options">
             <button 
-              v-for="wallet in walletOptions.filter(w => w.type !== 'extension')" 
+              v-for="wallet in walletOptions.filter(w => w.chain === 'evm')" 
               :key="wallet.id"
               class="wallet-option"
               @click="connectWallet(wallet.id)"
