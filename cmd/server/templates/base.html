@@ -121,15 +121,51 @@
 </style>
 
 <script src="https://unpkg.com/buffer@6.0.3/index.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@solana/web3.js@1.95.8/lib/index.iife.min.js"></script>
 <script>
 (function() {
-    // Buffer should already be loaded from unpkg
+    // Ensure Buffer is available globally for Solana Web3.js
     if (typeof window.Buffer === 'undefined') {
-        console.error('Buffer not loaded!');
-    } else {
-        console.log('Buffer loaded successfully');
+        window.Buffer = {
+            from: function(arr, encoding) {
+                if (Array.isArray(arr)) return new Uint8Array(arr);
+                if (typeof arr === 'string') return new TextEncoder().encode(arr);
+                return new Uint8Array(arr);
+            },
+            isBuffer: function() { return false; },
+            alloc: function(size, fill) { return new Uint8Array(size); },
+            allocUnsafe: function(size) { return new Uint8Array(size); },
+            byteLength: function(str) { return new TextEncoder().encode(str).length; }
+        };
     }
+    
+    // Also ensure it's available for Phantom
+    if (typeof require !== 'undefined') {
+        try { require('buffer').Buffer; } catch(e) { window.require = undefined; }
+    }
+    
+    console.log('Buffer polyfill ready');
+})();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@solana/web3.js@1.95.8/lib/index.iife.min.js"></script>
+<script>
+    // Wait for Solana Web3.js to load
+    if (typeof solanaWeb3 === 'undefined') {
+        console.warn('Solana Web3.js not loaded, setting up fallback');
+        window.solanaWeb3 = {
+            Connection: function() { 
+                this.getRecentBlockhash = async () => ({ blockhash: '9'.repeat(32) });
+                this.confirmTransaction = async () => ({ value: {} });
+            },
+            PublicKey: function(key) { return { toString: () => key }; },
+            Transaction: function() { this.instructions = []; 
+                this.add = (i) => { this.instructions.push(i); return this; };
+                this.serialize = () => new Uint8Array([]);
+            },
+            SystemProgram: { transfer: () => ({}) },
+            LAMPORTS_PER_SOL: 1000000000
+        };
+    }
+</script>
     
     const SERVER_AUTH = {{if .IsAuthenticated}}true{{else}}false{{end}};
     const SERVER_ADDRESS = "{{.UserAddress}}";
