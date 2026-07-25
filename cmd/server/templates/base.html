@@ -618,8 +618,10 @@
         updateCounter();
     };
     window.getFreeCheckUsed = function() { return freeCheckUsed; };
-    window.getAuthToken = function() { return authToken; };
-    window.isAuthenticated = function() { return serverAuthenticated; };
+    window.getAuthToken = function() { return authToken || localStorage.getItem('authToken'); };
+    window.isAuthenticated = function() { 
+        return serverAuthenticated || !!localStorage.getItem('authToken'); 
+    };
     window.getUserBalance = function() { return userBalance; };
     window.getSolanaProvider = getSolanaProvider;
 })();

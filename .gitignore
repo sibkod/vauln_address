@@ -12,5 +12,5 @@ server.log
 
 # Local env
 .env
-server
+/server
 data/
