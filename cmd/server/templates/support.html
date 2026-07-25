@@ -245,24 +245,24 @@ async function buyPackage() {
         
         const orderData = await orderRes.json();
         
-        // 2. Find Phantom provider
-        const phantom = window.phantom?.solana;
-        if (!phantom || !phantom.isConnected) {
-            throw new Error('Please connect Phantom wallet first');
+        // 2. Find any connected Solana wallet
+        const provider = window.getSolanaProvider();
+        if (!provider) {
+            throw new Error('Please connect a Solana wallet first (Phantom, Solflare, etc.)');
         }
         
         window.showToast('📝 Sign the transaction in your wallet...');
         
-        // 3. Wait for Phantom's Solana Web3.js to be available
+        // 3. Wait for Solana Web3.js to be available (from any wallet)
         const solanaWeb3 = await window.waitForSolanaWeb3();
         if (!solanaWeb3) {
-            throw new Error('Solana Web3.js not available. Please use Phantom browser extension.');
+            throw new Error('Solana Web3.js not available. Please refresh the page.');
         }
         
         const lamports = Math.round(parseFloat(orderData.amount) * 1e9);
         const { Connection, PublicKey, Transaction, SystemProgram } = solanaWeb3;
         
-        // 4. Create transaction using Phantom's bundled Solana Web3.js
+        // 4. Create transaction using wallet's Solana Web3.js
         const connection = new Connection('https://api.devnet.solana.com');
         const fromPubkey = new PublicKey(address);
         const toPubkey = new PublicKey(orderData.payment_address);
@@ -280,8 +280,8 @@ async function buyPackage() {
         transaction.recentBlockhash = blockhash;
         transaction.feePayer = fromPubkey;
         
-        // 5. Sign and send using Phantom
-        const signature = await phantom.signAndSendTransaction(transaction);
+        // 5. Sign and send using any wallet
+        const signature = await provider.signAndSendTransaction(transaction);
         const sigString = typeof signature === 'string' ? signature : signature.signature;
         
         window.showToast('🔄 Transaction sent: ' + sigString.slice(0, 8) + '...');

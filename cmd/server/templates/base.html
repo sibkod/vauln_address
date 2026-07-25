@@ -213,20 +213,44 @@
 })();
 </script>
 <script>
-// Wait for Phantom to load and expose solanaWeb3
+// Wait for any Solana wallet to provide solanaWeb3
 window.waitForSolanaWeb3 = function() {
     return new Promise(function(resolve) {
-        if (window.solanaWeb3 && window.solanaWeb3.Transaction) {
-            resolve(window.solanaWeb3);
+        // Check all possible wallet providers
+        function checkWallets() {
+            // Phantom
+            if (window.phantom?.solana?.provider?.solanaWeb3) {
+                return window.phantom.solana.provider.solanaWeb3;
+            }
+            // Solflare
+            if (window.solflare?.solana?.provider?.solanaWeb3) {
+                return window.solflare.solana.provider.solanaWeb3;
+            }
+            // Backpack
+            if (window.backpack?.solana?.provider?.solanaWeb3) {
+                return window.backpack.solana.provider.solanaWeb3;
+            }
+            // Generic check
+            if (window.solanaWeb3 && window.solanaWeb3.Transaction) {
+                return window.solanaWeb3;
+            }
+            return null;
+        }
+        
+        var result = checkWallets();
+        if (result) {
+            resolve(result);
             return;
         }
+        
         var attempts = 0;
         var interval = setInterval(function() {
             attempts++;
-            if (window.solanaWeb3 && window.solanaWeb3.Transaction) {
+            result = checkWallets();
+            if (result) {
                 clearInterval(interval);
-                resolve(window.solanaWeb3);
-            } else if (attempts > 50) {
+                resolve(result);
+            } else if (attempts > 100) {
                 clearInterval(interval);
                 resolve(null);
             }
