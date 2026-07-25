@@ -242,9 +242,32 @@ async function authenticateSolana(provider: any, address: string) {
     }
     
     const message = nonceData.message || nonceData.nonce
-    const encodedMessage = new TextEncoder().encode(message)
-    const signedMessage = await provider.signMessage(encodedMessage)
+    console.log('Signing message:', message)
+    
+    // Phantom uses signMessage - this returns { signature: Uint8Array } or just Uint8Array
+    const signResult = await provider.signMessage(new TextEncoder().encode(message))
+    console.log('Sign result type:', typeof signResult, signResult?.constructor?.name)
+    
+    // Handle both formats: { signature: Uint8Array } or Uint8Array
+    let signedMessage: Uint8Array
+    if (signResult && typeof signResult === 'object' && 'signature' in signResult) {
+      signedMessage = signResult.signature
+    } else if (signResult instanceof Uint8Array) {
+      signedMessage = signResult
+    } else {
+      connectError.value = 'Signing failed - unexpected response'
+      connecting.value = false
+      return
+    }
+    
+    if (!signedMessage || signedMessage.length === 0) {
+      connectError.value = 'Signing failed - no signature returned'
+      connecting.value = false
+      return
+    }
+    
     const signature = uint8ArrayToBase64(signedMessage)
+    console.log('Signature (base64):', signature.substring(0, 20) + '...')
     
     const authRes = await fetch('/api/auth/login', {
       method: 'POST',
@@ -253,6 +276,7 @@ async function authenticateSolana(provider: any, address: string) {
     })
     
     const authData = await authRes.json()
+    console.log('Auth response:', authData)
     
     if (authData.token) {
       walletAddress.value = address
@@ -271,6 +295,7 @@ async function authenticateSolana(provider: any, address: string) {
       connectError.value = authData.error || 'Auth failed'
     }
   } catch (err: any) {
+    console.error('Auth error:', err)
     connectError.value = err.message || 'Auth failed'
   }
   
