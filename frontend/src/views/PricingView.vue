@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { ref, inject, computed } from 'vue'
 import QRCode from 'qrcode'
+import { 
+  Connection, 
+  Transaction, 
+  PublicKey, 
+  SystemProgram, 
+  LAMPORTS_PER_SOL 
+} from '@solana/web3.js'
 
 // Network config - MUST match App.vue
 const IS_MAINNET = false
@@ -13,6 +20,9 @@ const MERCHANT_WALLET_MAINNET = 'MERCHANT_MAINNET_WALLET'
 const MERCHANT_WALLET = IS_MAINNET ? MERCHANT_WALLET_MAINNET : MERCHANT_WALLET_DEVNET
 
 const globalWallet = inject<any>('wallet')
+
+// Create connection
+const connection = new Connection(RPC_URL, 'confirmed')
 
 const packages = [
   { id: 'starter', name: 'Starter', checks: 50, priceSOL: 0.01, popular: false },
@@ -65,53 +75,37 @@ async function payWithSolana() {
   success.value = ''
   
   try {
-    const sender = phantom.publicKey.toString()
-    const recipient = MERCHANT_WALLET
-    const lamports = Math.round(selectedPackage.value.priceSOL * 1e9) // SOL to lamports
+    const senderPublicKey = phantom.publicKey
+    const recipientPublicKey = new PublicKey(MERCHANT_WALLET)
+    const lamports = Math.round(selectedPackage.value.priceSOL * LAMPORTS_PER_SOL)
+    
+    // Create a proper Transaction object
+    const transaction = new Transaction()
+    
+    // Add transfer instruction using SystemProgram
+    transaction.add(
+      SystemProgram.transfer({
+        fromPubkey: senderPublicKey,
+        toPubkey: recipientPublicKey,
+        lamports: lamports,
+      })
+    )
     
     // Get recent blockhash
-    const blockhashRes = await fetch(RPC_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'getLatestBlockhash'
-      })
-    })
-    const blockhashData = await blockhashRes.json()
-    const { blockhash } = blockhashData.result
+    transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash
+    transaction.feePayer = senderPublicKey
     
-    // Create transfer instruction
-    const transferInstruction = {
-      programId: '11111111111111111111111111111111',
-      keys: [
-        { pubkey: sender, isSigner: true, isWritable: true },
-        { pubkey: recipient, isSigner: false, isWritable: true },
-        { pubkey: '11111111111111111111111111111111', isSigner: false, isWritable: false }
-      ],
-      data: {
-        type: 'buffer',
-        data: [
-          2, 0, 0, 0, 0, 0, 0, 0, // instruction index 2 = transfer
-          lamports % 256, (lamports >> 8) % 256, (lamports >> 16) % 256, (lamports >> 24) % 256,
-          (lamports >> 32) % 256, (lamports >> 40) % 256, (lamports >> 48) % 256, (lamports >> 56) % 256
-        ]
-      }
-    }
-    
-    // Create transaction message
-    const message = {
-      recentBlockhash: blockhash,
-      feePayer: sender,
-      instructions: [transferInstruction]
-    }
-    
-    // For Phantom, we need to use the signAndSendTransaction method
-    const { signature } = await phantom.signAndSendTransaction({
-      message: { ...message, instructions: [transferInstruction] }
+    console.log('Sending transaction:', {
+      from: senderPublicKey.toString(),
+      to: MERCHANT_WALLET,
+      amount: selectedPackage.value.priceSOL + ' SOL',
+      lamports: lamports
     })
     
+    // Sign and send using Phantom
+    const { signature } = await phantom.signAndSendTransaction(transaction)
+    
+    console.log('Transaction signature:', signature)
     txSignature.value = signature
     success.value = `Transaction sent! Signature: ${signature.slice(0, 8)}...`
     
@@ -121,7 +115,7 @@ async function payWithSolana() {
   } catch (err: any) {
     console.error('Payment error:', err)
     error.value = err.message || 'Payment failed'
-    if (err.message?.includes('User rejected')) {
+    if (err.message?.includes('User rejected') || err.message?.includes('rejected')) {
       error.value = 'Transaction cancelled'
     }
   }
