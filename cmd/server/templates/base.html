@@ -120,6 +120,7 @@
 #chainModal button:hover { border-color: #3b82f6 !important; }
 </style>
 
+<script src="https://unpkg.com/@solana/web3.js@latest/dist/index.umd.min.js"></script>
 <script>
 (function() {
     const SERVER_AUTH = {{if .IsAuthenticated}}true{{else}}false{{end}};
@@ -500,6 +501,7 @@
     window.getAuthToken = function() { return authToken; };
     window.isAuthenticated = function() { return serverAuthenticated; };
     window.getUserBalance = function() { return userBalance; };
+    window.getSolanaProvider = getSolanaProvider;
 })();
 </script>
 </body>

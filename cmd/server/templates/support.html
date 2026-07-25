@@ -198,7 +198,6 @@ async function buyPackage() {
     const isAuthed = window.isAuthenticated ? window.isAuthenticated() : false;
     
     if (!isConnected && !isAuthed) {
-        // Trigger connect
         document.getElementById('connectWalletBtnNotAuth').click();
         return;
     }
@@ -233,31 +232,70 @@ async function buyPackage() {
         
         const orderData = await orderRes.json();
         
-        // Show payment instructions for testnet
-        window.showToast(`🪙 Send ${orderData.amount} SOL to ${orderData.payment_address}`);
+        // 2. Get Solana provider
+        const provider = window.getSolanaProvider();
+        if (!provider) {
+            throw new Error('No Solana wallet found');
+        }
         
-        // For testnet demo: add credits immediately after showing address
-        // In production: wait for blockchain confirmation
-        setTimeout(async () => {
-            // Confirm payment (demo mode - instant delivery)
-            try {
-                const confirmRes = await fetch(`/api/orders/${orderData.order_id}/confirm`, {
-                    method: 'POST',
-                    headers: { 'Authorization': 'Bearer ' + (authToken || '') }
-                });
-                
-                if (confirmRes.ok) {
-                    const confirmData = await confirmRes.json();
-                    window.showToast(`✅ ${selectedPackage.checks} checks added! Balance: ${confirmData.balance}`);
-                    updateWalletStatus();
-                }
-            } catch (e) {
-                console.error('Confirm error:', e);
-            }
-        }, 2000);
+        window.showToast('📝 Sign the transaction in your wallet...');
+        
+        // 3. Create and send real Solana transaction
+        const connection = new solanaWeb3.Connection('https://api.devnet.solana.com', 'confirmed');
+        
+        const fromPubkey = new solanaWeb3.PublicKey(address);
+        const toPubkey = new solanaWeb3.PublicKey(orderData.payment_address);
+        const amount = parseFloat(orderData.amount) * solanaWeb3.LAMPORTS_PER_SOL;
+        
+        const transaction = new solanaWeb3.Transaction();
+        transaction.add(
+            solanaWeb3.SystemProgram.transfer({
+                fromPubkey: fromPubkey,
+                toPubkey: toPubkey,
+                lamports: Math.round(amount),
+            })
+        );
+        
+        // Get recent blockhash
+        const { blockhash } = await connection.getRecentBlockhash();
+        transaction.recentBlockhash = blockhash;
+        transaction.feePayer = fromPubkey;
+        
+        // Request signature from wallet
+        const signature = await provider.signAndSendTransaction(transaction);
+        
+        window.showToast(`🔄 Transaction sent: ${signature.slice(0, 8)}... Waiting for confirmation...`);
+        
+        // 4. Confirm transaction on blockchain
+        const confirmation = await connection.confirmTransaction(signature, 'confirmed');
+        
+        if (confeleration.value.err) {
+            throw new Error('Transaction failed on blockchain');
+        }
+        
+        window.showToast(`✅ Transaction confirmed! Verifying payment...`);
+        
+        // 5. Verify payment on backend
+        const verifyRes = await fetch(`/api/orders/${orderData.order_id}/confirm?tx_signature=${signature}`, {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + (authToken || '') }
+        });
+        
+        if (!verifyRes.ok) {
+            throw new Error('Payment verification failed');
+        }
+        
+        const verifyData = await verifyRes.json();
+        window.showToast(`✅ ${selectedPackage.checks} checks added! Balance: ${verifyData.balance}`);
+        updateWalletStatus();
         
     } catch (error) {
-        window.showToast('❌ Purchase failed: ' + error.message);
+        console.error('Purchase error:', error);
+        if (error.message?.includes('User rejected')) {
+            window.showToast('❌ Transaction cancelled');
+        } else {
+            window.showToast('❌ Purchase failed: ' + error.message);
+        }
     }
     
     btn.textContent = `Pay $${selectedPackage.price} for ${selectedPackage.checks} Checks`;

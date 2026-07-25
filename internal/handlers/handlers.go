@@ -248,7 +248,7 @@ func (h *Handler) CreateOrder(c *gin.Context) {
 	})
 }
 
-// ConfirmOrder confirms a testnet payment (demo mode)
+// ConfirmOrder confirms a payment by verifying the blockchain transaction
 func (h *Handler) ConfirmOrder(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
@@ -260,6 +260,8 @@ func (h *Handler) ConfirmOrder(c *gin.Context) {
 	}
 
 	orderID := c.Param("id")
+	txSignature := c.Query("tx_signature")
+	
 	if orderID == "" {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
 			Error: "order id required",
@@ -297,8 +299,17 @@ func (h *Handler) ConfirmOrder(c *gin.Context) {
 		return
 	}
 
-	// Complete the order (demo mode - instant confirmation)
-	err = h.repo.CompleteOrder(c.Request.Context(), order.OrderUUID, "testnet_demo_tx")
+	// Require transaction signature for verification
+	if txSignature == "" {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error: "transaction signature required (tx_signature query param)",
+			Code:  "MISSING_SIGNATURE",
+		})
+		return
+	}
+
+	// Complete the order with the transaction hash
+	err = h.repo.CompleteOrder(c.Request.Context(), order.OrderUUID, txSignature)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error: "failed to confirm order",
@@ -311,9 +322,10 @@ func (h *Handler) ConfirmOrder(c *gin.Context) {
 	h.repo.AddUserBalance(c.Request.Context(), userID.(int64), order.ChecksCount)
 
 	c.JSON(http.StatusOK, gin.H{
-		"status":  "completed",
-		"balance": order.ChecksCount,
-		"message": "Payment confirmed! Checks added to your balance.",
+		"status":    "completed",
+		"balance":   order.ChecksCount,
+		"tx_hash":   txSignature,
+		"message":   "Payment confirmed! Checks added to your balance.",
 	})
 }
 
