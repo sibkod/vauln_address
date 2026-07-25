@@ -11,7 +11,9 @@ const router = createRouter({
     { path: '/roadmap', name: 'roadmap', component: () => import('./views/RoadmapView.vue') },
     { path: '/about', name: 'about', component: () => import('./views/AboutView.vue') },
     { path: '/contact', name: 'contact', component: () => import('./views/ContactView.vue') },
-    { path: '/support', name: 'support', component: () => import('./views/SupportView.vue') }
+    { path: '/support', name: 'support', component: () => import('./views/SupportView.vue') },
+    { path: '/backend-error', name: 'backend-error', component: () => import('./views/BackendErrorView.vue') },
+    { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('./views/NotFoundView.vue') }
   ]
 })
 
