@@ -120,6 +120,14 @@
 #chainModal button:hover { border-color: #3b82f6 !important; }
 </style>
 
+<script src="https://cdn.jsdelivr.net/npm/buffer@6.0.3/umd/browser-bundle.min.js"></script>
+<script>
+(function() {
+    // Set global Buffer for Solana Web3.js
+    if (typeof window !== 'undefined') {
+        window.Buffer = Buffer;
+    }
+</script>
 <script src="https://cdn.jsdelivr.net/npm/@solana/web3.js@1.95.8/lib/index.iife.min.js"></script>
 <script>
 (function() {
@@ -276,7 +284,8 @@
     
     // Dropdown menu toggle
     if (walletDropdown) {
-        walletDropdown.querySelector('.connect-btn').addEventListener('click', function(e) {
+        connectBtn.addEventListener('click', function(e) {
+            console.log('Dropdown button clicked');
             e.stopPropagation();
             walletDropdownMenu.classList.toggle('show');
         });
