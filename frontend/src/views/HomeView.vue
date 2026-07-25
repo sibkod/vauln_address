@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, inject, onMounted } from 'vue'
+import { ref, inject, onMounted, computed } from 'vue'
 
 const chain = ref('evm')
 const address = ref('')
@@ -9,8 +9,16 @@ const chains = ref<any[]>([])
 const recentChecks = ref<any[]>([])
 const alertId = ref(0)
 
+// Free tier: 3 checks per day
+const FREE_CHECKS_PER_DAY = 3
+const todayKey = `freeChecks_${new Date().toISOString().split('T')[0]}`
+const freeChecksUsed = ref(parseInt(localStorage.getItem(todayKey) || '0'))
+const freeChecksRemaining = computed(() => Math.max(0, FREE_CHECKS_PER_DAY - freeChecksUsed.value))
+
 // Get wallet auth from App.vue
 const wallet = inject<any>('wallet')
+const isConnected = computed(() => wallet?.connected?.value || false)
+const userBalance = computed(() => wallet?.userBalance?.value || 0)
 
 const chainIcons: Record<string, string> = { evm: '🟣', btc: '🟠', solana: '🟢', sui: '🔵', tron: '🔴' }
 const chainPlaceholders: Record<string, string> = {
@@ -45,6 +53,11 @@ onMounted(async () => {
   } catch {}
 })
 
+function useFreeCheck() {
+  freeChecksUsed.value++
+  localStorage.setItem(todayKey, String(freeChecksUsed.value))
+}
+
 async function check() {
   if (!address.value.trim()) {
     result.value = { status: 'error', message: 'Enter a wallet address' }
@@ -73,6 +86,13 @@ async function check() {
       return
     }
     
+    if (res.status === 402) {
+      const data = await res.json()
+      result.value = { status: 'error', message: data.error + (data.details ? ` (${data.details})` : '') }
+      loading.value = false
+      return
+    }
+    
     const data = await res.json()
     
     if (data.error) {
@@ -82,6 +102,11 @@ async function check() {
     }
     
     result.value = data
+    
+    // Use free check if not authenticated
+    if (!isConnected.value) {
+      useFreeCheck()
+    }
     
     // Update balance if returned
     if (data.balance_left !== undefined && wallet) {
@@ -145,6 +170,13 @@ function getResultClass() {
     </div>
   </div>
 
+  <!-- Free tier info for non-authenticated users -->
+  <div v-if="!isConnected" class="free-tier-info">
+    <span class="free-badge">FREE</span>
+    <span>{{ freeChecksRemaining }} of {{ FREE_CHECKS_PER_DAY }} checks remaining today</span>
+    <RouterLink to="/pricing" class="upgrade-link">Upgrade →</RouterLink>
+  </div>
+
   <!-- Logo -->
   <div class="logo-area">
     <div class="badge">⚡ multi‑chain security</div>
@@ -171,8 +203,8 @@ function getResultClass() {
       :placeholder="chainPlaceholders[chain]"
       @keydown.enter="check"
     />
-    <button class="check-btn" @click="check" :disabled="loading">
-      {{ loading ? 'Checking…' : 'Check' }}
+    <button class="check-btn" @click="check" :disabled="loading || (!isConnected && freeChecksRemaining <= 0)">
+      {{ loading ? 'Checking…' : (!isConnected && freeChecksRemaining <= 0) ? 'No free checks left' : 'Check' }}
     </button>
   </div>
 
