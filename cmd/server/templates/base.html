@@ -212,7 +212,13 @@
     console.log('Buffer polyfill ready');
 })();
 </script>
-<!-- Solana Web3.js removed - using manual transaction creation -->
+<script type="module">
+// Import Solana Web3.js as ES module
+import { Connection, PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL } from 'https://esm.sh/@solana/web3.js@1.95.8';
+window.solanaWeb3 = { Connection, PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL };
+window.Buffer = Buffer;
+console.log('Solana Web3.js loaded via ES module');
+</script>
 <script>
 (function() {
     const SERVER_AUTH = {{if .IsAuthenticated}}true{{else}}false{{end}};

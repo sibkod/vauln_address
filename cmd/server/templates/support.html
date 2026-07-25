@@ -253,64 +253,40 @@ async function buyPackage() {
         
         window.showToast('📝 Sign the transaction in your wallet...');
         
-        // 3. Create transfer instruction manually (no Buffer needed)
+        // 3. Wait for Solana Web3.js to load
+        if (!window.solanaWeb3 || !window.solanaWeb3.Transaction) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        
+        if (!window.solanaWeb3 || !window.solanaWeb3.Transaction) {
+            throw new Error('Solana Web3.js not loaded. Please refresh the page.');
+        }
+        
+        const { Connection, PublicKey, Transaction, SystemProgram } = window.solanaWeb3;
         const lamports = Math.round(parseFloat(orderData.amount) * 1e9);
         
-        // Get recent blockhash from Solana RPC
-        const resp = await fetch('https://api.devnet.solana.com', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                jsonrpc: '2.0',
-                id: 1,
-                method: 'getLatestBlockhash'
+        // Create connection and transaction
+        const connection = new Connection('https://api.devnet.solana.com');
+        const fromPubkey = new PublicKey(address);
+        const toPubkey = new PublicKey(orderData.payment_address);
+        
+        const transaction = new Transaction();
+        transaction.add(
+            SystemProgram.transfer({
+                fromPubkey: fromPubkey,
+                toPubkey: toPubkey,
+                lamports: lamports
             })
-        });
-        const blockhashData = await resp.json();
-        const blockhash = blockhashData.result.value.blockhash;
+        );
         
-        // Create simple transfer instruction bytes
-        // SystemProgram.transfer: 2 (instruction index) + 8 bytes lamports
-        const instructionData = new Uint8Array(12);
-        instructionData[0] = 2; // transfer instruction
-        // Write lamports as 8-byte little-endian
-        for (let i = 0; i < 8; i++) {
-            instructionData[4 + i] = (lamports >> (8 * i)) & 0xff;
-        }
+        // Get recent blockhash
+        const { blockhash } = await connection.getRecentBlockhash();
+        transaction.recentBlockhash = blockhash;
+        transaction.feePayer = fromPubkey;
         
-        // Build transaction message (simplified version)
-        const message = {
-            recentBlockhash: blockhash,
-            feePayer: address,
-            instructions: [{
-                programId: '11111111111111111111111111111111',
-                keys: [
-                    { pubkey: address, isSigner: true, isWritable: true },
-                    { pubkey: orderData.payment_address, isSigner: false, isWritable: true }
-                ],
-                data: instructionData
-            }]
-        };
-        
-        // Try to sign and send using wallet
-        let signature;
-        try {
-            // Method 1: signAndSendTransaction (Phantom, Solflare)
-            if (provider.signAndSendTransaction) {
-                signature = await provider.signAndSendTransaction(message);
-            } else if (provider.signTransaction) {
-                // Method 2: signTransaction (older wallets)
-                const tx = await provider.signTransaction(message);
-                signature = await provider.sendTransaction(tx);
-            } else {
-                throw new Error('Wallet does not support transaction signing');
-            }
-        } catch (walletError) {
-            // Fallback: try serializing properly for different wallet formats
-            throw new Error('Transaction signing failed: ' + walletError.message);
-        }
-        
-        const sigString = typeof signature === 'string' ? signature : signature.signature || signature.signatures?.[0];
+        // Sign and send
+        const signature = await provider.signAndSendTransaction(transaction);
+        const sigString = typeof signature === 'string' ? signature : signature.signature;
         
         window.showToast('🔄 Transaction sent: ' + sigString.slice(0, 8) + '...');
         
