@@ -423,10 +423,21 @@ func (h *Handler) GetBalance(c *gin.Context) {
 	chain, _ := c.Get("userChain")
 	chainStr, _ := chain.(string)
 
+	// Get rate limit remaining
+	ip := c.ClientIP()
+	rateLimit, _ := h.repo.GetRateLimit(c.Request.Context(), ip)
+	rateLimitRemaining := h.serverCfg.RateLimitRequests
+	if rateLimit != nil {
+		rateLimitRemaining = h.serverCfg.RateLimitRequests - rateLimit.Count
+		if rateLimitRemaining < 0 {
+			rateLimitRemaining = 0
+		}
+	}
+
 	// Validate that user is actually authenticated (not just token present)
 	if exists && walletAddress != nil && walletAddress != "" && chainStr != "" {
-		// Authenticated user - return their purchased balance
-		balance, err := h.repo.GetUserBalance(c.Request.Context(), walletAddress.(string), chainStr)
+		// Authenticated user
+		purchasedBalance, err := h.repo.GetUserBalance(c.Request.Context(), walletAddress.(string), chainStr)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 				Error: "failed to get balance",
@@ -434,32 +445,33 @@ func (h *Handler) GetBalance(c *gin.Context) {
 			})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{
-			"balance": balance,
-			"source": "purchased",
-		})
+
+		// If user has purchased checks, show purchased balance
+		// Otherwise, show rate limit remaining (free checks for authenticated users)
+		if purchasedBalance > 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"balance":               purchasedBalance,
+				"purchased_balance":     purchasedBalance,
+				"rate_limit_remaining":  rateLimitRemaining,
+				"source":                "purchased",
+			})
+		} else {
+			c.JSON(http.StatusOK, gin.H{
+				"balance":               rateLimitRemaining,
+				"purchased_balance":     0,
+				"rate_limit_remaining": rateLimitRemaining,
+				"source":                "rate_limit",
+			})
+		}
 		return
 	}
 
-	// Anonymous user - return IP-based rate limit remaining
-	ip := c.ClientIP()
-	rateLimit, err := h.repo.GetRateLimit(c.Request.Context(), ip)
-	if err != nil || rateLimit == nil {
-		c.JSON(http.StatusOK, gin.H{
-			"balance": h.serverCfg.RateLimitRequests,
-			"source":  "rate_limit",
-		})
-		return
-	}
-
-	remaining := h.serverCfg.RateLimitRequests - rateLimit.Count
-	if remaining < 0 {
-		remaining = 0
-	}
-
+	// Anonymous user - return IP-based rate limit remaining only
 	c.JSON(http.StatusOK, gin.H{
-		"balance": remaining,
-		"source":  "rate_limit",
+		"balance":               rateLimitRemaining,
+		"purchased_balance":     0,
+		"rate_limit_remaining": rateLimitRemaining,
+		"source":               "rate_limit",
 	})
 }
 
