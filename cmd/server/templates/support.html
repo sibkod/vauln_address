@@ -253,43 +253,40 @@ async function buyPackage() {
         
         window.showToast('📝 Sign the transaction in your wallet...');
         
-        // 3. Create and send real Solana transaction
+        // 3. Create and send Solana transaction using Phantom
         const connection = new solanaWeb3.Connection('https://api.devnet.solana.com', 'confirmed');
         
         const fromPubkey = new solanaWeb3.PublicKey(address);
         const toPubkey = new solanaWeb3.PublicKey(orderData.payment_address);
-        const amount = parseFloat(orderData.amount) * solanaWeb3.LAMPORTS_PER_SOL;
+        const lamports = Math.round(parseFloat(orderData.amount) * 1e9);
         
-        const transaction = new solanaWeb3.Transaction();
-        transaction.add(
-            solanaWeb3.SystemProgram.transfer({
-                fromPubkey: fromPubkey,
-                toPubkey: toPubkey,
-                lamports: Math.round(amount),
-            })
-        );
+        // Create transfer instruction
+        const transferInstruction = solanaWeb3.SystemProgram.transfer({
+            fromPubkey: fromPubkey,
+            toPubkey: toPubkey,
+            lamports: lamports,
+        });
         
-        // Get recent blockhash
+        // Create and sign transaction
         const { blockhash } = await connection.getRecentBlockhash();
+        const transaction = new solanaWeb3.Transaction();
+        transaction.add(transferInstruction);
         transaction.recentBlockhash = blockhash;
         transaction.feePayer = fromPubkey;
         
-        // Request signature from wallet
+        // Sign and send using Phantom
         const signature = await provider.signAndSendTransaction(transaction);
+        const sigString = typeof signature === 'string' ? signature : signature.signature;
         
-        window.showToast(`🔄 Transaction sent: ${signature.slice(0, 8)}... Waiting for confirmation...`);
+        window.showToast(`🔄 Transaction sent: ${sigString.slice(0, 8)}... Waiting for confirmation...`);
         
-        // 4. Confirm transaction on blockchain
-        const confirmation = await connection.confirmTransaction(signature, 'confirmed');
-        
-        if (confeleration.value.err) {
-            throw new Error('Transaction failed on blockchain');
-        }
+        // 4. Confirm transaction
+        await connection.confirmTransaction(sigString, 'confirmed');
         
         window.showToast(`✅ Transaction confirmed! Verifying payment...`);
         
         // 5. Verify payment on backend
-        const verifyRes = await fetch(`/api/orders/${orderData.order_id}/confirm?tx_signature=${signature}`, {
+        const verifyRes = await fetch(`/api/orders/${orderData.order_id}/confirm?tx_signature=${sigString}`, {
             method: 'POST',
             headers: { 'Authorization': 'Bearer ' + (authToken || '') }
         });
