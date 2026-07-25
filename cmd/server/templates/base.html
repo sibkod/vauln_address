@@ -212,11 +212,31 @@
     console.log('Buffer polyfill ready');
 })();
 </script>
-<!-- Solana Web3.js loaded as ES module -->
-<script type="module">
-import solanaWeb3 from 'https://cdn.jsdelivr.net/npm/@solana/web3.js@1.95.8/lib/index.iife.min.js';
-window.solanaWeb3 = solanaWeb3;
-console.log('Solana Web3.js loaded from CDN');
+<!-- Solana Web3.js loaded dynamically -->
+<script>
+// Load Solana Web3.js and wait for it to set window.solanaWeb3
+(function() {
+    function checkSolanaWeb3() {
+        if (window.solanaWeb3 && window.solanaWeb3.Transaction) {
+            console.log('Solana Web3.js loaded from CDN');
+            return true;
+        }
+        return false;
+    }
+    
+    if (checkSolanaWeb3()) return;
+    
+    // Dynamically load the script
+    var script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/@solana/web3.js@1.95.8/lib/index.iife.min.js';
+    script.onload = function() {
+        console.log('Solana Web3.js script loaded');
+    };
+    script.onerror = function() {
+        console.error('Failed to load Solana Web3.js from jsdelivr');
+    };
+    document.head.appendChild(script);
+})();
 </script>
 <script>
 // Wait for any Solana wallet to provide solanaWeb3
@@ -765,7 +785,6 @@ window.waitForSolanaWeb3 = function() {
     };
     window.getUserBalance = function() { return userBalance; };
     window.getSolanaProvider = getSolanaProvider;
-    window.createSolanaTransaction = createSolanaTransaction;
 })();
 </script>
 </body>
