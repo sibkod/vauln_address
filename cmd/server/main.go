@@ -1,16 +1,13 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"embed"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
-	"text/template"
 
 	"github.com/gin-gonic/gin"
 
@@ -20,114 +17,8 @@ import (
 	"vauln-address/internal/repository"
 )
 
-//go:embed templates/*
-var templateFS embed.FS
-
-var tmpl *template.Template
-var serverCfg *config.Config
-
-type PageData struct {
-	Title          string
-	ActivePage     string
-	Content        string
-	FreeCheckLimit int
-}
-
-func init() {
-	var err error
-	tmpl, err = template.ParseFS(templateFS, "templates/*.html")
-	if err != nil {
-		log.Fatalf("Failed to parse templates: %v", err)
-	}
-}
-
-func renderPage(c *gin.Context, pageTmpl, title, activePage string, repo *repository.Repository) {
-	c.Header("Content-Type", "text/html; charset=utf-8")
-
-	// Render the content template to a buffer first
-	var contentBuf bytes.Buffer
-	if err := tmpl.ExecuteTemplate(&contentBuf, pageTmpl, nil); err != nil {
-		renderErrorHTML(c, 500, "Template Error", "Failed to render content")
-		return
-	}
-
-	// Get user info if authenticated
-	userBalance := 0
-	isAuthenticated := false
-	var userAddress string
-	if userID, exists := c.Get("userID"); exists && repo != nil {
-		if user, err := repo.GetUserByID(c.Request.Context(), userID.(int64)); err == nil && user != nil {
-			userBalance = user.Balance
-			isAuthenticated = true
-			userAddress = user.WalletAddress
-		}
-	}
-
-	// Solana configuration for payment page
-	solanaNetwork := "mainnet"
-	if serverCfg.SolanaUseDevnet {
-		solanaNetwork = "devnet"
-	}
-	solanaPaymentAddr := serverCfg.SolanaPaymentAddr
-	if solanaPaymentAddr == "" {
-		solanaPaymentAddr = "CW58CLARKr9mL4d7oRDj6FKv3cM2xT6vH3kQVZqW4xXy" // demo address
-	}
-
-	// Execute base.html with the rendered content as a string
-	tmpl.ExecuteTemplate(c.Writer, "base.html", gin.H{
-		"Title":             title,
-		"ActivePage":        activePage,
-		"Content":           contentBuf.String(),
-		"FreeCheckLimit":    serverCfg.FreeCheckLimit,
-		"UserBalance":       userBalance,
-		"IsAuthenticated":   isAuthenticated,
-		"UserAddress":       userAddress,
-		"SolanaUseDevnet":   serverCfg.SolanaUseDevnet,
-		"SolanaNetwork":     solanaNetwork,
-		"SolanaRPCURL":      serverCfg.SolanaRPCURL,
-		"SolanaPaymentAddr": solanaPaymentAddr,
-		"Debug":             false, // Set to true for debug info
-	})
-}
-
-func renderErrorHTML(c *gin.Context, code int, title, message string) {
-	c.Header("Content-Type", "text/html; charset=utf-8")
-	c.Status(code)
-	tmpl.ExecuteTemplate(c.Writer, "error.html", gin.H{
-		"Code":        code,
-		"Title":       title,
-		"Message":     message,
-		"Icon":        getErrorIcon(code),
-		"ShowDetails": false,
-	})
-}
-
-func renderErrorJSON(c *gin.Context, code int, message string) {
-	c.JSON(code, gin.H{"error": message, "code": code})
-}
-
-func getErrorIcon(code int) string {
-	switch code {
-	case 400:
-		return "📝"
-	case 401:
-		return "🔐"
-	case 403:
-		return "🚫"
-	case 404:
-		return "🔍"
-	case 429:
-		return "⏳"
-	case 500:
-		return "⚠️"
-	default:
-		return "❌"
-	}
-}
-
 func main() {
 	cfg := config.Load()
-	serverCfg = cfg
 
 	repo, err := repository.New(cfg)
 	if err != nil {
@@ -153,49 +44,23 @@ func main() {
 	authService := h.GetAuthService()
 	router.Use(middleware.AuthMiddleware(authService))
 
-	// Store repo reference for page rendering
-	r := repo
-
-	// Check if frontend dist exists
+	// Serve React frontend from frontend/dist
 	frontendDist := "../frontend/dist"
 	if _, err := os.Stat(frontendDist); err == nil {
-		// Serve React frontend
 		router.Static("/assets", frontendDist+"/assets")
 		router.GET("/", func(c *gin.Context) {
 			c.File(frontendDist + "/index.html")
 		})
 		router.NoRoute(func(c *gin.Context) {
-			// SPA fallback - serve index.html
 			c.File(frontendDist + "/index.html")
 		})
 		log.Println("Serving React frontend from:", frontendDist)
 	} else {
-		// Fallback to Go templates
-		log.Println("Frontend dist not found, using Go templates")
-		router.GET("/", func(c *gin.Context) { renderPage(c, "home", "Home", "home", r) })
-		router.GET("/roadmap", func(c *gin.Context) { renderPage(c, "roadmap", "Roadmap", "roadmap", r) })
-		router.GET("/about", func(c *gin.Context) { renderPage(c, "about", "About", "about", r) })
-		router.GET("/contact", func(c *gin.Context) { renderPage(c, "contact", "Contact", "contact", r) })
-		router.GET("/support", func(c *gin.Context) { renderPage(c, "support", "Support", "support", r) })
-		router.GET("/api-docs", func(c *gin.Context) { renderPage(c, "api", "API", "api", r) })
-		router.GET("/api-keys", func(c *gin.Context) { renderPage(c, "api-keys", "API Keys", "api-keys", r) })
-		router.GET("/payment", func(c *gin.Context) { renderPage(c, "payment", "Payment", "payment", r) })
-		router.NoRoute(func(c *gin.Context) {
-			renderErrorHTML(c, 404, "Page Not Found", "The page you're looking for doesn't exist or has been moved.")
-		})
+		log.Fatal("frontend/dist not found! Run 'npm run build' in frontend/")
 	}
 
-	// ========== API (JSON) ==========
+	// API routes
 	api := router.Group("/api")
-
-	// API 404 middleware
-	api.Use(func(c *gin.Context) {
-		c.Next()
-		if c.Writer.Status() == 404 && !c.Writer.Written() {
-			renderErrorJSON(c, 404, "Endpoint not found")
-		}
-	})
-
 	api.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "vauln-address-api", "time": time.Now().UTC().Format(time.RFC3339)})
 	})
@@ -210,16 +75,11 @@ func main() {
 	api.GET("/orders/verify", h.VerifyPayment)
 	api.POST("/check", rateLimiter.Limit(), h.CheckWallet)
 	api.POST("/contact", h.SubmitContact)
-
-	// API Key Management (requires JWT auth)
 	api.GET("/api-keys", middleware.RequireAuth(), h.ListAPIKeys)
 	api.POST("/api-keys", middleware.RequireAuth(), h.CreateAPIKey)
 	api.DELETE("/api-keys/:id", middleware.RequireAuth(), h.DeleteAPIKeyHandler)
 	api.POST("/api-keys/revoke/:id", middleware.RequireAuth(), h.RevokeAPIKeyHandler)
-
-	// API Key Renewal via Web3 (no JWT required, uses Web3 signature)
-	api.GET("/api-keys/renewal-nonce", h.GetRenewalNonce)
-	api.POST("/api-keys/renew", h.RenewAPIKeyHandler)
+	api.POST("/api-keys/renew", middleware.RequireAuth(), h.RenewAPIKeyHandler)
 
 	server := &http.Server{Addr: ":" + cfg.ServerPort, Handler: router, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 
