@@ -1,12 +1,11 @@
 export default function Roadmap() {
   return (
-    <>
-      <h1>// ROADMAP</h1>
-      <p className="text-dim mb-3">Development timeline and future plans.</p>
+    <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+      <h1 style={{ marginBottom: '2rem' }}>Roadmap</h1>
 
-      <div className="card">
-        <div className="card-header">DONE</div>
-        <ul style={{ color: 'var(--success)', paddingLeft: '1.5rem' }}>
+      <div className="card mb-2">
+        <div className="card-header">Completed</div>
+        <ul style={{ paddingLeft: '1.5rem', margin: 0, color: 'var(--text-secondary)' }}>
           <li>EVM wallet checking</li>
           <li>Bitcoin address validation</li>
           <li>Solana address support</li>
@@ -15,9 +14,9 @@ export default function Roadmap() {
         </ul>
       </div>
 
-      <div className="card">
-        <div className="card-header">IN PROGRESS</div>
-        <ul style={{ color: 'var(--warning)', paddingLeft: '1.5rem' }}>
+      <div className="card mb-2">
+        <div className="card-header">In Progress</div>
+        <ul style={{ paddingLeft: '1.5rem', margin: 0, color: 'var(--text-secondary)' }}>
           <li>Solana payment integration</li>
           <li>API key management</li>
           <li>User dashboard</li>
@@ -25,8 +24,8 @@ export default function Roadmap() {
       </div>
 
       <div className="card">
-        <div className="card-header">PLANNED</div>
-        <ul style={{ color: 'var(--fg-dim)', paddingLeft: '1.5rem' }}>
+        <div className="card-header">Planned</div>
+        <ul style={{ paddingLeft: '1.5rem', margin: 0, color: 'var(--text-secondary)' }}>
           <li>Batch wallet checking</li>
           <li>Real-time monitoring</li>
           <li>Telegram bot alerts</li>
@@ -35,6 +34,6 @@ export default function Roadmap() {
           <li>Browser extension</li>
         </ul>
       </div>
-    </>
+    </div>
   )
 }
