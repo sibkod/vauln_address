@@ -147,6 +147,22 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		);
 		CREATE INDEX idx_check_history_created ON check_history(created_at);
+
+		CREATE TABLE IF NOT EXISTS api_keys (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			user_id BIGINT NOT NULL,
+			key_hash VARCHAR(100) NOT NULL UNIQUE,
+			key_prefix VARCHAR(20) NOT NULL,
+			name VARCHAR(100) NOT NULL,
+			last_used_at TIMESTAMP NULL,
+			expires_at TIMESTAMP NULL,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			revoked_at TIMESTAMP NULL,
+			is_revoked TINYINT(1) DEFAULT 0,
+			FOREIGN KEY (user_id) REFERENCES users(id)
+		);
+		CREATE INDEX idx_api_keys_user ON api_keys(user_id);
+		CREATE INDEX idx_api_keys_hash ON api_keys(key_hash);
 		`
 
 	case config.DBTypeSQLite:
@@ -223,6 +239,22 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
 		CREATE INDEX IF NOT EXISTS idx_check_history_created ON check_history(created_at);
+
+		CREATE TABLE IF NOT EXISTS api_keys (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL,
+			key_hash TEXT NOT NULL UNIQUE,
+			key_prefix TEXT NOT NULL,
+			name TEXT NOT NULL,
+			last_used_at DATETIME,
+			expires_at DATETIME,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			revoked_at DATETIME,
+			is_revoked INTEGER DEFAULT 0,
+			FOREIGN KEY (user_id) REFERENCES users(id)
+		);
+		CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id);
+		CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash);
 		`
 
 	default: // PostgreSQL
@@ -298,6 +330,22 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 			created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 		);
 		CREATE INDEX IF NOT EXISTS idx_check_history_created ON check_history(created_at);
+
+		CREATE TABLE IF NOT EXISTS api_keys (
+			id BIGSERIAL PRIMARY KEY,
+			user_id BIGINT NOT NULL,
+			key_hash VARCHAR(100) NOT NULL UNIQUE,
+			key_prefix VARCHAR(20) NOT NULL,
+			name VARCHAR(100) NOT NULL,
+			last_used_at TIMESTAMP WITH TIME ZONE,
+			expires_at TIMESTAMP WITH TIME ZONE,
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+			revoked_at TIMESTAMP WITH TIME ZONE,
+			is_revoked BOOLEAN DEFAULT FALSE,
+			FOREIGN KEY (user_id) REFERENCES users(id)
+		);
+		CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id);
+		CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash);
 		`
 	}
 
@@ -697,4 +745,171 @@ func (r *Repository) GetCheckHistory(ctx context.Context, limit int) ([]models.R
 		checks = append(checks, check)
 	}
 	return checks, rows.Err()
+}
+
+// ==================== API Key Methods ====================
+
+func (r *Repository) CreateAPIKey(ctx context.Context, userID int64, keyHash, keyPrefix, name string, expiresAt *time.Time) (*models.APIKey, error) {
+	var result sql.Result
+	var err error
+
+	if r.dbType == config.DBTypeSQLite {
+		result, err = r.db.ExecContext(ctx,
+			`INSERT INTO api_keys (user_id, key_hash, key_prefix, name, expires_at, created_at, is_revoked)
+			VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 0)`,
+			userID, keyHash, keyPrefix, name, expiresAt,
+		)
+	} else {
+		result, err = r.db.ExecContext(ctx,
+			`INSERT INTO api_keys (user_id, key_hash, key_prefix, name, expires_at, created_at, is_revoked)
+			VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, false)`,
+			userID, keyHash, keyPrefix, name, expiresAt,
+		)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return nil, err
+	}
+
+	return &models.APIKey{
+		ID:        id,
+		UserID:    userID,
+		KeyHash:   keyHash,
+		KeyPrefix: keyPrefix,
+		Name:      name,
+		ExpiresAt: expiresAt,
+		CreatedAt: time.Now(),
+		IsRevoked: false,
+	}, nil
+}
+
+func (r *Repository) GetAPIKeyByID(ctx context.Context, keyID int64) (*models.APIKey, error) {
+	var key models.APIKey
+	var expiresAt, lastUsedAt, revokedAt sql.NullTime
+
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id, user_id, key_hash, key_prefix, name, last_used_at, expires_at, created_at, revoked_at, is_revoked
+		FROM api_keys WHERE id = ?`,
+		keyID,
+	).Scan(&key.ID, &key.UserID, &key.KeyHash, &key.KeyPrefix, &key.Name, &lastUsedAt, &expiresAt, &key.CreatedAt, &revokedAt, &key.IsRevoked)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if expiresAt.Valid {
+		key.ExpiresAt = &expiresAt.Time
+	}
+	if lastUsedAt.Valid {
+		key.LastUsedAt = &lastUsedAt.Time
+	}
+	if revokedAt.Valid {
+		key.RevokedAt = &revokedAt.Time
+	}
+
+	return &key, nil
+}
+
+func (r *Repository) GetAPIKeyByHash(ctx context.Context, keyHash string) (*models.APIKey, error) {
+	var key models.APIKey
+	var expiresAt, lastUsedAt, revokedAt sql.NullTime
+
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id, user_id, key_hash, key_prefix, name, last_used_at, expires_at, created_at, revoked_at, is_revoked
+		FROM api_keys WHERE key_hash = ?`,
+		keyHash,
+	).Scan(&key.ID, &key.UserID, &key.KeyHash, &key.KeyPrefix, &key.Name, &lastUsedAt, &expiresAt, &key.CreatedAt, &revokedAt, &key.IsRevoked)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if expiresAt.Valid {
+		key.ExpiresAt = &expiresAt.Time
+	}
+	if lastUsedAt.Valid {
+		key.LastUsedAt = &lastUsedAt.Time
+	}
+	if revokedAt.Valid {
+		key.RevokedAt = &revokedAt.Time
+	}
+
+	return &key, nil
+}
+
+func (r *Repository) GetUserAPIKeys(ctx context.Context, userID int64) ([]models.APIKey, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, user_id, key_hash, key_prefix, name, last_used_at, expires_at, created_at, revoked_at, is_revoked
+		FROM api_keys WHERE user_id = ? ORDER BY created_at DESC`,
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var keys []models.APIKey
+	for rows.Next() {
+		var key models.APIKey
+		var expiresAt, lastUsedAt, revokedAt sql.NullTime
+
+		if err := rows.Scan(&key.ID, &key.UserID, &key.KeyHash, &key.KeyPrefix, &key.Name, &lastUsedAt, &expiresAt, &key.CreatedAt, &revokedAt, &key.IsRevoked); err != nil {
+			return nil, err
+		}
+
+		if expiresAt.Valid {
+			key.ExpiresAt = &expiresAt.Time
+		}
+		if lastUsedAt.Valid {
+			key.LastUsedAt = &lastUsedAt.Time
+		}
+		if revokedAt.Valid {
+			key.RevokedAt = &revokedAt.Time
+		}
+
+		keys = append(keys, key)
+	}
+	return keys, rows.Err()
+}
+
+func (r *Repository) RevokeAPIKey(ctx context.Context, keyID int64, userID int64) error {
+	var err error
+	if r.dbType == config.DBTypeSQLite {
+		_, err = r.db.ExecContext(ctx,
+			`UPDATE api_keys SET is_revoked = 1, revoked_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`,
+			keyID, userID,
+		)
+	} else {
+		_, err = r.db.ExecContext(ctx,
+			`UPDATE api_keys SET is_revoked = true, revoked_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`,
+			keyID, userID,
+		)
+	}
+	return err
+}
+
+func (r *Repository) UpdateAPIKeyLastUsed(ctx context.Context, keyID int64) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		keyID,
+	)
+	return err
+}
+
+func (r *Repository) DeleteAPIKey(ctx context.Context, keyID int64, userID int64) error {
+	_, err := r.db.ExecContext(ctx,
+		`DELETE FROM api_keys WHERE id = ? AND user_id = ?`,
+		keyID, userID,
+	)
+	return err
 }

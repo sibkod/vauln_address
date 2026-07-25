@@ -210,6 +210,48 @@ type ErrorResponse struct {
 	Details string `json:"details,omitempty"`
 }
 
+// ==================== API Keys ====================
+
+type APIKey struct {
+	ID            int64     `json:"id"`
+	UserID        int64     `json:"user_id"`
+	KeyHash       string    `json:"-"`           // SHA-256 hash of the key (never exposed)
+	KeyPrefix     string    `json:"key_prefix"`  // First 8 chars for identification
+	Name          string    `json:"name"`        // User-defined name
+	LastUsedAt    *time.Time `json:"last_used_at,omitempty"`
+	ExpiresAt     *time.Time `json:"expires_at,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	RevokedAt     *time.Time `json:"revoked_at,omitempty"`
+	IsRevoked     bool      `json:"is_revoked"`
+}
+
+type CreateAPIKeyRequest struct {
+	Name      string `json:"name" binding:"required,min=1,max=100"`
+	ExpiresIn int    `json:"expires_in"` // Days until expiration, 0 = never expires
+}
+
+type APIKeyResponse struct {
+	Key         string    `json:"key"`          // Full key shown only once!
+	KeyPrefix   string    `json:"key_prefix"`
+	Name        string    `json:"name"`
+	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+type APIKeyListResponse struct {
+	Keys []APIKey `json:"keys"`
+}
+
+// ==================== Renew API Key via Web3 ====================
+
+type RenewAPIKeyRequest struct {
+	Address   string `json:"address" binding:"required"`
+	Chain     string `json:"chain" binding:"required"`
+	Signature string `json:"signature" binding:"required"`
+	Message   string `json:"message" binding:"required"`
+	KeyID     int64  `json:"key_id" binding:"required"` // ID of the key to renew
+}
+
 // ==================== Pricing Plans ====================
 
 const (
@@ -221,6 +263,10 @@ const (
 	
 	// SUI token price estimate (mock - should be fetched from oracle)
 	SUIUSDPrice = 1.50 // ~$1.50 per SUI
+
+	// API Key settings
+	APIKeyLength     = 32       // 32 bytes = 64 hex characters
+	APIKeyPrefix     = "vkn_"   // vauln-key prefix for identification
 )
 
 // GetPricing returns pricing for different currencies

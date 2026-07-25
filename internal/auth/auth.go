@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -19,6 +20,8 @@ const (
 	JWTSecret      = "vauln-address-secret-key-change-in-production"
 	TokenExpiry    = 24 * time.Hour
 	NonceLength    = 32
+	APIKeyLength   = 32
+	APIKeyPrefix   = "vkn_"
 )
 
 type AuthService struct {
@@ -253,4 +256,192 @@ func (s *AuthService) toUserPublic(user *models.User) *models.UserPublic {
 // GetUserByID retrieves user by ID
 func (s *AuthService) GetUserByID(userID int64) (*models.User, error) {
 	return s.repo.GetUserByID(context.Background(), userID)
+}
+
+// ==================== API Key Management ====================
+
+// GenerateAPIKey creates a new API key for a user
+func (s *AuthService) GenerateAPIKey(userID int64, name string, expiresInDays int) (*models.APIKeyResponse, error) {
+	// Generate random key bytes
+	keyBytes := make([]byte, APIKeyLength)
+	if _, err := rand.Read(keyBytes); err != nil {
+		return nil, fmt.Errorf("failed to generate API key: %w", err)
+	}
+
+	// Create the full key with prefix
+	fullKey := APIKeyPrefix + hex.EncodeToString(keyBytes)
+	keyPrefix := fullKey[:len(APIKeyPrefix)+8] // vkn_ + first 8 hex chars
+
+	// Hash the key for storage (never store the actual key)
+	keyHash := s.hashAPIKey(fullKey)
+
+	// Calculate expiration
+	var expiresAt *time.Time
+	if expiresInDays > 0 {
+		exp := time.Now().Add(time.Duration(expiresInDays) * 24 * time.Hour)
+		expiresAt = &exp
+	}
+
+	// Store in database
+	apiKey, err := s.repo.CreateAPIKey(context.Background(), userID, keyHash, keyPrefix, name, expiresAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to store API key: %w", err)
+	}
+
+	return &models.APIKeyResponse{
+		Key:       fullKey,
+		KeyPrefix: apiKey.KeyPrefix,
+		Name:      apiKey.Name,
+		ExpiresAt: apiKey.ExpiresAt,
+		CreatedAt: apiKey.CreatedAt,
+	}, nil
+}
+
+// GetUserAPIKeys retrieves all API keys for a user (without the actual key)
+func (s *AuthService) GetUserAPIKeys(userID int64) ([]models.APIKey, error) {
+	return s.repo.GetUserAPIKeys(context.Background(), userID)
+}
+
+// RevokeAPIKey revokes an API key
+func (s *AuthService) RevokeAPIKey(keyID int64, userID int64) error {
+	return s.repo.RevokeAPIKey(context.Background(), keyID, userID)
+}
+
+// DeleteAPIKey permanently deletes an API key
+func (s *AuthService) DeleteAPIKey(keyID int64, userID int64) error {
+	return s.repo.DeleteAPIKey(context.Background(), keyID, userID)
+}
+
+// ValidateAPIKey validates an API key and returns the associated user ID
+func (s *AuthService) ValidateAPIKey(apiKey string) (int64, error) {
+	// Hash the provided key
+	keyHash := s.hashAPIKey(apiKey)
+
+	// Look up the key in the database
+	key, err := s.repo.GetAPIKeyByHash(context.Background(), keyHash)
+	if err != nil {
+		return 0, fmt.Errorf("failed to look up API key: %w", err)
+	}
+	if key == nil {
+		return 0, fmt.Errorf("invalid API key")
+	}
+
+	// Check if revoked
+	if key.IsRevoked {
+		return 0, fmt.Errorf("API key has been revoked")
+	}
+
+	// Check if expired
+	if key.ExpiresAt != nil && time.Now().After(*key.ExpiresAt) {
+		return 0, fmt.Errorf("API key has expired")
+	}
+
+	// Update last used timestamp
+	go func() {
+		s.repo.UpdateAPIKeyLastUsed(context.Background(), key.ID)
+	}()
+
+	return key.UserID, nil
+}
+
+// hashAPIKey creates a SHA-256 hash of the API key
+func (s *AuthService) hashAPIKey(key string) string {
+	hash := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(hash[:])
+}
+
+// ==================== Renew API Key via Web3 ====================
+
+// RenewAPIKey renews an existing API key by verifying Web3 signature
+func (s *AuthService) RenewAPIKey(address, chain, signature, message string, keyID int64) (*models.APIKeyResponse, error) {
+	// Normalize inputs
+	address = strings.ToLower(strings.TrimSpace(address))
+	signature = strings.TrimSpace(signature)
+	message = strings.TrimSpace(message)
+
+	// Verify the message format (should contain nonce for renewal)
+	if !strings.Contains(message, "nonce:") && !strings.Contains(message, "renew:") {
+		return nil, fmt.Errorf("invalid message format: missing nonce or renew instruction")
+	}
+
+	// Get stored nonce from database
+	storedNonce, err := s.repo.GetUserNonce(address, chain)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get nonce: %w", err)
+	}
+	if storedNonce == "" {
+		return nil, fmt.Errorf("nonce not found: please request a new nonce first")
+	}
+
+	// Verify nonce matches
+	if !strings.Contains(message, storedNonce) {
+		return nil, fmt.Errorf("invalid nonce: signature does not match stored nonce")
+	}
+
+	// Verify signature based on chain
+	var isValid bool
+	switch chain {
+	case "evm", "ethereum":
+		isValid = s.verifyEVM(address, signature, message)
+	case "sui":
+		isValid = s.verifySui(address, signature, message)
+	case "solana":
+		isValid = s.verifySolana(address, signature, message)
+	case "tron":
+		isValid = s.verifyTron(address, signature, message)
+	default:
+		return nil, fmt.Errorf("unsupported chain: %s", chain)
+	}
+
+	if !isValid {
+		return nil, fmt.Errorf("invalid signature")
+	}
+
+	// Get the existing API key to check ownership
+	existingKey, err := s.repo.GetAPIKeyByID(context.Background(), keyID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get API key: %w", err)
+	}
+	if existingKey == nil {
+		return nil, fmt.Errorf("API key not found")
+	}
+
+	// Verify the user owns this key
+	user, err := s.repo.GetOrCreateUser(address, chain)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+	if user.ID != existingKey.UserID {
+		return nil, fmt.Errorf("you do not own this API key")
+	}
+
+	// Revoke the old key
+	if err := s.repo.RevokeAPIKey(context.Background(), keyID, user.ID); err != nil {
+		return nil, fmt.Errorf("failed to revoke old API key: %w", err)
+	}
+
+	// Generate a new API key with the same name
+	return s.GenerateAPIKey(user.ID, existingKey.Name, 0)
+}
+
+// GenerateRenewalNonce generates a nonce specifically for API key renewal
+func (s *AuthService) GenerateRenewalNonce(address string, chain string) (string, error) {
+	nonceBytes := make([]byte, NonceLength)
+	if _, err := rand.Read(nonceBytes); err != nil {
+		return "", fmt.Errorf("failed to generate nonce: %w", err)
+	}
+	nonce := hex.EncodeToString(nonceBytes)
+
+	// Store/update nonce for user
+	if err := s.repo.UpsertUserNonce(address, chain, nonce); err != nil {
+		return "", fmt.Errorf("failed to store nonce: %w", err)
+	}
+
+	return nonce, nil
+}
+
+// BuildRenewalMessage builds the message for API key renewal
+func (s *AuthService) BuildRenewalMessage(nonce string, keyID int64) string {
+	return fmt.Sprintf("Renew API Key for Vauln Address.\n\nAction: renew_api_key\nKey ID: %d\nNonce: %s\nTimestamp: %d",
+		keyID, nonce, time.Now().Unix())
 }

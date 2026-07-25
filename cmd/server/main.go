@@ -179,6 +179,16 @@ func main() {
 	api.POST("/check", rateLimiter.Limit(), h.CheckWallet)
 	api.POST("/contact", h.SubmitContact)
 
+	// API Key Management (requires JWT auth)
+	api.GET("/api-keys", middleware.RequireAuth(), h.ListAPIKeys)
+	api.POST("/api-keys", middleware.RequireAuth(), h.CreateAPIKey)
+	api.DELETE("/api-keys/:id", middleware.RequireAuth(), h.DeleteAPIKeyHandler)
+	api.POST("/api-keys/revoke/:id", middleware.RequireAuth(), h.RevokeAPIKeyHandler)
+
+	// API Key Renewal via Web3 (no JWT required, uses Web3 signature)
+	api.GET("/api-keys/renewal-nonce", h.GetRenewalNonce)
+	api.POST("/api-keys/renew", h.RenewAPIKeyHandler)
+
 	server := &http.Server{Addr: ":" + cfg.ServerPort, Handler: router, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 
 	go func() {
