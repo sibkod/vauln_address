@@ -218,9 +218,9 @@ func (h *Handler) CreateOrder(c *gin.Context) {
 		paymentAddress = "CW58CLARKr9mL4d7oRDj6FKv3cM2xT6vH3kQVZqW4xXy"
 	}
 
-	// Calculate SOL amount (testnet - approximate)
-	// 1 SOL ≈ $20 USD for demo
-	solAmountFloat := priceUSD / 20.0
+	// Calculate SOL amount (testnet - FIXED 0.01 SOL for testing)
+	const TestSOLAmount = 0.01
+	solAmountFloat := TestSOLAmount
 	solAmount := fmt.Sprintf("%.4f", solAmountFloat)
 
 	// Create order
