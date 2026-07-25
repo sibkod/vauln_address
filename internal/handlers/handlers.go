@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -793,4 +795,188 @@ func (h *Handler) RenewAPIKeyHandler(c *gin.Context) {
 		"message": "API key renewed successfully. Store this new key securely - it will not be shown again.",
 		"api_key": newKey,
 	})
+}
+
+// ==================== Solana Payment Verification ====================
+
+// GetPaymentStatus checks a Solana transaction status
+func (h *Handler) GetPaymentStatus(c *gin.Context) {
+	signature := c.Param("signature")
+	if signature == "" {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error: "transaction signature is required",
+			Code:  "INVALID_REQUEST",
+		})
+		return
+	}
+
+	// Get user info (if authenticated)
+	var userID int64
+	if uid, exists := c.Get("userID"); exists {
+		userID = uid.(int64)
+	}
+
+	// Query Solana RPC for transaction status
+	rpcURL := h.serverCfg.SolanaRPCURL
+	if rpcURL == "" {
+		if h.serverCfg.SolanaUseDevnet {
+			rpcURL = "https://api.devnet.solana.com"
+		} else {
+			rpcURL = "https://api.mainnet-beta.solana.com"
+		}
+	}
+
+	// Get transaction status
+	txStatus, err := h.querySolanaTransaction(rpcURL, signature)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, models.ErrorResponse{
+			Error:   "failed to verify transaction",
+			Code:    "RPC_ERROR",
+			Details: err.Error(),
+		})
+		return
+	}
+
+	if txStatus.Err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"status":   "failed",
+			"confirmed": false,
+			"message":   "transaction failed on chain",
+		})
+		return
+	}
+
+	if txStatus.Confirmations != "confirmed" && txStatus.Confirmations != "finalized" {
+		c.JSON(http.StatusOK, gin.H{
+			"status":      "pending",
+			"confirmed":    false,
+			"slot":         txStatus.Slot,
+			"confirmations": txStatus.Confirmations,
+			"message":      "transaction is processing",
+		})
+		return
+	}
+
+	// Transaction is confirmed!
+	// Check if we already processed this transaction
+	existingOrder, _ := h.repo.GetOrderByTxHash(c.Request.Context(), signature)
+	if existingOrder != nil && existingOrder.Status == "completed" {
+		// Already processed
+		c.JSON(http.StatusOK, gin.H{
+			"status":       "already_claimed",
+			"confirmed":     true,
+			"balance":       existingOrder.ChecksCount,
+			"message":       "checks already credited",
+		})
+		return
+	}
+
+	// Find pending order for this user (if authenticated)
+	if userID > 0 {
+		pendingOrder, err := h.repo.GetPendingOrderByUser(c.Request.Context(), userID)
+		if err == nil && pendingOrder != nil {
+			// Complete the order
+			if err := h.repo.CompleteOrder(c.Request.Context(), pendingOrder.UUID, signature); err == nil {
+				// Add balance
+				if err := h.repo.AddUserBalance(c.Request.Context(), userID, pendingOrder.ChecksCount); err == nil {
+					// Get new balance
+					user, _ := h.repo.GetUserByID(c.Request.Context(), userID)
+					balance := 0
+					if user != nil {
+						balance = user.Balance
+					}
+					c.JSON(http.StatusOK, gin.H{
+						"status":   "confirmed",
+						"confirmed": true,
+						"balance":  balance,
+						"message":  fmt.Sprintf("Payment confirmed! %d checks added.", pendingOrder.ChecksCount),
+					})
+					return
+				}
+			}
+		}
+	}
+
+	// Transaction confirmed but no order found
+	c.JSON(http.StatusOK, gin.H{
+		"status":    "confirmed",
+		"confirmed":  true,
+		"message":   "transaction confirmed on blockchain",
+	})
+}
+
+// SolanaTransactionStatus represents transaction status from RPC
+type SolanaTransactionStatus struct {
+	Slot          uint64 `json:"slot"`
+	Err           any    `json:"err"`
+	Confirmations string `json:"confirmations"`
+}
+
+func (h *Handler) querySolanaTransaction(rpcURL, signature string) (*SolanaTransactionStatus, error) {
+	// Make RPC call to get transaction
+	reqBody := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "getTransaction",
+		"params": []interface{}{
+			signature,
+			map[string]interface{}{
+				"encoding":                       "jsonParsed",
+				"maxSupportedTransactionVersion": 0,
+			},
+		},
+	}
+
+	resp, err := http.Post(rpcURL, "application/json", toJSON(reqBody))
+	if err != nil {
+		return nil, fmt.Errorf("RPC request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var rpcResp struct {
+		JSONRPC string `json:"jsonrpc"`
+		ID      int    `json:"id"`
+		Result  struct {
+			Slot        uint64 `json:"slot"`
+			Confirmations *string `json:"confirmationStatus"`
+			Meta        *struct {
+				Err any `json:"err"`
+			} `json:"meta"`
+		} `json:"result"`
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+
+	if err := decodeJSON(resp.Body, &rpcResp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if rpcResp.Error != nil {
+		return nil, fmt.Errorf("RPC error: %s", rpcResp.Error.Message)
+	}
+
+	if rpcResp.Result.Slot == 0 && rpcResp.Result.Meta == nil {
+		return nil, fmt.Errorf("transaction not found")
+	}
+
+	confirmations := "confirmed"
+	if rpcResp.Result.Confirmations != nil {
+		confirmations = *rpcResp.Result.Confirmations
+	}
+
+	return &SolanaTransactionStatus{
+		Slot:          rpcResp.Result.Slot,
+		Err:           nil,
+		Confirmations: confirmations,
+	}, nil
+}
+
+func toJSON(v interface{}) *strings.Reader {
+	b, _ := json.Marshal(v)
+	return strings.NewReader(string(b))
+}
+
+func decodeJSON(r io.Reader, v interface{}) error {
+	return json.NewDecoder(r).Decode(v)
 }

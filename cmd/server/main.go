@@ -73,6 +73,7 @@ func main() {
 	api.POST("/orders", middleware.RequireAuth(), h.CreateOrder)
 	api.POST("/orders/:id/confirm", middleware.RequireAuth(), h.ConfirmOrder)
 	api.GET("/orders/verify", h.VerifyPayment)
+	api.POST("/payment/status/:signature", h.GetPaymentStatus)
 	api.POST("/check", rateLimiter.Limit(), h.CheckWallet)
 	api.POST("/contact", h.SubmitContact)
 	api.GET("/api-keys", middleware.RequireAuth(), h.ListAPIKeys)
