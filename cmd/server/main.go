@@ -51,21 +51,27 @@ func renderPage(c *gin.Context, pageTmpl, title, activePage string, repo *reposi
 		return
 	}
 
-	// Get user balance if authenticated
+	// Get user info if authenticated
 	userBalance := 0
+	isAuthenticated := false
+	var userAddress string
 	if userID, exists := c.Get("userID"); exists && repo != nil {
 		if user, err := repo.GetUserByID(c.Request.Context(), userID.(int64)); err == nil && user != nil {
 			userBalance = user.Balance
+			isAuthenticated = true
+			userAddress = user.WalletAddress
 		}
 	}
 
 	// Execute base.html with the rendered content as a string
 	tmpl.ExecuteTemplate(c.Writer, "base.html", gin.H{
-		"Title":          title,
-		"ActivePage":     activePage,
-		"Content":        contentBuf.String(),
-		"FreeCheckLimit": serverCfg.FreeCheckLimit,
-		"UserBalance":    userBalance,
+		"Title":            title,
+		"ActivePage":       activePage,
+		"Content":          contentBuf.String(),
+		"FreeCheckLimit":   serverCfg.FreeCheckLimit,
+		"UserBalance":      userBalance,
+		"IsAuthenticated":  isAuthenticated,
+		"UserAddress":      userAddress,
 	})
 }
 
