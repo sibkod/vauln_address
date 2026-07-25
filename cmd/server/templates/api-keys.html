@@ -1,328 +1,110 @@
-{{define "api-keys"}}
+{{define "content"}}
 <style>
-.api-keys-content { background: rgba(14, 19, 29, 0.5); backdrop-filter: blur(6px); border-radius: 1.5rem; padding: 2rem; border: 1px solid rgba(255,255,255,0.04); }
-.api-keys-content h2 { color: #f0f4ff; font-size: 1.6rem; font-weight: 600; margin-bottom: 0.5rem; }
-.api-keys-content .subtitle { color: #9aabcf; margin-bottom: 1.5rem; }
-
-.create-form { background: rgba(18, 24, 36, 0.5); border-radius: 1rem; padding: 1.5rem; margin-bottom: 1.5rem; }
-.create-form h3 { color: #f0f4ff; font-size: 1rem; margin-bottom: 1rem; }
-.form-group { margin-bottom: 1rem; }
-.form-group label { display: block; color: #9aabcf; font-size: 0.85rem; margin-bottom: 0.4rem; }
-.form-group input { width: 100%; background: rgba(10, 14, 22, 0.6); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 0.7rem 1rem; color: #e8edfc; font-size: 0.9rem; outline: none; }
-.form-group input:focus { border-color: #3b82f6; }
-.form-row { display: flex; gap: 1rem; }
-.form-row .form-group { flex: 1; }
-.btn { background: #3b82f6; border: none; color: white; font-weight: 600; padding: 0.7rem 1.5rem; border-radius: 8px; font-size: 0.9rem; cursor: pointer; transition: 0.15s; }
-.btn:hover { background: #4f8df7; }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn.success { background: #34d399; }
-
-.keys-list { display: flex; flex-direction: column; gap: 0.8rem; }
-.key-card { background: rgba(18, 24, 36, 0.7); border-radius: 1rem; padding: 1rem 1.2rem; border: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; gap: 1rem; }
-.key-card.revoked { opacity: 0.5; border-color: rgba(255, 59, 59, 0.2); }
-.key-info { flex: 1; }
-.key-name { color: #f0f4ff; font-weight: 500; font-size: 0.95rem; margin-bottom: 0.2rem; }
-.key-prefix { color: #6d7da0; font-family: monospace; font-size: 0.8rem; }
-.key-meta { display: flex; gap: 1rem; font-size: 0.75rem; color: #5a6a8a; margin-top: 0.3rem; }
-.key-actions { display: flex; gap: 0.5rem; }
-.btn-small { padding: 0.4rem 0.8rem; font-size: 0.75rem; border-radius: 6px; }
-.btn-danger { background: rgba(255, 59, 59, 0.2); color: #ff6b6b; }
-.btn-danger:hover { background: rgba(255, 59, 59, 0.3); }
-.btn-warning { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
-.btn-warning:hover { background: rgba(245, 158, 11, 0.3); }
-
-.not-auth { text-align: center; padding: 3rem 1rem; color: #6d7da0; }
-.not-auth h3 { color: #9aabcf; margin-bottom: 0.5rem; }
-.copy-btn { background: rgba(59, 130, 246, 0.15); border: none; color: #60a5fa; padding: 0.4rem 0.8rem; border-radius: 6px; cursor: pointer; font-size: 0.75rem; }
-.copy-btn:hover { background: rgba(59, 130, 246, 0.25); }
-
-.modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-.modal-content { background: #1a2135; border-radius: 1rem; padding: 1.5rem; max-width: 500px; width: 90%; border: 1px solid rgba(255,255,255,0.1); }
-.modal-content h3 { color: #f0f4ff; margin-bottom: 1rem; }
-.modal-content p { color: #9aabcf; font-size: 0.9rem; margin-bottom: 1rem; }
-.modal-content pre { background: rgba(10, 14, 22, 0.6); padding: 1rem; border-radius: 8px; color: #34d399; font-family: monospace; font-size: 0.75rem; word-break: break-all; margin-bottom: 1rem; max-width: 100%; overflow-x: auto; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
-.modal-actions .btn { margin-left: 0.5rem; }
-.modal-actions .btn-secondary { background: rgba(255,255,255,0.1); color: #9aabcf; }
-.warning-text { color: #fbbf24; font-size: 0.8rem; margin-bottom: 1rem; }
+.key-item { background: #111; padding: 1rem; margin-bottom: 1rem; border: 1px solid #222; }
+.key-header { display: flex; justify-content: space-between; margin-bottom: 0.5rem; }
+.key-prefix { font-family: monospace; color: #0ff; }
+.key-meta { font-size: 0.8rem; color: #088; }
+.api-form { display: grid; gap: 1rem; }
 </style>
 
-<div class="api-keys-content">
-    <h2>🔑 API Keys</h2>
-    <p class="subtitle">Manage your API keys for programmatic access to the Wallet Checker API.</p>
-    
-    <div id="authRequired">
-        <div class="create-form">
-            <h3>Create New API Key</h3>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Key Name</label>
-                    <input type="text" id="keyName" placeholder="e.g., Production API, Development">
-                </div>
-                <div class="form-group" style="max-width: 150px;">
-                    <label>Expires (days, 0=never)</label>
-                    <input type="number" id="keyExpires" value="0" min="0" max="365">
-                </div>
-            </div>
-            <button class="btn" id="createKeyBtn" onclick="createNewKey()">Generate API Key</button>
+<h1>// API KEYS</h1>
+<p class="text-dim mb-3">Manage your API keys for programmatic access.</p>
+
+{{if not .IsAuthenticated}}
+<div class="card">
+    <p>Connect your wallet to manage API keys.</p>
+    <button class="btn" onclick="connectWallet()">CONNECT</button>
+</div>
+{{else}}
+<div class="card mb-2">
+    <div class="card-header">CREATE NEW KEY</div>
+    <form id="createKeyForm" class="api-form">
+        <input type="text" id="keyName" placeholder="Key name (e.g., 'Production')" required>
+        <div style="display: flex; gap: 1rem;">
+            <select id="expiresIn" style="width: auto;">
+                <option value="0">Never expires</option>
+                <option value="30">30 days</option>
+                <option value="90">90 days</option>
+                <option value="365">1 year</option>
+            </select>
+            <button type="submit" class="btn">CREATE</button>
         </div>
-        
-        <h3 style="color: #f0f4ff; margin-bottom: 1rem;">Your API Keys</h3>
-        <div class="keys-list" id="keysList">
-            <div style="color: #6d7da0; text-align: center; padding: 2rem;">Loading...</div>
-        </div>
-    </div>
-    
-    <div id="notAuth" class="not-auth" style="display: none;">
-        <h3>🔐 Authentication Required</h3>
-        <p>Please connect your wallet to manage API keys.</p>
-    </div>
+    </form>
 </div>
 
-<!-- Modal for new key -->
-<div class="modal" id="newKeyModal" style="display: none;">
-    <div class="modal-content">
-        <h3>✅ API Key Created!</h3>
-        <p class="warning-text">⚠️ Copy this key now! You won't be able to see it again.</p>
-        <pre id="newKeyValue"></pre>
-        <p style="font-size: 0.8rem;">Store this securely. The key prefix for reference:</p>
-        <div style="margin-top: 0.5rem; color: #60a5fa; font-family: monospace;" id="newKeyPrefix"></div>
-        <div class="modal-actions">
-            <button class="btn btn-secondary" onclick="copyNewKey()">📋 Copy Key</button>
-            <button class="btn success" onclick="closeModal()">Done</button>
-        </div>
-    </div>
+<div id="keysList"></div>
+<div id="newKeyModal" style="display: none;" class="card">
+    <div class="card-header">NEW API KEY</div>
+    <p class="text-error mb-1">Save this now! It will not be shown again.</p>
+    <pre id="newKeyValue" style="word-break: break-all;"></pre>
+    <button class="btn" onclick="closeNewKeyModal()">CLOSE</button>
 </div>
+{{end}}
 
 <script>
-let apiKeys = [];
-let newKeyValue = '';
-
-function checkAuth() {
-    const authed = window.isAuthenticated ? window.isAuthenticated() : false;
-    if (!authed) {
-        document.getElementById('authRequired').style.display = 'none';
-        document.getElementById('notAuth').style.display = 'block';
-        return false;
-    }
-    document.getElementById('authRequired').style.display = 'block';
-    document.getElementById('notAuth').style.display = 'none';
-    return true;
-}
-
 async function loadKeys() {
-    if (!checkAuth()) return;
-    
-    const keysList = document.getElementById('keysList');
-    keysList.innerHTML = '<div style="color: #6d7da0; text-align: center; padding: 2rem;">Loading...</div>';
-    
-    try {
-        const authToken = window.getAuthToken ? window.getAuthToken() : null;
-        const headers = {};
-        if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
-        
-        const res = await fetch('/api/api-keys', { headers });
-        const data = await res.json();
-        
-        if (res.status === 503 && data.code === 'TABLE_NOT_FOUND') {
-            keysList.innerHTML = '<div style="color: #fbbf24; text-align: center; padding: 2rem;">⚠️ API Keys feature requires database migration.<br><small>Please run the server once to initialize the api_keys table.</small></div>';
-            return;
-        }
-        
-        if (!res.ok) throw new Error(data.error || 'Failed to load keys');
-        
-        apiKeys = data.keys || [];
-        renderKeys();
-    } catch (error) {
-        keysList.innerHTML = '<div style="color: #ff6b6b; text-align: center; padding: 2rem;">Failed to load API keys: ' + error.message + '</div>';
-    }
-}
-
-function renderKeys() {
-    const keysList = document.getElementById('keysList');
-    
-    if (apiKeys.length === 0) {
-        keysList.innerHTML = '<div style="color: #6d7da0; text-align: center; padding: 2rem;">No API keys yet. Create one above!</div>';
-        return;
-    }
-    
-    keysList.innerHTML = apiKeys.map(key => {
-        const createdDate = new Date(key.created_at).toLocaleDateString();
-        const expiresText = key.expires_at ? 'Expires: ' + new Date(key.expires_at).toLocaleDateString() : 'Never expires';
-        const lastUsed = key.last_used_at ? 'Last used: ' + new Date(key.last_used_at).toLocaleDateString() : 'Never used';
-        
-        return `
-            <div class="key-card ${key.is_revoked ? 'revoked' : ''}">
-                <div class="key-info">
-                    <div class="key-name">${escapeHtml(key.name)}</div>
-                    <div class="key-prefix">${escapeHtml(key.key_prefix)}••••••••</div>
-                    <div class="key-meta">
-                        <span>Created: ${createdDate}</span>
-                        <span>${expiresText}</span>
-                        <span>${lastUsed}</span>
-                    </div>
-                </div>
-                <div class="key-actions">
-                    ${!key.is_revoked ? `
-                        <button class="btn btn-warning btn-small" onclick="renewKey(${key.id})">Renew</button>
-                        <button class="btn btn-danger btn-small" onclick="revokeKey(${key.id})">Revoke</button>
-                    ` : `
-                        <span style="color: #ff6b6b; font-size: 0.75rem;">Revoked</span>
-                    `}
-                    <button class="btn btn-danger btn-small" onclick="deleteKey(${key.id})">Delete</button>
-                </div>
-            </div>
-        `;
-    }).join('');
-}
-
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-async function createNewKey() {
-    const name = document.getElementById('keyName').value.trim();
-    const expires = parseInt(document.getElementById('keyExpires').value) || 0;
-    
-    if (!name) {
-        window.showToast('❌ Please enter a key name');
-        return;
-    }
-    
-    const btn = document.getElementById('createKeyBtn');
-    btn.disabled = true;
-    btn.textContent = 'Creating...';
-    
-    try {
-        const authToken = window.getAuthToken ? window.getAuthToken() : null;
-        const headers = { 'Content-Type': 'application/json' };
-        if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
-        
-        const res = await fetch('/api/api-keys', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ name, expires_in: expires })
-        });
-        
-        const data = await res.json();
-        
-        if (res.status === 503 && data.code === 'TABLE_NOT_FOUND') {
-            window.showToast('❌ Database migration needed. Please restart the server.');
-            return;
-        }
-        
-        if (data.api_key && data.api_key.key) {
-            newKeyValue = data.api_key.key;
-            document.getElementById('newKeyValue').textContent = newKeyValue;
-            document.getElementById('newKeyPrefix').textContent = data.api_key.key_prefix + '...';
-            document.getElementById('newKeyModal').style.display = 'flex';
-            
-            document.getElementById('keyName').value = '';
-            loadKeys();
-        } else {
-            window.showToast('❌ ' + (data.error || 'Failed to create key'));
-        }
-    } catch (error) {
-        window.showToast('❌ ' + error.message);
-    }
-    
-    btn.disabled = false;
-    btn.textContent = 'Generate API Key';
-}
-
-function copyNewKey() {
-    navigator.clipboard.writeText(newKeyValue).then(() => {
-        window.showToast('✅ API key copied!');
-    }).catch(() => {
-        window.showToast('❌ Failed to copy');
+    const res = await fetch('/api/api-keys', {
+        headers: { 'Authorization': 'Bearer ' + window.getAuthToken() }
     });
+    const data = await res.json();
+    
+    if (data.keys && data.keys.length > 0) {
+        document.getElementById('keysList').innerHTML = data.keys.map(k => `
+            <div class="key-item">
+                <div class="key-header">
+                    <span class="key-prefix">${k.key_prefix}***</span>
+                    <span>${k.is_revoked ? '<span class="text-error">REVOKED</span>' : '<span class="text-success">ACTIVE</span>'}</span>
+                </div>
+                <div class="key-meta">
+                    ${k.name} | Created: ${new Date(k.created_at).toLocaleDateString()}
+                    ${k.expires_at ? ' | Expires: ' + new Date(k.expires_at).toLocaleDateString() : ''}
+                </div>
+                ${!k.is_revoked ? `<button class="btn" onclick="revokeKey(${k.id})" style="margin-top: 0.5rem;">REVOKE</button>` : ''}
+            </div>
+        `).join('');
+    } else {
+        document.getElementById('keysList').innerHTML = '<p class="text-dim">No API keys yet.</p>';
+    }
 }
 
-function closeModal() {
+async function createKey(e) {
+    e.preventDefault();
+    const name = document.getElementById('keyName').value;
+    const expiresIn = parseInt(document.getElementById('expiresIn').value);
+    
+    const res = await fetch('/api/api-keys', {
+        method: 'POST',
+        headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + window.getAuthToken()
+        },
+        body: JSON.stringify({ name, expires_in: expiresIn })
+    });
+    
+    const data = await res.json();
+    if (data.api_key) {
+        document.getElementById('newKeyValue').textContent = data.api_key;
+        document.getElementById('newKeyModal').style.display = 'block';
+        document.getElementById('createKeyForm').reset();
+    } else {
+        alert('Error: ' + (data.error || 'Failed'));
+    }
+}
+
+function closeNewKeyModal() {
     document.getElementById('newKeyModal').style.display = 'none';
-    newKeyValue = '';
 }
 
-async function renewKey(keyId) {
-    window.showToast('🔄 Initiating key renewal...');
-    
-    try {
-        // Get current address
-        const address = window.getConnectedAddress() || '';
-        const chain = 'evm';
-        
-        // For now, just show message about Web3 renewal
-        window.showToast('⚠️ Please use Web3 wallet to sign renewal message');
-    } catch (error) {
-        window.showToast('❌ ' + error.message);
-    }
-}
-
-async function revokeKey(keyId) {
-    if (!confirm('Are you sure you want to revoke this API key? Applications using it will stop working.')) {
-        return;
-    }
-    
-    try {
-        const authToken = window.getAuthToken ? window.getAuthToken() : null;
-        const headers = { 'Content-Type': 'application/json' };
-        if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
-        
-        const res = await fetch('/api/api-keys/revoke/' + keyId, {
-            method: 'POST',
-            headers
-        });
-        
-        if (res.ok) {
-            window.showToast('✅ API key revoked');
-            loadKeys();
-        } else {
-            const data = await res.json();
-            window.showToast('❌ ' + (data.error || 'Failed to revoke key'));
-        }
-    } catch (error) {
-        window.showToast('❌ ' + error.message);
-    }
-}
-
-async function deleteKey(keyId) {
-    if (!confirm('Are you sure you want to permanently delete this API key? This cannot be undone.')) {
-        return;
-    }
-    
-    try {
-        const authToken = window.getAuthToken ? window.getAuthToken() : null;
-        const headers = {};
-        if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
-        
-        const res = await fetch('/api/api-keys/' + keyId, {
-            method: 'DELETE',
-            headers
-        });
-        
-        if (res.ok) {
-            window.showToast('✅ API key deleted');
-            loadKeys();
-        } else {
-            const data = await res.json();
-            window.showToast('❌ ' + (data.error || 'Failed to delete key'));
-        }
-    } catch (error) {
-        window.showToast('❌ ' + error.message);
-    }
-}
-
-// Initialize after DOM is ready
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', loadKeys);
-} else {
+async function revokeKey(id) {
+    if (!confirm('Revoke this key?')) return;
+    await fetch('/api/api-keys/revoke/' + id, {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + window.getAuthToken() }
+    });
     loadKeys();
 }
 
-// Listen for wallet changes
-document.addEventListener('walletAuthenticated', loadKeys);
-document.addEventListener('walletDisconnected', () => { checkAuth(); });
+document.getElementById('createKeyForm')?.addEventListener('submit', createKey);
+if (document.getElementById('keysList')) loadKeys();
 </script>
 {{end}}

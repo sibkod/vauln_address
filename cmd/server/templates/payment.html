@@ -1,284 +1,210 @@
 {{define "content"}}
 <style>
-  .payment-card {
-    background: #1a1a2e;
-    border-radius: 16px;
-    padding: 24px;
-    max-width: 480px;
-    margin: 0 auto;
-  }
-  .network-badge {
-    display: inline-block;
-    padding: 6px 16px;
-    border-radius: 20px;
-    font-size: 14px;
-    font-weight: 600;
-    background: #fef3c7;
-    color: #92400e;
-  }
-  .network-badge.mainnet {
-    background: #dbeafe;
-    color: #1e40af;
-  }
-  .section {
-    background: #16213e;
-    border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 20px;
-  }
-  .amount-box {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    border-radius: 12px;
-    padding: 24px;
+.payment-grid { display: grid; gap: 1.5rem; grid-template-columns: 1fr 1fr; }
+@media (max-width: 600px) { .payment-grid { grid-template-columns: 1fr; } }
+
+.info-row { display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid #111; }
+.info-row:last-child { border-bottom: none; }
+
+.amount-box {
+    border: 1px solid #0ff;
+    padding: 2rem;
     text-align: center;
-    margin-bottom: 20px;
-  }
-  .amount-box .amount {
-    font-size: 36px;
-    font-weight: 700;
-    color: white;
-  }
-  .btn-pay {
-    width: 100%;
-    padding: 16px;
-    border: none;
-    border-radius: 8px;
-    background: #e94560;
-    color: white;
-    font-size: 16px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.3s;
-  }
-  .btn-pay:hover:not(:disabled) {
-    background: #ff6b6b;
-  }
-  .btn-pay:disabled {
-    background: #4a4a4a;
-    cursor: not-allowed;
-  }
-  .btn-small {
-    padding: 6px 12px;
-    background: #4a4a4a;
-    border: none;
-    border-radius: 4px;
-    color: white;
-    cursor: pointer;
-    font-size: 12px;
-  }
-  .btn-small:hover {
-    background: #666;
-  }
-  .status {
-    padding: 12px;
-    border-radius: 8px;
-    margin-bottom: 16px;
-    font-size: 14px;
-    display: none;
-  }
-  .status.success { background: #d4edda; color: #155724; }
-  .status.error { background: #f8d7da; color: #721c24; }
-  .status.loading { background: #cce5ff; color: #004085; }
-  .address-box {
-    background: #0a0a1a;
-    padding: 12px;
-    border-radius: 8px;
-    font-family: monospace;
-    font-size: 13px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    word-break: break-all;
-  }
-  .info-row {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 8px;
-    color: #888;
-  }
-  .info-row:last-child { margin-bottom: 0; }
-  .info-row span:last-child {
-    color: #4ade80;
-    font-weight: 600;
-  }
+    margin: 1.5rem 0;
+}
+.amount-value { font-size: 2rem; font-weight: bold; }
+.amount-usd { color: #088; font-size: 0.85rem; }
+
+#walletInfo { display: none; }
+#walletInfo.show { display: block; }
 </style>
 
-<div class="payment-card">
-  <div class="network-badge {{if not $.SolanaUseDevnet}}mainnet{{end}}">
-    {{if $.SolanaUseDevnet}}🧪 DEVNET{{else}}🚀 MAINNET{{end}}
-  </div>
-  
-  <h1 style="margin: 16px 0 24px; color: white;">Solana Payment</h1>
+<h1>// PAYMENT</h1>
+<p class="text-dim mb-3">Buy checks to verify unlimited wallets.</p>
 
-  <div class="section">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-      <span style="font-weight: 600; color: #ccc;">Wallet</span>
-      <button id="connectBtn" class="btn-small">Connect</button>
+<div class="payment-grid">
+    <div>
+        <div class="card">
+            <div class="card-header">CONNECTED WALLET</div>
+            <button class="btn" id="connectBtn" onclick="connectWallet()" style="width: 100%;">
+                CONNECT WALLET
+            </button>
+            <div id="walletInfo">
+                <div class="info-row">
+                    <span class="text-dim">Address</span>
+                    <span id="walletAddr" style="font-size: 0.85rem;"></span>
+                </div>
+                <div class="info-row">
+                    <span class="text-dim">Balance</span>
+                    <span id="walletBalance"></span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">SELECT PACKAGE</div>
+            <select id="packageSelect" class="mb-2">
+                <option value="10">10 checks - $1.00</option>
+                <option value="50">50 checks - $5.00</option>
+                <option value="100" selected>100 checks - $10.00</option>
+                <option value="500">500 checks - $50.00</option>
+                <option value="1000">1000 checks - $100.00</option>
+            </select>
+            <button class="btn" id="buyBtn" onclick="initiatePayment()" disabled>
+                BUY WITH SOLANA
+            </button>
+        </div>
     </div>
-    <div id="walletInfo" style="display: none;">
-      <div class="info-row">
-        <span>Address:</span>
-        <span id="walletAddr" style="font-family: monospace;"></span>
-      </div>
-      <div class="info-row">
-        <span>Balance:</span>
-        <span id="walletBalance"></span>
-      </div>
+    
+    <div>
+        <div class="card">
+            <div class="card-header">MERCHANT ADDRESS</div>
+            <div style="background: #111; padding: 1rem; margin-bottom: 1rem; font-size: 0.85rem; word-break: break-all;">
+                {{.SolanaPaymentAddr}}
+            </div>
+            <div class="info-row">
+                <span class="text-dim">Network</span>
+                <span>{{if $.SolanaUseDevnet}}DEVNET{{else}}MAINNET{{end}}</span>
+            </div>
+            <div class="info-row">
+                <span class="text-dim">Balance</span>
+                <span id="merchantBalance">Loading...</span>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">HOW IT WORKS</div>
+            <ol style="color: #088; padding-left: 1.5rem; font-size: 0.85rem;">
+                <li style="margin-bottom: 0.5rem;">Connect your Solana wallet</li>
+                <li style="margin-bottom: 0.5rem;">Select number of checks</li>
+                <li style="margin-bottom: 0.5rem;">Send SOL to merchant address</li>
+                <li>Checks added to your balance</li>
+            </ol>
+        </div>
     </div>
-  </div>
-
-  <div class="section">
-    <h3 style="margin-bottom: 16px; color: #4ade80;">Payment Address</h3>
-    <div class="address-box" style="margin-bottom: 16px;">
-      <span>{{.SolanaPaymentAddr}}</span>
-      <button class="btn-small" onclick="copyText('{{.SolanaPaymentAddr}}', this)">Copy</button>
-    </div>
-    <div style="background: #0a0a1a; padding: 16px; border-radius: 8px;">
-      <div class="info-row">
-        <span>Balance:</span>
-        <span id="merchantBalance">Loading...</span>
-      </div>
-    </div>
-  </div>
-
-  <div class="amount-box">
-    <div style="font-size: 14px; color: rgba(255,255,255,0.8); margin-bottom: 8px;">Amount to Pay</div>
-    <div class="amount">0.1 SOL</div>
-    <div style="font-size: 12px; color: rgba(255,255,255,0.6); margin-top: 4px;">≈ $2.00 USD</div>
-  </div>
-
-  <div id="status" class="status"></div>
-
-  <button id="payBtn" class="btn-pay" disabled>Connect Wallet to Pay</button>
-
-  <div id="txLink" style="margin-top: 16px; display: none;">
-    <a href="#" target="_blank" style="color: #4ade80;"></a>
-  </div>
 </div>
 
-<script src="https://unpkg.com/@solana/web3.js@latest/dist/index.global.js"></script>
+<div id="status" class="card" style="display: none; margin-top: 1rem;"></div>
+<div id="txLink" style="display: none; margin-top: 1rem;"></div>
+
 <script>
 (function() {
-  const USE_DEVNET = {{.SolanaUseDevnet}};
-  
-  const CONFIG = {
-    endpoint: USE_DEVNET ? 'https://api.devnet.solana.com' : 'https://api.mainnet-beta.solana.com',
-    merchant: '{{.SolanaPaymentAddr}}',
-    explorer: USE_DEVNET ? 'https://explorer.solana.com/?cluster=devnet' : 'https://explorer.solana.com/',
-    amount: 0.1
-  };
-
-  const { Connection, PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL } = solanaWeb3;
-  const conn = new Connection(CONFIG.endpoint, 'confirmed');
-  let wallet = null;
-
-  const connectBtn = document.getElementById('connectBtn');
-  const walletInfo = document.getElementById('walletInfo');
-  const walletAddr = document.getElementById('walletAddr');
-  const walletBalance = document.getElementById('walletBalance');
-  const merchantBalance = document.getElementById('merchantBalance');
-  const payBtn = document.getElementById('payBtn');
-  const status = document.getElementById('status');
-  const txLink = document.getElementById('txLink');
-
-  function showStatus(msg, type) {
-    status.textContent = msg;
-    status.className = 'status ' + type;
-    status.style.display = 'block';
-  }
-
-  function copyText(text, btn) {
-    navigator.clipboard.writeText(text);
-    btn.textContent = 'Copied!';
-    setTimeout(() => btn.textContent = 'Copy', 1000);
-  }
-
-  async function getBalance(addr) {
-    try {
-      const lamports = await conn.getBalance(new PublicKey(addr));
-      return (lamports / LAMPORTS_PER_SOL).toFixed(4) + ' SOL';
-    } catch { return 'Error'; }
-  }
-
-  async function refreshBalances() {
-    if (wallet && wallet.isConnected) {
-      walletBalance.textContent = await getBalance(wallet.publicKey.toString());
+    const USE_DEVNET = {{.SolanaUseDevnet}};
+    const MERCHANT = '{{.SolanaPaymentAddr}}';
+    const EXPLORER = USE_DEVNET 
+        ? 'https://explorer.solana.com/?cluster=devnet'
+        : 'https://explorer.solana.com/';
+    
+    const { Connection, PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL } = solanaWeb3;
+    const conn = new Connection(
+        USE_DEVNET ? 'https://api.devnet.solana.com' : 'https://api.mainnet-beta.solana.com',
+        'confirmed'
+    );
+    
+    let wallet = null;
+    
+    const connectBtn = document.getElementById('connectBtn');
+    const walletInfo = document.getElementById('walletInfo');
+    const walletAddr = document.getElementById('walletAddr');
+    const walletBalance = document.getElementById('walletBalance');
+    const merchantBalance = document.getElementById('merchantBalance');
+    const buyBtn = document.getElementById('buyBtn');
+    const status = document.getElementById('status');
+    const txLink = document.getElementById('txLink');
+    
+    async function getBalance(addr) {
+        try {
+            const lamports = await conn.getBalance(new PublicKey(addr));
+            return (lamports / LAMPORTS_PER_SOL).toFixed(4);
+        } catch { return 'Error'; }
     }
-    merchantBalance.textContent = await getBalance(CONFIG.merchant);
-  }
-
-  async function connectWallet() {
-    if (wallet && wallet.isConnected) {
-      wallet.disconnect();
-      wallet = null;
-      connectBtn.textContent = 'Connect';
-      walletInfo.style.display = 'none';
-      payBtn.disabled = true;
-      payBtn.textContent = 'Connect Wallet to Pay';
-      return;
+    
+    async function refreshBalances() {
+        merchantBalance.textContent = await getBalance(MERCHANT) + ' SOL';
+        if (wallet && wallet.isConnected) {
+            walletBalance.textContent = await getBalance(wallet.publicKey.toString()) + ' SOL';
+        }
     }
-    if (!window.solana) {
-      showStatus('⚠️ Install Phantom or Solflare', 'error');
-      return;
+    
+    async function connectWallet() {
+        if (wallet && wallet.isConnected) {
+            wallet.disconnect();
+            wallet = null;
+            connectBtn.textContent = 'CONNECT WALLET';
+            walletInfo.classList.remove('show');
+            buyBtn.disabled = true;
+            return;
+        }
+        
+        if (!window.solana) {
+            alert('Install Phantom wallet first');
+            return;
+        }
+        
+        try {
+            wallet = window.solana;
+            await wallet.connect();
+            const addr = wallet.publicKey.toString();
+            connectBtn.textContent = 'DISCONNECT';
+            walletInfo.classList.add('show');
+            walletAddr.textContent = addr.slice(0, 8) + '...' + addr.slice(-8);
+            buyBtn.disabled = false;
+            await refreshBalances();
+        } catch (e) {
+            alert('Connection failed: ' + e.message);
+        }
     }
-    try {
-      wallet = window.solana;
-      await wallet.connect();
-      connectBtn.textContent = 'Disconnect';
-      walletInfo.style.display = 'block';
-      const addr = wallet.publicKey.toString();
-      walletAddr.textContent = addr.slice(0, 8) + '...' + addr.slice(-8);
-      payBtn.disabled = false;
-      payBtn.textContent = 'Pay ' + CONFIG.amount + ' SOL';
-      await refreshBalances();
-    } catch (err) {
-      showStatus('❌ Error: ' + err.message, 'error');
+    
+    async function initiatePayment() {
+        if (!wallet || !wallet.isConnected) return;
+        
+        const pkg = document.getElementById('packageSelect').value;
+        const amountSOL = (parseInt(pkg) * 0.1).toFixed(4); // $0.10 per check
+        
+        try {
+            status.style.display = 'block';
+            status.innerHTML = '<p class="text-dim">Creating transaction...</p>';
+            txLink.style.display = 'none';
+            buyBtn.disabled = true;
+            
+            const tx = new Transaction().add(
+                SystemProgram.transfer({
+                    fromPubkey: wallet.publicKey,
+                    toPubkey: new PublicKey(MERCHANT),
+                    lamports: Math.floor(parseFloat(amountSOL) * LAMPORTS_PER_SOL)
+                })
+            );
+            
+            const { blockhash } = await conn.getLatestBlockhash();
+            tx.recentBlockhash = blockhash;
+            tx.feePayer = wallet.publicKey;
+            
+            status.innerHTML = '<p class="text-dim">Sign in wallet...</p>';
+            const sig = await wallet.signAndSendTransaction(tx);
+            
+            status.innerHTML = '<p class="text-dim">Confirming...</p>';
+            await conn.confirmTransaction(sig, 'confirmed');
+            
+            status.innerHTML = '<p class="text-success">Payment confirmed!</p>';
+            txLink.style.display = 'block';
+            txLink.innerHTML = `<a href="${EXPLORER}tx/${sig}" target="_blank" style="color: #0ff;">View transaction</a>`;
+            buyBtn.textContent = 'DONE';
+            
+            await refreshBalances();
+        } catch (e) {
+            status.innerHTML = `<p class="text-error">Error: ${e.message}</p>`;
+            buyBtn.disabled = false;
+        }
     }
-  }
-
-  async function pay() {
-    if (!wallet || !wallet.isConnected) return;
-    try {
-      payBtn.disabled = true;
-      payBtn.textContent = 'Processing...';
-      showStatus('⏳ Creating transaction...', 'loading');
-
-      const tx = new Transaction().add(
-        SystemProgram.transfer({
-          fromPubkey: wallet.publicKey,
-          toPubkey: new PublicKey(CONFIG.merchant),
-          lamports: Math.floor(CONFIG.amount * LAMPORTS_PER_SOL)
-        })
-      );
-
-      const { blockhash } = await conn.getLatestBlockhash();
-      tx.recentBlockhash = blockhash;
-      tx.feePayer = wallet.publicKey;
-
-      showStatus('⏳ Sign in wallet...', 'loading');
-      const sig = await wallet.signAndSendTransaction(tx);
-
-      showStatus('⏳ Confirming...', 'loading');
-      await conn.confirmTransaction(sig, 'confirmed');
-
-      showStatus('✅ Payment confirmed!', 'success');
-      payBtn.textContent = 'Done ✓';
-      txLink.style.display = 'block';
-      txLink.querySelector('a').href = CONFIG.explorer + 'tx/' + sig;
-      txLink.querySelector('a').textContent = 'View: ' + sig.slice(0, 12) + '...';
-      await refreshBalances();
-    } catch (err) {
-      showStatus('❌ Error: ' + (err.message || 'Unknown'), 'error');
-      payBtn.disabled = false;
-      payBtn.textContent = 'Pay ' + CONFIG.amount + ' SOL';
+    
+    // Init
+    refreshBalances();
+    setInterval(refreshBalances, 30000);
+    
+    if (window.solana?.isConnected) {
+        wallet = window.solana;
+        connectWallet();
     }
-  }
-
-  connectBtn.addEventListener('click', connectWallet);
-  payBtn.addEventListener('click', pay);
-  if (window.solana?.isConnected) { wallet = window.solana; connectWallet(); }
-  refreshBalances();
-  setInterval(refreshBalances, 30000);
 })();
 </script>
 {{end}}
