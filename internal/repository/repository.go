@@ -339,7 +339,7 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 			name VARCHAR(100) NOT NULL,
 			last_used_at TIMESTAMP WITH TIME ZONE,
 			expires_at TIMESTAMP WITH TIME ZONE,
-			created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 			revoked_at TIMESTAMP WITH TIME ZONE,
 			is_revoked BOOLEAN DEFAULT FALSE,
 			FOREIGN KEY (user_id) REFERENCES users(id)
