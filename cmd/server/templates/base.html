@@ -121,54 +121,81 @@
 </style>
 
 <script>
-// Buffer polyfill - CRITICAL for Solana Web3.js
+// Buffer polyfill for Solana Web3.js
 (function() {
-    if (typeof window.Buffer === 'undefined') {
-        window.Buffer = {
-            from: function(data, encoding) {
-                if (data instanceof Uint8Array) return data;
-                if (Array.isArray(data)) return new Uint8Array(data);
-                if (typeof data === 'string') {
-                    var bytes = new Uint8Array(data.length);
-                    for (var i = 0; i < data.length; i++) bytes[i] = data.charCodeAt(i);
-                    return bytes;
-                }
-                return new Uint8Array(0);
-            },
-            isBuffer: function(obj) { return obj instanceof Uint8Array; },
-            alloc: function(size, fill, encoding) {
-                var buf = new Uint8Array(size);
-                if (fill !== undefined && fill !== null) {
-                    if (typeof fill === 'number') {
-                        buf.fill(fill);
-                    } else if (typeof fill === 'string') {
-                        var bytes = this.from(fill, encoding);
-                        buf.set(bytes);
-                    } else if (fill instanceof Uint8Array) {
-                        buf.set(fill);
-                    }
-                }
-                return buf;
-            },
-            allocUnsafe: function(size) { return new Uint8Array(size); },
-            byteLength: function(str) { return new TextEncoder().encode(str).length; },
-            concat: function(list, length) {
-                if (!Array.isArray(list)) throw new TypeError('list argument must be an Array');
-                if (list.length === 0) return new Uint8Array(0);
-                var totalLen = length || list.reduce(function(a, b) { return a + (b ? b.length : 0); }, 0);
-                var buf = new Uint8Array(totalLen);
-                var offset = 0;
-                for (var i = 0; i < list.length; i++) {
-                    if (list[i]) {
-                        var bytes = list[i] instanceof Uint8Array ? list[i] : new Uint8Array(list[i]);
-                        buf.set(bytes, offset);
-                        offset += bytes.length;
-                    }
-                }
-                return buf;
+    var _Buffer = window.Buffer;
+    function BufferPolyfill(arr, enc) {
+        if (typeof arr === 'number') {
+            this.length = 8;
+            this.data = new Uint8Array(8);
+            var val = arr;
+            for (var i = 7; i >= 0; i--) {
+                this.data[i] = val & 0xff;
+                val = Math.floor(val / 256);
             }
-        };
+        } else if (Array.isArray(arr)) {
+            this.length = arr.length;
+            this.data = new Uint8Array(arr);
+        } else if (arr instanceof Uint8Array) {
+            this.length = arr.length;
+            this.data = arr;
+        } else if (typeof arr === 'string') {
+            var enc2 = new TextEncoder().encode(arr);
+            this.length = enc2.length;
+            this.data = enc2;
+        } else {
+            this.length = 0;
+            this.data = new Uint8Array(0);
+        }
     }
+    BufferPolyfill.prototype.writeBigInt64LE = function(val, offset) {
+        offset = offset || 0;
+        var v = typeof val === 'bigint' ? val : BigInt(val);
+        for (var i = 0; i < 8; i++) {
+            this.data[offset + i] = Number(v & BigInt(0xff));
+            v = v >> BigInt(8);
+        }
+    };
+    BufferPolyfill.from = function(arr, enc) {
+        if (arr instanceof BufferPolyfill) return arr;
+        if (typeof arr === 'string') return new BufferPolyfill(arr);
+        if (Array.isArray(arr)) return new BufferPolyfill(arr);
+        if (arr instanceof Uint8Array) return new BufferPolyfill(arr);
+        return new BufferPolyfill(0);
+    };
+    BufferPolyfill.alloc = function(size, fill, enc) {
+        var buf = new BufferPolyfill(size);
+        if (fill !== undefined) {
+            if (typeof fill === 'number') buf.data.fill(fill);
+            else if (typeof fill === 'string') {
+                var s = new TextEncoder().encode(fill);
+                buf.data.set(s);
+                buf.length = s.length;
+            }
+        }
+        return buf;
+    };
+    BufferPolyfill.allocUnsafe = function(size) { return new BufferPolyfill(size); };
+    BufferPolyfill.byteLength = function(str) { return new TextEncoder().encode(str).length; };
+    BufferPolyfill.concat = function(list, len) {
+        var total = 0;
+        list.forEach(function(b) { total += b.length; });
+        var result = new Uint8Array(total);
+        var pos = 0;
+        list.forEach(function(b) {
+            result.set(b.data || b, pos);
+            pos += b.length;
+        });
+        return new BufferPolyfill(result);
+    };
+    BufferPolyfill.isBuffer = function(obj) { return obj instanceof BufferPolyfill; };
+    Object.defineProperty(BufferPolyfill.prototype, 'length', {
+        get: function() { return this.data ? this.data.length : 0; },
+        set: function(v) { if (this.data) this.data.length = v; }
+    });
+    
+    // Install before Solana Web3.js loads
+    window.Buffer = BufferPolyfill;
     console.log('Buffer polyfill ready');
 })();
 </script>
