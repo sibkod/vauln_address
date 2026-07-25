@@ -141,6 +141,7 @@ func main() {
 	router.GET("/about", func(c *gin.Context) { renderPage(c, "about", "About", "about", r) })
 	router.GET("/contact", func(c *gin.Context) { renderPage(c, "contact", "Contact", "contact", r) })
 	router.GET("/support", func(c *gin.Context) { renderPage(c, "support", "Support", "support", r) })
+	router.GET("/api-docs", func(c *gin.Context) { renderPage(c, "api", "API", "api", r) })
 
 	// 404 for pages (HTML)
 	router.NoRoute(func(c *gin.Context) {
