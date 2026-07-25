@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"log"
@@ -40,10 +41,19 @@ func init() {
 
 func renderPage(c *gin.Context, pageTmpl, title, activePage string) {
 	c.Header("Content-Type", "text/html; charset=utf-8")
+
+	// Render the content template to a buffer first
+	var contentBuf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&contentBuf, pageTmpl, nil); err != nil {
+		renderErrorHTML(c, 500, "Template Error", "Failed to render content")
+		return
+	}
+
+	// Execute base.html with the rendered content as a string
 	tmpl.ExecuteTemplate(c.Writer, "base.html", PageData{
 		Title:      title,
 		ActivePage: activePage,
-		Content:    pageTmpl,
+		Content:    contentBuf.String(),
 	})
 }
 
