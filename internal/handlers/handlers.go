@@ -336,26 +336,11 @@ func (h *Handler) CheckWallet(c *gin.Context) {
 		return
 	}
 
-	// Check if user is authenticated and has balance
-	userID, hasAuth := c.Get("userID")
-	var balanceLeft int = -1 // -1 means unlimited (IP-based)
-
-	if hasAuth {
-		user, err := h.authService.GetUserByID(userID.(int64))
-		if err == nil && user != nil {
-			balanceLeft = user.Balance
-			if user.Balance <= 0 {
-				c.JSON(http.StatusPaymentRequired, models.ErrorResponse{
-					Error:   "insufficient balance",
-					Code:    "INSUFFICIENT_BALANCE",
-					Details: "please purchase more checks",
-				})
-				return
-			}
-			// Deduct balance
-			h.repo.AddUserBalance(c.Request.Context(), user.ID, -1)
-			balanceLeft = user.Balance - 1
-		}
+	// Get remaining balance from middleware (if authenticated, balance was deducted)
+	// If not authenticated, balance is -1 (unlimited IP-based)
+	balanceLeft := -1
+	if remaining, exists := c.Get("remainingBalance"); exists {
+		balanceLeft = remaining.(int)
 	}
 
 	wallet, err := h.repo.GetWallet(c.Request.Context(), req.Address, req.Chain)

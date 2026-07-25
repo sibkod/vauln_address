@@ -31,6 +31,10 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 		ip := c.ClientIP()
 		ctx := c.Request.Context()
 
+		// Check if user is authenticated
+		_, isAuthenticated := c.Get("userID")
+
+		// 1. Check IP rate limit for everyone
 		rl.checkAndResetWindow(ctx, ip)
 
 		rateLimit, err := rl.repo.GetRateLimit(ctx, ip)
@@ -45,11 +49,7 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 				c.Next()
 				return
 			}
-			c.Next()
-			return
-		}
-
-		if rateLimit.Count >= rl.cfg.RateLimitRequests {
+		} else if rateLimit.Count >= rl.cfg.RateLimitRequests {
 			windowEnd := rateLimit.WindowStart.Add(time.Duration(rl.cfg.RateLimitHours) * time.Hour)
 			resetIn := time.Until(windowEnd)
 
@@ -62,16 +62,56 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 			return
 		}
 
-		err = rl.repo.IncrementRateLimit(ctx, ip, rateLimit.WindowStart)
-		if err != nil {
-			c.Next()
-			return
+		// 2. For authenticated users: check their balance
+		if isAuthenticated {
+			userID := c.GetInt64("userID")
+			user, err := rl.repo.GetUserByID(ctx, userID)
+			if err != nil || user == nil {
+				c.Next()
+				return
+			}
+
+			// Check if user has checks remaining
+			if user.Balance <= 0 {
+				c.JSON(http.StatusPaymentRequired, models.ErrorResponse{
+					Error: "no checks remaining",
+					Code:  "BALANCE_EXHAUSTED",
+					Details: "Your check package is exhausted. Please purchase more checks.",
+				})
+				c.Abort()
+				return
+			}
+
+			// Deduct one check from balance
+			if err := rl.repo.DeductUserBalance(ctx, userID, 1); err != nil {
+				c.Next()
+				return
+			}
+
+			// Pass remaining balance to context for handler
+			c.Set("remainingBalance", user.Balance-1)
+		} else {
+			// For anonymous users: increment IP counter
+			err = rl.repo.IncrementRateLimit(ctx, ip, rateLimit.WindowStart)
+			if err != nil {
+				c.Next()
+				return
+			}
 		}
 
 		c.Header("X-RateLimit-Limit", formatInt(rl.cfg.RateLimitRequests))
-		c.Header("X-RateLimit-Remaining", formatInt(rl.cfg.RateLimitRequests-rateLimit.Count-1))
+		if rateLimit != nil {
+			c.Header("X-RateLimit-Remaining", formatInt(max(0, rl.cfg.RateLimitRequests-rateLimit.Count-1)))
+		}
 		c.Next()
 	}
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func (rl *RateLimiter) checkAndResetWindow(ctx context.Context, ip string) {
