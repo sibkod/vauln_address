@@ -120,7 +120,7 @@
 #chainModal button:hover { border-color: #3b82f6 !important; }
 </style>
 
-<script src="https://unpkg.com/@solana/web3.js@latest/dist/index.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@solana/web3.js@1.95.8/lib/index.iife.min.js"></script>
 <script>
 (function() {
     const SERVER_AUTH = {{if .IsAuthenticated}}true{{else}}false{{end}};
@@ -398,8 +398,22 @@
                 // Solana wallet - encode message to bytes and sign
                 const encoder = new TextEncoder();
                 const messageBytes = encoder.encode(message);
-                const sig = await provider.signMessage(messageBytes);
-                signature = Array.from(sig).map(b => b.toString(16).padStart(2, '0')).join('');
+                let sig = await provider.signMessage(messageBytes);
+                
+                // Handle different wallet signature formats
+                if (typeof sig === 'string') {
+                    // Some wallets return base58 encoded string
+                    signature = sig;
+                } else if (sig && sig.signature) {
+                    // Some wallets return { signature: Uint8Array }
+                    sig = sig.signature;
+                    signature = Array.from(sig).map(b => b.toString(16).padStart(2, '0')).join('');
+                } else if (sig instanceof Uint8Array) {
+                    // Standard Uint8Array format
+                    signature = Array.from(sig).map(b => b.toString(16).padStart(2, '0')).join('');
+                } else {
+                    signature = sig.toString('hex');
+                }
             } else if (window.ethereum) {
                 // EVM wallet fallback
                 signature = await window.ethereum.request({
@@ -412,17 +426,21 @@
             }
 
             // 3. Send signature to backend and get JWT
+            const loginBody = {
+                address: address,
+                signature: signature,
+                message: message,
+                chain: 'solana'
+            };
+            console.log('Auth request:', loginBody);
+            
             const loginRes = await fetch('/api/auth/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    address: address,
-                    signature: signature,
-                    message: message,
-                    chain: 'solana'
-                })
+                body: JSON.stringify(loginBody)
             });
             const loginData = await loginRes.json();
+            console.log('Auth response:', loginData);
 
             if (loginData.token) {
                 authToken = loginData.token;
@@ -431,10 +449,13 @@
                 userBalance = (loginData.user && loginData.user.balance) || 0;
                 return true;
             } else if (loginData.error) {
-                showToast('❌ Auth failed: ' + (loginData.error || 'Unknown error'));
+                const errMsg = loginData.detail || loginData.error;
+                showToast('❌ Auth failed: ' + errMsg);
+                console.error('Auth error:', loginData);
                 return false;
             } else {
                 showToast('❌ Auth failed: Unknown response');
+                console.error('Auth failed - unknown response:', loginData);
                 return false;
             }
         } catch (error) {
