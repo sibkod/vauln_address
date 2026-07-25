@@ -212,21 +212,28 @@
     console.log('Buffer polyfill ready');
 })();
 </script>
+<!-- Solana Web3.js loaded as ES module -->
+<script type="module">
+import solanaWeb3 from 'https://cdn.jsdelivr.net/npm/@solana/web3.js@1.95.8/lib/index.iife.min.js';
+window.solanaWeb3 = solanaWeb3;
+console.log('Solana Web3.js loaded from CDN');
+</script>
 <script>
 // Wait for any Solana wallet to provide solanaWeb3
 window.waitForSolanaWeb3 = function() {
     return new Promise(function(resolve) {
         // Check all possible wallet providers
         function checkWallets() {
+            // First check if we loaded it from CDN
+            if (window.solanaWeb3 && window.solanaWeb3.Transaction) {
+                return window.solanaWeb3;
+            }
             // Phantom - check multiple possible locations
             if (window.phantom?.solana?.provider?.solanaWeb3) {
                 return window.phantom.solana.provider.solanaWeb3;
             }
             if (window.phantom?.provider?.solanaWeb3) {
                 return window.phantom.provider.solanaWeb3;
-            }
-            if (window.phantom?.solana?._solanaWeb3) {
-                return window.phantom.solana._solanaWeb3;
             }
             // Solflare
             if (window.solflare?.solana?.provider?.solanaWeb3) {
@@ -238,10 +245,6 @@ window.waitForSolanaWeb3 = function() {
             // Backpack
             if (window.backpack?.solana?.provider?.solanaWeb3) {
                 return window.backpack.solana.provider.solanaWeb3;
-            }
-            // Generic check
-            if (window.solanaWeb3 && window.solanaWeb3.Transaction) {
-                return window.solanaWeb3;
             }
             return null;
         }
@@ -259,7 +262,7 @@ window.waitForSolanaWeb3 = function() {
             if (result) {
                 clearInterval(interval);
                 resolve(result);
-            } else if (attempts > 100) {
+            } else if (attempts > 50) {
                 clearInterval(interval);
                 resolve(null);
             }
