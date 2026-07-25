@@ -156,20 +156,34 @@ func main() {
 	// Store repo reference for page rendering
 	r := repo
 
-	// ========== PAGES (HTML) ==========
-	router.GET("/", func(c *gin.Context) { renderPage(c, "home", "Home", "home", r) })
-	router.GET("/roadmap", func(c *gin.Context) { renderPage(c, "roadmap", "Roadmap", "roadmap", r) })
-	router.GET("/about", func(c *gin.Context) { renderPage(c, "about", "About", "about", r) })
-	router.GET("/contact", func(c *gin.Context) { renderPage(c, "contact", "Contact", "contact", r) })
-	router.GET("/support", func(c *gin.Context) { renderPage(c, "support", "Support", "support", r) })
-	router.GET("/api-docs", func(c *gin.Context) { renderPage(c, "api", "API", "api", r) })
-	router.GET("/api-keys", func(c *gin.Context) { renderPage(c, "api-keys", "API Keys", "api-keys", r) })
-	router.GET("/payment", func(c *gin.Context) { renderPage(c, "payment", "Payment", "payment", r) })
-
-	// 404 for pages (HTML)
-	router.NoRoute(func(c *gin.Context) {
-		renderErrorHTML(c, 404, "Page Not Found", "The page you're looking for doesn't exist or has been moved.")
-	})
+	// Check if frontend dist exists
+	frontendDist := "../frontend/dist"
+	if _, err := os.Stat(frontendDist); err == nil {
+		// Serve React frontend
+		router.Static("/assets", frontendDist+"/assets")
+		router.GET("/", func(c *gin.Context) {
+			c.File(frontendDist + "/index.html")
+		})
+		router.NoRoute(func(c *gin.Context) {
+			// SPA fallback - serve index.html
+			c.File(frontendDist + "/index.html")
+		})
+		log.Println("Serving React frontend from:", frontendDist)
+	} else {
+		// Fallback to Go templates
+		log.Println("Frontend dist not found, using Go templates")
+		router.GET("/", func(c *gin.Context) { renderPage(c, "home", "Home", "home", r) })
+		router.GET("/roadmap", func(c *gin.Context) { renderPage(c, "roadmap", "Roadmap", "roadmap", r) })
+		router.GET("/about", func(c *gin.Context) { renderPage(c, "about", "About", "about", r) })
+		router.GET("/contact", func(c *gin.Context) { renderPage(c, "contact", "Contact", "contact", r) })
+		router.GET("/support", func(c *gin.Context) { renderPage(c, "support", "Support", "support", r) })
+		router.GET("/api-docs", func(c *gin.Context) { renderPage(c, "api", "API", "api", r) })
+		router.GET("/api-keys", func(c *gin.Context) { renderPage(c, "api-keys", "API Keys", "api-keys", r) })
+		router.GET("/payment", func(c *gin.Context) { renderPage(c, "payment", "Payment", "payment", r) })
+		router.NoRoute(func(c *gin.Context) {
+			renderErrorHTML(c, 404, "Page Not Found", "The page you're looking for doesn't exist or has been moved.")
+		})
+	}
 
 	// ========== API (JSON) ==========
 	api := router.Group("/api")

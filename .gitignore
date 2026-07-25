@@ -14,3 +14,9 @@ server.log
 .env
 /server
 data/
+
+# Frontend
+frontend/dist/
+frontend/node_modules/
+frontend/.vite/
+*.local
