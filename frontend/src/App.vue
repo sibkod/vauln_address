@@ -108,14 +108,8 @@ async function connectWallet(walletId: string) {
       glow: (window as any).glow,
     }
     
-    // Direct connection for browser extensions
     if (providers[walletId]) {
       const provider = providers[walletId]
-      if (provider?.isConnected || provider?.publicKey) {
-        // Already connected
-        await authenticateWithBackend(provider, provider.publicKey.toString())
-        return
-      }
       if (provider?.connect) {
         await provider.connect()
         if (provider.publicKey) {
@@ -125,37 +119,32 @@ async function connectWallet(walletId: string) {
       }
     }
     
-    // Mobile wallets - need WalletConnect or deep link
     if (walletId === 'walletconnect') {
-      connectError.value = 'WalletConnect integration coming soon'
+      connectError.value = 'WalletConnect - coming soon'
       connecting.value = false
       return
     }
     
     if (walletId === 'exodus') {
-      // Exodus deep link
       window.location.href = 'exodus://solana/wc'
-      connectError.value = 'Opening Exodus wallet...'
+      connectError.value = 'Opening Exodus...'
       connecting.value = false
       return
     }
     
     if (walletId === 'ledger') {
-      connectError.value = 'Ledger connection via WalletConnect coming soon'
+      connectError.value = 'Ledger - coming soon'
       connecting.value = false
       return
     }
     
-    // If we get here, wallet not installed - redirect to install
     const wallet = walletOptions.find(w => w.id === walletId)
     if (wallet) {
       window.open(wallet.url, '_blank')
-      connectError.value = `Please install ${wallet.name} wallet`
-    } else {
-      connectError.value = 'Wallet not found. Please install a supported wallet.'
+      connectError.value = `Install ${wallet.name}`
     }
   } catch (err: any) {
-    connectError.value = err.message || 'Failed to connect wallet'
+    connectError.value = err.message || 'Failed to connect'
   }
   
   connecting.value = false
@@ -163,32 +152,24 @@ async function connectWallet(walletId: string) {
 
 async function authenticateWithBackend(wallet: any, address: string) {
   try {
-    // Get nonce from backend
     const nonceRes = await fetch(`/api/auth/nonce?address=${address}&chain=solana`)
     const nonceData = await nonceRes.json()
     
     if (!nonceData.nonce) {
-      connectError.value = 'Failed to get authentication nonce'
+      connectError.value = 'Failed to get nonce'
       connecting.value = false
       return
     }
     
-    // Sign message with wallet
     const message = nonceData.nonce
     const encodedMessage = new TextEncoder().encode(message)
     const signedMessage = await wallet.signMessage(encodedMessage)
     const signature = Buffer.from(signedMessage).toString('base64')
     
-    // Authenticate
     const authRes = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        address: address,
-        chain: 'solana',
-        signature: signature,
-        message: message
-      })
+      body: JSON.stringify({ address, chain: 'solana', signature, message })
     })
     
     const authData = await authRes.json()
@@ -206,16 +187,22 @@ async function authenticateWithBackend(wallet: any, address: string) {
       
       closeWalletModal()
     } else {
-      connectError.value = authData.error || 'Authentication failed'
+      connectError.value = authData.error || 'Auth failed'
     }
   } catch (err: any) {
-    connectError.value = err.message || 'Authentication failed'
+    connectError.value = err.message || 'Auth failed'
   }
   
   connecting.value = false
 }
 
 function disconnectWallet() {
+  // Disconnect from wallet if possible
+  const phantom = (window as any).solana
+  if (phantom?.disconnect) {
+    phantom.disconnect()
+  }
+  
   connected.value = false
   walletAddress.value = ''
   userBalance.value = 0
@@ -232,11 +219,11 @@ function getTotal() {
 </script>
 
 <template>
-  <!-- Backend unavailable warning -->
+  <!-- Backend warning -->
   <div v-if="!checkingBackend && !backendAvailable" class="backend-warning">
     <span class="warning-icon">⚠️</span>
-    <span>Backend unavailable. Some features may not work.</span>
-    <button @click="() => { checkingBackend = true; backendAvailable = true; $router.go(0) }">Retry</button>
+    <span>Backend unavailable</span>
+    <button @click="() => { checkingBackend = true; $router.go(0) }">Retry</button>
   </div>
         
   <!-- Navigation -->
@@ -253,12 +240,16 @@ function getTotal() {
     <div class="nav-right">
       <span class="network-badge">{{ IS_MAINNET ? 'Mainnet' : 'Devnet' }}</span>
       <button class="theme-toggle" @click="toggleTheme">{{ darkMode ? '◐' : '◑' }}</button>
-      <button v-if="connected" class="connect-btn" @click="disconnectWallet" :title="walletAddress">
+      
+      <!-- Connected state -->
+      <div v-if="connected" class="wallet-connected" @click="disconnectWallet">
         <span class="dot active"></span>
-        <span>{{ formatAddress(walletAddress) }}</span>
-        <span v-if="userBalance > 0" style="margin-left:0.5rem; color:#4bc9a0;">{{ userBalance }}</span>
-      </button>
-      <button v-else class="connect-btn" @click="openWalletModal">
+        <span class="wallet-addr">{{ formatAddress(walletAddress) }}</span>
+        <span v-if="userBalance > 0" class="wallet-balance">{{ userBalance }}</span>
+      </div>
+      
+      <!-- Not connected - click to open modal -->
+      <button v-else class="connect-btn" @click.stop="openWalletModal">
         <span class="dot"></span>
         <span>Connect</span>
       </button>
@@ -266,53 +257,50 @@ function getTotal() {
   </nav>
 
   <!-- Wallet Modal -->
-  <div v-if="showWalletModal" class="wallet-modal-overlay" @click.self="closeWalletModal">
-    <div class="wallet-modal">
-      <div class="modal-header">
-        <h2>Connect Wallet</h2>
-        <button class="modal-close" @click="closeWalletModal">×</button>
-      </div>
-      <p class="modal-desc">Choose your preferred wallet</p>
-      
-      <!-- Extension Wallets -->
-      <div class="wallet-section">
-        <div class="wallet-section-title">Browser Extensions</div>
-        <div class="wallet-options">
-          <button 
-            v-for="wallet in walletOptions.filter(w => w.type === 'extension')" 
-            :key="wallet.id"
-            class="wallet-option"
-            @click="connectWallet(wallet.id)"
-            :disabled="connecting"
-          >
-            <span class="wallet-icon">{{ wallet.icon }}</span>
-            <span class="wallet-name">{{ wallet.name }}</span>
-            <span class="wallet-badge extension">Extension</span>
-          </button>
+  <Teleport to="body">
+    <div v-if="showWalletModal" class="wallet-modal-overlay" @click.self="closeWalletModal">
+      <div class="wallet-modal">
+        <div class="modal-header">
+          <h2>Connect Wallet</h2>
+          <button class="modal-close" @click="closeWalletModal">×</button>
         </div>
-      </div>
-      
-      <!-- Mobile Wallets -->
-      <div class="wallet-section">
-        <div class="wallet-section-title">Mobile & Hardware</div>
-        <div class="wallet-options">
-          <button 
-            v-for="wallet in walletOptions.filter(w => w.type !== 'extension')" 
-            :key="wallet.id"
-            class="wallet-option"
-            @click="connectWallet(wallet.id)"
-            :disabled="connecting"
-          >
-            <span class="wallet-icon">{{ wallet.icon }}</span>
-            <span class="wallet-name">{{ wallet.name }}</span>
-            <span class="wallet-badge mobile">{{ wallet.type }}</span>
-          </button>
+        
+        <div class="wallet-section">
+          <div class="wallet-section-title">Browser Extensions</div>
+          <div class="wallet-options">
+            <button 
+              v-for="wallet in walletOptions.filter(w => w.type === 'extension')" 
+              :key="wallet.id"
+              class="wallet-option"
+              @click="connectWallet(wallet.id)"
+              :disabled="connecting"
+            >
+              <span class="wallet-icon">{{ wallet.icon }}</span>
+              <span class="wallet-name">{{ wallet.name }}</span>
+            </button>
+          </div>
         </div>
+        
+        <div class="wallet-section">
+          <div class="wallet-section-title">Mobile & Hardware</div>
+          <div class="wallet-options">
+            <button 
+              v-for="wallet in walletOptions.filter(w => w.type !== 'extension')" 
+              :key="wallet.id"
+              class="wallet-option"
+              @click="connectWallet(wallet.id)"
+              :disabled="connecting"
+            >
+              <span class="wallet-icon">{{ wallet.icon }}</span>
+              <span class="wallet-name">{{ wallet.name }}</span>
+            </button>
+          </div>
+        </div>
+        
+        <div v-if="connectError" class="wallet-error">{{ connectError }}</div>
       </div>
-      
-      <div v-if="connectError" class="wallet-error">{{ connectError }}</div>
     </div>
-  </div>
+  </Teleport>
 
   <!-- Main content -->
   <div class="main-content">
@@ -338,6 +326,32 @@ function getTotal() {
 </template>
 
 <style scoped>
+.wallet-connected {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 1rem 0.45rem 1rem;
+  background: rgba(24, 32, 48, 0.7);
+  border: 1px solid rgba(75, 201, 160, 0.3);
+  border-radius: 60px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.wallet-connected:hover {
+  background: rgba(40, 50, 70, 0.7);
+  border-color: rgba(75, 201, 160, 0.5);
+}
+.wallet-addr {
+  font-size: 0.8rem;
+  color: #e1e8f5;
+  font-weight: 500;
+}
+.wallet-balance {
+  font-size: 0.7rem;
+  color: #4bc9a0;
+  font-weight: 600;
+}
+
 /* Wallet Modal */
 .wallet-modal-overlay {
   position: fixed;
@@ -366,7 +380,7 @@ function getTotal() {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.5rem;
+  margin-bottom: 1rem;
 }
 .modal-header h2 {
   font-size: 1.2rem;
@@ -379,17 +393,10 @@ function getTotal() {
   color: #6b7a9e;
   font-size: 1.5rem;
   cursor: pointer;
-  padding: 0;
-  line-height: 1;
 }
 .modal-close:hover { color: #e7ecf5; }
-.modal-desc {
-  color: #6b7a9e;
-  font-size: 0.85rem;
-  margin-bottom: 1.2rem;
-}
 .wallet-section {
-  margin-bottom: 1.2rem;
+  margin-bottom: 1rem;
 }
 .wallet-section-title {
   font-size: 0.7rem;
@@ -397,7 +404,7 @@ function getTotal() {
   color: #5a6a8e;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  margin-bottom: 0.6rem;
+  margin-bottom: 0.5rem;
 }
 .wallet-options {
   display: flex;
@@ -418,42 +425,13 @@ function getTotal() {
 .wallet-option:hover:not(:disabled) {
   border-color: #667eea;
   background: #1a1f2e;
-  transform: translateX(4px);
 }
 .wallet-option:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
-.wallet-icon {
-  font-size: 1.5rem;
-  width: 32px;
-  text-align: center;
-}
-.wallet-name {
-  font-size: 0.95rem;
-  font-weight: 500;
-  color: #e7ecf5;
-  flex: 1;
-}
-.wallet-badge {
-  font-size: 0.6rem;
-  padding: 0.15rem 0.5rem;
-  border-radius: 4px;
-  font-weight: 600;
-  text-transform: uppercase;
-}
-.wallet-badge.extension {
-  background: #667eea20;
-  color: #667eea;
-}
-.wallet-badge.mobile {
-  background: #4bc9a020;
-  color: #4bc9a0;
-}
-.wallet-badge.hardware {
-  background: #ffa50220;
-  color: #ffa502;
-}
+.wallet-icon { font-size: 1.5rem; }
+.wallet-name { font-size: 0.95rem; font-weight: 500; color: #e7ecf5; }
 .wallet-error {
   margin-top: 1rem;
   padding: 0.8rem;
