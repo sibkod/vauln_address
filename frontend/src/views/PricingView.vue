@@ -58,16 +58,27 @@ function selectPackage(pkg: typeof packages[0]) {
 async function payWithSolana() {
   if (!selectedPackage.value) return
   
-  // Check if user is on Solana chain
-  if (walletChain.value !== 'solana') {
-    error.value = 'Please connect a Solana wallet (Phantom, Solflare) to pay with SOL'
+  // Check if Phantom/Solflare is installed
+  const phantom = (window as any).solana
+  if (!phantom) {
+    error.value = 'Please install Phantom wallet: https://phantom.app/'
     return
   }
   
-  const phantom = (window as any).solana
-  if (!phantom?.isConnected || !phantom?.publicKey) {
-    error.value = 'Solana wallet not connected'
+  // Check if user is on Solana chain
+  if (walletChain.value !== 'solana') {
+    error.value = 'Please connect a Solana wallet to pay with SOL'
     return
+  }
+  
+  // Check if wallet is connected (can be done silently)
+  if (!phantom.isConnected) {
+    try {
+      await phantom.connect()
+    } catch (e) {
+      error.value = 'Please connect your Solana wallet'
+      return
+    }
   }
   
   processing.value = true
@@ -76,25 +87,38 @@ async function payWithSolana() {
   
   try {
     const authToken = localStorage.getItem('authToken')
+    if (!authToken) {
+      error.value = 'Please log in first'
+      processing.value = false
+      return
+    }
     
     // Create order first (requires auth)
     const orderRes = await fetch('/api/payment/create', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': authToken ? `Bearer ${authToken}` : ''
+        'Authorization': `Bearer ${authToken}`
       },
       body: JSON.stringify({
         checks_count: selectedPackage.value.checks
       })
     })
     
+    // Parse response
+    let orderData
+    const text = await orderRes.text()
+    try {
+      orderData = JSON.parse(text)
+    } catch {
+      console.error('Non-JSON response:', text.substring(0, 200))
+      throw new Error('Server error: ' + text.substring(0, 100))
+    }
+    
     if (!orderRes.ok) {
-      const orderData = await orderRes.json()
       throw new Error(orderData.error || 'Failed to create order')
     }
     
-    const orderData = await orderRes.json()
     console.log('Order created:', orderData)
     
     const senderPublicKey = phantom.publicKey
