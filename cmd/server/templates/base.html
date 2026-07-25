@@ -120,12 +120,21 @@
 #chainModal button:hover { border-color: #3b82f6 !important; }
 </style>
 
-<script src="https://cdn.jsdelivr.net/npm/buffer@6.0.3/umd/browser-bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@solana/web3.js@1.95.8/lib/index.iife.min.js"></script>
 <script>
 (function() {
-    // Set global Buffer for Solana Web3.js
-    window.Buffer = window.Buffer || Buffer;
+    // Simple Buffer polyfill for Solana Web3.js
+    (function(root) {
+        if (!root.Buffer) {
+            root.Buffer = {
+                isBuffer: function() { return false; },
+                from: function(arr) { return arr instanceof Uint8Array ? arr : new Uint8Array(arr); },
+                alloc: function(size) { return new Uint8Array(size); },
+                allocUnsafe: function(size) { return new Uint8Array(size); },
+                byteLength: function(str) { return new TextEncoder().encode(str).length; }
+            };
+        }
+    })(window);
     
     const SERVER_AUTH = {{if .IsAuthenticated}}true{{else}}false{{end}};
     const SERVER_ADDRESS = "{{.UserAddress}}";
