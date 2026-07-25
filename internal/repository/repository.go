@@ -657,6 +657,41 @@ func (r *Repository) GetPendingOrderByWallet(ctx context.Context, walletAddress 
 	return &order, nil
 }
 
+// GetOrdersByWallet retrieves all orders for a wallet address
+func (r *Repository) GetOrdersByWallet(ctx context.Context, walletAddress string, limit int) ([]models.Order, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT order_uuid, wallet_address, chain, checks_count, total_usd, currency, token_amount, payment_address, status, tx_hash, created_at, completed_at
+		FROM orders WHERE wallet_address = ? ORDER BY created_at DESC LIMIT ?`,
+		walletAddress, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var orders []models.Order
+	for rows.Next() {
+		var order models.Order
+		var txHashNull sql.NullString
+		var completedAt sql.NullTime
+
+		if err := rows.Scan(&order.OrderUUID, &order.WalletAddress, &order.Chain, &order.ChecksCount, &order.TotalUSD,
+			&order.Currency, &order.TokenAmount, &order.PaymentAddress, &order.Status,
+			&txHashNull, &order.CreatedAt, &completedAt); err != nil {
+			return nil, err
+		}
+
+		if txHashNull.Valid {
+			order.TxHash = txHashNull.String
+		}
+		if completedAt.Valid {
+			order.CompletedAt = &completedAt.Time
+		}
+		orders = append(orders, order)
+	}
+	return orders, rows.Err()
+}
+
 // ==================== Wallet Methods ====================
 
 func (r *Repository) GetWallet(ctx context.Context, address string, chain string) (*models.Wallet, error) {

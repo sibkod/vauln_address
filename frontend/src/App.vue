@@ -21,6 +21,9 @@ const connectError = ref('')
 const stats = ref({ evm: 0, btc: 0, solana: 0, sui: 0, tron: 0 })
 const showWalletMenu = ref(false)
 
+// Purchase history
+const recentPurchases = ref<any[]>([])
+
 const walletOptions = [
   // Browser Extensions
   { id: 'phantom', name: 'Phantom', icon: '👻', url: 'https://phantom.app/', type: 'extension', chain: 'solana' },
@@ -36,8 +39,43 @@ const walletOptions = [
 ]
 
 // Provide auth state to all components
-provide('wallet', { connected, walletAddress, walletChain, userBalance, authToken })
+provide('wallet', { connected, walletAddress, walletChain, userBalance, authToken, refreshBalance, fetchPurchaseHistory })
 provide('network', { isMainnet: IS_MAINNET, solanaNetwork: SOLANA_NETWORK })
+
+// Fetch balance from backend
+async function refreshBalance() {
+  if (!authToken.value) return
+  try {
+    const res = await fetch('/api/user/balance', {
+      headers: { 'Authorization': `Bearer ${authToken.value}` }
+    })
+    if (res.ok) {
+      const data = await res.json()
+      userBalance.value = data.balance
+      localStorage.setItem('userBalance', data.balance.toString())
+    }
+  } catch (err) {
+    console.error('Failed to fetch balance:', err)
+  }
+}
+
+// Fetch purchase history
+async function fetchPurchaseHistory(limit = 5) {
+  if (!authToken.value) return []
+  try {
+    const res = await fetch(`/api/user/purchases?limit=${limit}`, {
+      headers: { 'Authorization': `Bearer ${authToken.value}` }
+    })
+    if (res.ok) {
+      const data = await res.json()
+      recentPurchases.value = data.orders || []
+      return data.orders || []
+    }
+  } catch (err) {
+    console.error('Failed to fetch purchase history:', err)
+  }
+  return []
+}
 
 onMounted(async () => {
   const saved = localStorage.getItem('walletCheckerTheme')
@@ -55,6 +93,10 @@ onMounted(async () => {
     walletChain.value = chain || 'solana'
     userBalance.value = parseInt(balance || '0')
     connected.value = true
+    // Fetch fresh balance from backend
+    await refreshBalance()
+    // Fetch purchase history
+    await fetchPurchaseHistory()
   }
   
   // Check backend availability
@@ -385,6 +427,9 @@ function disconnectWallet() {
 
 function toggleWalletMenu() {
   showWalletMenu.value = !showWalletMenu.value
+  if (showWalletMenu.value) {
+    fetchPurchaseHistory()
+  }
 }
 
 function closeWalletMenu() {
@@ -438,6 +483,19 @@ function getTotal() {
             <span>Balance:</span>
             <span class="balance-value">{{ userBalance }} checks</span>
           </div>
+          
+          <!-- Recent purchases -->
+          <div v-if="recentPurchases.length > 0" class="menu-purchases">
+            <div class="purchases-title">Recent Purchases</div>
+            <div v-for="order in recentPurchases.slice(0, 3)" :key="order.order_uuid" class="purchase-item">
+              <span class="purchase-checks">{{ order.checks_count }} checks</span>
+              <span :class="'purchase-status ' + order.status">{{ order.status }}</span>
+            </div>
+            <RouterLink to="/purchases" class="view-all-link" @click="closeWalletMenu">
+              View all purchases →
+            </RouterLink>
+          </div>
+          
           <button class="menu-item logout" @click="disconnectWallet">
             🚪 Logout
           </button>
@@ -722,5 +780,57 @@ function getTotal() {
   color: #ff6b6b;
   font-size: 0.85rem;
   text-align: center;
+}
+
+/* Purchase history in dropdown */
+.menu-purchases {
+  padding: 0.75rem 0;
+  border-top: 1px solid #2a3548;
+  margin-top: 0.5rem;
+}
+.purchases-title {
+  font-size: 0.7rem;
+  color: #6b7a9e;
+  text-transform: uppercase;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+.purchase-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.35rem 0;
+  font-size: 0.8rem;
+}
+.purchase-checks {
+  color: #e7ecf5;
+}
+.purchase-status {
+  font-size: 0.65rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+.purchase-status.completed {
+  background: rgba(75, 201, 160, 0.2);
+  color: #4bc9a0;
+}
+.purchase-status.pending {
+  background: rgba(255, 193, 7, 0.2);
+  color: #ffc107;
+}
+.purchase-status.cancelled {
+  background: rgba(255, 107, 107, 0.2);
+  color: #ff6b6b;
+}
+.view-all-link {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: #667eea;
+  text-decoration: none;
+}
+.view-all-link:hover {
+  text-decoration: underline;
 }
 </style>
