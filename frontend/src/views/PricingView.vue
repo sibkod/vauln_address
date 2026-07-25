@@ -94,6 +94,7 @@ async function payWithSolana() {
     }
     
     // Create order first (requires auth) - endpoint is /orders
+    // Backend requires: checks, chain, wallet_address
     const orderRes = await fetch('/api/orders', {
       method: 'POST',
       headers: {
@@ -101,7 +102,9 @@ async function payWithSolana() {
         'Authorization': `Bearer ${authToken}`
       },
       body: JSON.stringify({
-        checks: selectedPackage.value.checks
+        checks: selectedPackage.value.checks,
+        chain: 'solana',
+        wallet_address: phantom.publicKey.toString()
       })
     })
     
@@ -123,7 +126,9 @@ async function payWithSolana() {
     
     const senderPublicKey = phantom.publicKey
     const recipientPublicKey = new PublicKey(orderData.payment_address || MERCHANT_WALLET)
-    const lamports = Math.round(selectedPackage.value.priceSOL * LAMPORTS_PER_SOL)
+    // Use amount from backend order response
+    const solAmount = parseFloat(orderData.amount) || selectedPackage.value.priceSOL
+    const lamports = Math.round(solAmount * LAMPORTS_PER_SOL)
     
     // Create a proper Transaction object
     const transaction = new Transaction()
@@ -144,7 +149,7 @@ async function payWithSolana() {
     console.log('Sending transaction:', {
       from: senderPublicKey.toString(),
       to: recipientPublicKey.toString(),
-      amount: selectedPackage.value.priceSOL + ' SOL',
+      amount: solAmount + ' SOL',
       lamports: lamports
     })
     
