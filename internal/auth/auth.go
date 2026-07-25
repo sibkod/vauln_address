@@ -61,8 +61,8 @@ func (s *AuthService) VerifySignature(address, chain, signature, message string)
 	signature = strings.TrimSpace(signature)
 	message = strings.TrimSpace(message)
 
-	// Verify the message format (should contain nonce)
-	if !strings.Contains(message, "nonce:") {
+	// Verify the message format (should contain nonce - case insensitive)
+	if !strings.Contains(strings.ToLower(message), "nonce:") {
 		return nil, fmt.Errorf("invalid message format: missing nonce")
 	}
 
