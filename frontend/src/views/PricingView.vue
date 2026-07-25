@@ -42,6 +42,20 @@ const walletAddress = computed(() => globalWallet?.walletAddress?.value || '')
 const isConnected = computed(() => globalWallet?.connected?.value || false)
 const walletChain = computed(() => globalWallet?.walletChain?.value || '')
 
+// Check Phantom network
+const phantomNetwork = computed(() => {
+  const phantom = (window as any).solana
+  if (phantom?.network) {
+    return phantom.network
+  }
+  return 'mainnet-beta' // Default assumption
+})
+
+const isWrongNetwork = computed(() => {
+  if (IS_MAINNET) return phantomNetwork.value !== 'mainnet-beta'
+  return phantomNetwork.value !== 'devnet'
+})
+
 function selectPackage(pkg: typeof packages[0]) {
   if (!isConnected.value) {
     error.value = 'Please connect your wallet first'
@@ -253,14 +267,19 @@ async function generateQR() {
       v-if="walletChain === 'solana'"
       class="pay-btn"
       @click="payWithSolana"
-      :disabled="processing"
+      :disabled="processing || isWrongNetwork"
     >
       {{ processing ? '⏳ Processing...' : '💰 Pay with Solana Wallet' }}
     </button>
     
+    <!-- Network warning -->
+    <div v-if="walletChain === 'solana' && isWrongNetwork" class="network-warning">
+      ⚠️ Switch Phantom to <strong>{{ IS_MAINNET ? 'Mainnet' : 'Devnet' }}</strong> in wallet settings
+    </div>
+    
     <!-- Show wallet info -->
     <div v-if="walletChain === 'solana'" class="wallet-info-box">
-      <span>👻 Connected: {{ walletAddress.slice(0, 6) }}...{{ walletAddress.slice(-4) }}</span>
+      <span>👻 {{ phantomNetwork }}: {{ walletAddress.slice(0, 6) }}...{{ walletAddress.slice(-4) }}</span>
     </div>
 
     <div v-if="error" class="error-msg">{{ error }}</div>
@@ -602,6 +621,18 @@ async function generateQR() {
   border-radius: 8px;
   font-size: 0.85rem;
   color: #4bc9a0;
+}
+
+/* Network Warning */
+.network-warning {
+  text-align: center;
+  margin: 0.8rem 0;
+  padding: 0.75rem;
+  background: #2a1a1a;
+  border: 1px solid #ff6b6b40;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  color: #ff6b6b;
 }
 
 /* TX Info */
