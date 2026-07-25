@@ -24,11 +24,12 @@ type Config struct {
 	DBPassword        string
 	DBName            string
 	DBSSLMode         string
-	DBCharset        string
+	DBCharset         string
 	SQLitePath        string
 	ServerPort        string
 	RateLimitRequests int
 	RateLimitHours    int
+	FreeCheckLimit    int
 }
 
 func Load() *Config {
@@ -49,6 +50,7 @@ func Load() *Config {
 		ServerPort:        getEnv("SERVER_PORT", "8080"),
 		RateLimitRequests: getEnvInt("RATE_LIMIT_REQUESTS", 10),
 		RateLimitHours:    getEnvInt("RATE_LIMIT_WINDOW_HOURS", 24),
+		FreeCheckLimit:    getEnvInt("FREE_CHECK_LIMIT", 1),
 	}
 }
 

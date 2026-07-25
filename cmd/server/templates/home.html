@@ -125,21 +125,9 @@
     const resultSub = document.getElementById('resultSub');
     const alertsContainer = document.getElementById('alertsContainer');
     const alertsBadge = document.getElementById('alertsBadge');
-    const checkCounter = document.getElementById('checkCounter');
 
-    let freeChecksRemaining = 1;
-    let freeCheckUsed = false;
     const chainIcons = { evm: '🟣', btc: '🟠', solana: '🟢', sui: '🔵', tron: '🔴' };
     const chainPlaceholders = { evm: 'Enter EVM address (0x...)', btc: 'Enter Bitcoin address', solana: 'Enter Solana address', sui: 'Enter Sui address (0x...)', tron: 'Enter Tron address (T...)' };
-
-    function updateCounter() {
-        if (window.isWalletConnected()) {
-            checkCounter.textContent = '∞ / ∞';
-        } else {
-            const remaining = freeCheckUsed ? 0 : freeChecksRemaining;
-            checkCounter.textContent = remaining + ' / ' + freeChecksRemaining;
-        }
-    }
 
     chainSelect.addEventListener('change', function() {
         chainIcon.textContent = chainIcons[this.value] || '🟣';
@@ -158,10 +146,12 @@
             return;
         }
 
+        // Check if user can perform check
+        const freeCheckUsed = window.getFreeCheckUsed ? window.getFreeCheckUsed() : false;
         if (!window.isWalletConnected() && freeCheckUsed) {
             resultBox.className = 'result-box';
             resultText.innerHTML = '⛔ Limit reached. Connect your wallet.';
-            resultSub.textContent = 'Free check already used. Connect wallet for unlimited checks.';
+            resultSub.innerHTML = 'Free check(s) exhausted. <a href="/support" style="color: #60a5fa;">Buy checks</a> or connect wallet.';
             return;
         }
 
@@ -170,9 +160,15 @@
         resultSub.textContent = 'Please wait';
 
         try {
+            const headers = { 'Content-Type': 'application/json' };
+            const authToken = localStorage.getItem('authToken');
+            if (authToken) {
+                headers['Authorization'] = 'Bearer ' + authToken;
+            }
+
             const res = await fetch('/api/check', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: headers,
                 body: JSON.stringify({ address, chain })
             });
             const data = await res.json();
@@ -183,9 +179,16 @@
                 resultText.innerHTML = '⛔ Rate limit reached';
                 resultSub.textContent = data.details || 'Too many requests. Please try again later.';
                 if (!window.isWalletConnected()) {
-                    freeCheckUsed = true;
-                    updateCounter();
+                    if (window.setFreeCheckUsed) window.setFreeCheckUsed(true);
                 }
+                return;
+            }
+
+            // Handle balance exhausted
+            if (res.status === 402 || data.code === 'BALANCE_EXHAUSTED') {
+                resultBox.className = 'result-box';
+                resultText.innerHTML = '⛔ No checks remaining';
+                resultSub.innerHTML = 'Your check package is exhausted. <a href="/support" style="color: #60a5fa;">Buy more checks</a>';
                 return;
             }
 
@@ -221,8 +224,7 @@
 
             // Mark free check as used after successful check
             if (!window.isWalletConnected()) {
-                freeCheckUsed = true;
-                updateCounter();
+                if (window.setFreeCheckUsed) window.setFreeCheckUsed(true);
             }
 
         } catch (error) {
