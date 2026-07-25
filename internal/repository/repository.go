@@ -108,7 +108,8 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 
 		CREATE TABLE IF NOT EXISTS orders (
 			id BIGINT PRIMARY KEY AUTO_INCREMENT,
-			user_id BIGINT,
+			wallet_address VARCHAR(100) NOT NULL,
+			chain VARCHAR(20) NOT NULL,
 			order_uuid VARCHAR(100) UNIQUE NOT NULL,
 			checks_count INT NOT NULL,
 			total_usd DECIMAL(10, 2) NOT NULL,
@@ -119,12 +120,12 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 			tx_hash VARCHAR(200),
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-			completed_at TIMESTAMP NULL,
-			FOREIGN KEY (user_id) REFERENCES users(id)
+			completed_at TIMESTAMP NULL
 		);
-		CREATE INDEX idx_orders_user ON orders(user_id);
+		CREATE INDEX idx_orders_wallet ON orders(wallet_address);
 		CREATE INDEX idx_orders_uuid ON orders(order_uuid);
 		CREATE INDEX idx_orders_status ON orders(status);
+		CREATE INDEX idx_orders_wallet_status ON orders(wallet_address, status);
 
 		-- Migration: add updated_at to orders (ignore error if column exists)
 		-- We'll handle this in code after table creation
@@ -156,7 +157,7 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 
 		CREATE TABLE IF NOT EXISTS api_keys (
 			id BIGINT PRIMARY KEY AUTO_INCREMENT,
-			user_id BIGINT NOT NULL,
+			wallet_address VARCHAR(100) NOT NULL,
 			key_hash VARCHAR(100) NOT NULL UNIQUE,
 			key_prefix VARCHAR(20) NOT NULL,
 			name VARCHAR(100) NOT NULL,
@@ -164,10 +165,9 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 			expires_at TIMESTAMP NULL,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			revoked_at TIMESTAMP NULL,
-			is_revoked TINYINT(1) DEFAULT 0,
-			FOREIGN KEY (user_id) REFERENCES users(id)
+			is_revoked TINYINT(1) DEFAULT 0
 		);
-		CREATE INDEX idx_api_keys_user ON api_keys(user_id);
+		CREATE INDEX idx_api_keys_wallet ON api_keys(wallet_address);
 		CREATE INDEX idx_api_keys_hash ON api_keys(key_hash);
 		`
 
@@ -204,7 +204,8 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 
 		CREATE TABLE IF NOT EXISTS orders (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			user_id INTEGER,
+			wallet_address TEXT NOT NULL,
+			chain TEXT NOT NULL,
 			order_uuid TEXT UNIQUE NOT NULL,
 			checks_count INTEGER NOT NULL,
 			total_usd REAL NOT NULL,
@@ -215,12 +216,12 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 			tx_hash TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			completed_at DATETIME,
-			FOREIGN KEY (user_id) REFERENCES users(id)
+			completed_at DATETIME
 		);
-		CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id);
+		CREATE INDEX IF NOT EXISTS idx_orders_wallet ON orders(wallet_address);
 		CREATE INDEX IF NOT EXISTS idx_orders_uuid ON orders(order_uuid);
 		CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+		CREATE INDEX IF NOT EXISTS idx_orders_wallet_status ON orders(wallet_address, status);
 
 		CREATE TABLE IF NOT EXISTS contact_messages (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -249,7 +250,7 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 
 		CREATE TABLE IF NOT EXISTS api_keys (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			user_id INTEGER NOT NULL,
+			wallet_address TEXT NOT NULL,
 			key_hash TEXT NOT NULL UNIQUE,
 			key_prefix TEXT NOT NULL,
 			name TEXT NOT NULL,
@@ -257,10 +258,9 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 			expires_at DATETIME,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			revoked_at DATETIME,
-			is_revoked INTEGER DEFAULT 0,
-			FOREIGN KEY (user_id) REFERENCES users(id)
+			is_revoked INTEGER DEFAULT 0
 		);
-		CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id);
+		CREATE INDEX IF NOT EXISTS idx_api_keys_wallet ON api_keys(wallet_address);
 		CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash);
 		`
 
@@ -297,7 +297,8 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 
 		CREATE TABLE IF NOT EXISTS orders (
 			id BIGSERIAL PRIMARY KEY,
-			user_id BIGINT REFERENCES users(id),
+			wallet_address VARCHAR(100) NOT NULL,
+			chain VARCHAR(20) NOT NULL,
 			order_uuid VARCHAR(100) UNIQUE NOT NULL,
 			checks_count INTEGER NOT NULL,
 			total_usd DECIMAL(10, 2) NOT NULL,
@@ -310,9 +311,10 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 			updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
 			completed_at TIMESTAMP WITH TIME ZONE
 		);
-		CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id);
+		CREATE INDEX IF NOT EXISTS idx_orders_wallet ON orders(wallet_address);
 		CREATE INDEX IF NOT EXISTS idx_orders_uuid ON orders(order_uuid);
 		CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+		CREATE INDEX IF NOT EXISTS idx_orders_wallet_status ON orders(wallet_address, status);
 
 		CREATE TABLE IF NOT EXISTS contact_messages (
 			id BIGSERIAL PRIMARY KEY,
@@ -341,7 +343,7 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 
 		CREATE TABLE IF NOT EXISTS api_keys (
 			id BIGSERIAL PRIMARY KEY,
-			user_id BIGINT NOT NULL,
+			wallet_address VARCHAR(100) NOT NULL,
 			key_hash VARCHAR(100) NOT NULL UNIQUE,
 			key_prefix VARCHAR(20) NOT NULL,
 			name VARCHAR(100) NOT NULL,
@@ -349,10 +351,9 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 			expires_at TIMESTAMP WITH TIME ZONE,
 			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 			revoked_at TIMESTAMP WITH TIME ZONE,
-			is_revoked BOOLEAN DEFAULT FALSE,
-			FOREIGN KEY (user_id) REFERENCES users(id)
+			is_revoked BOOLEAN DEFAULT FALSE
 		);
-		CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id);
+		CREATE INDEX IF NOT EXISTS idx_api_keys_wallet ON api_keys(wallet_address);
 		CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash);
 		`
 	}
@@ -405,14 +406,14 @@ func (r *Repository) GetUserByWallet(ctx context.Context, address, chain string)
 	return &user, nil
 }
 
-func (r *Repository) GetUserByID(ctx context.Context, id int64) (*models.User, error) {
+func (r *Repository) GetUserByWallet(ctx context.Context, address, chain string) (*models.User, error) {
 	var user models.User
 	var lastLoginAt sql.NullTime
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, wallet_address, chain, nonce, balance, created_at, updated_at, last_login_at 
-		FROM users WHERE id = ?`,
-		id,
-	).Scan(&user.ID, &user.WalletAddress, &user.Chain, &user.Nonce, &user.Balance,
+		`SELECT wallet_address, chain, nonce, balance, created_at, updated_at, last_login_at 
+		FROM users WHERE wallet_address = ? AND chain = ?`,
+		address, chain,
+	).Scan(&user.WalletAddress, &user.Chain, &user.Nonce, &user.Balance,
 		&user.CreatedAt, &user.UpdatedAt, &lastLoginAt)
 
 	if err == sql.ErrNoRows {
@@ -505,34 +506,50 @@ func (r *Repository) GetUserNonce(address, chain string) (string, error) {
 	return "", nil
 }
 
-func (r *Repository) UpdateLastLogin(userID int64) error {
+func (r *Repository) UpdateLastLogin(address, chain string) error {
 	ctx := context.Background()
 	_, err := r.db.ExecContext(ctx,
-		`UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?`,
-		userID,
+		`UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE wallet_address = ? AND chain = ?`,
+		address, chain,
 	)
 	return err
 }
 
-func (r *Repository) AddUserBalance(ctx context.Context, userID int64, checks int) error {
+func (r *Repository) AddUserBalance(ctx context.Context, address, chain string, checks int) error {
 	_, err := r.db.ExecContext(ctx,
-		`UPDATE users SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-		checks, userID,
+		`UPDATE users SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP WHERE wallet_address = ? AND chain = ?`,
+		checks, address, chain,
 	)
 	return err
 }
 
-func (r *Repository) DeductUserBalance(ctx context.Context, userID int64, checks int) error {
+func (r *Repository) DeductUserBalance(ctx context.Context, address, chain string, checks int) error {
 	_, err := r.db.ExecContext(ctx,
-		`UPDATE users SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND balance >= ?`,
-		checks, userID, checks,
+		`UPDATE users SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP WHERE wallet_address = ? AND chain = ? AND balance >= ?`,
+		checks, address, chain, checks,
 	)
 	return err
+}
+
+func (r *Repository) GetUserBalance(ctx context.Context, address, chain string) (int, error) {
+	var balance int
+	err := r.db.QueryRowContext(ctx,
+		`SELECT balance FROM users WHERE wallet_address = ? AND chain = ?`,
+		address, chain,
+	).Scan(&balance)
+
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return balance, nil
 }
 
 // ==================== Order Methods ====================
 
-func (r *Repository) CreateOrder(ctx context.Context, userID int, checksCount int, totalUSD float64, currency string, tokenAmount float64, paymentAddress string) (*models.Order, error) {
+func (r *Repository) CreateOrder(ctx context.Context, walletAddress, chain string, checksCount int, totalUSD float64, currency string, tokenAmount float64, paymentAddress string) (*models.Order, error) {
 	orderUUID := uuid.New().String()
 
 	var result sql.Result
@@ -540,30 +557,30 @@ func (r *Repository) CreateOrder(ctx context.Context, userID int, checksCount in
 
 	if r.dbType == config.DBTypeSQLite {
 		result, err = r.db.ExecContext(ctx,
-			`INSERT INTO orders (user_id, order_uuid, checks_count, total_usd, currency, token_amount, payment_address, status)
-			VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`,
-			userID, orderUUID, checksCount, totalUSD, currency, tokenAmount, paymentAddress,
+			`INSERT INTO orders (wallet_address, chain, order_uuid, checks_count, total_usd, currency, token_amount, payment_address, status)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+			walletAddress, chain, orderUUID, checksCount, totalUSD, currency, tokenAmount, paymentAddress,
 		)
 	} else {
 		result, err = r.db.ExecContext(ctx,
-			`INSERT INTO orders (user_id, order_uuid, checks_count, total_usd, currency, token_amount, payment_address, status)
-			VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`,
-			userID, orderUUID, checksCount, totalUSD, currency, tokenAmount, paymentAddress,
+			`INSERT INTO orders (wallet_address, chain, order_uuid, checks_count, total_usd, currency, token_amount, payment_address, status)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+			walletAddress, chain, orderUUID, checksCount, totalUSD, currency, tokenAmount, paymentAddress,
 		)
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	orderID, err := result.LastInsertId()
+	_, err = result.LastInsertId()
 	if err != nil {
 		return nil, err
 	}
 
 	return &models.Order{
-		ID:             orderID,
-		UserID:         int64(userID),
 		OrderUUID:      orderUUID,
+		WalletAddress:  walletAddress,
+		Chain:          chain,
 		ChecksCount:    checksCount,
 		TotalUSD:       totalUSD,
 		Currency:       currency,
@@ -579,10 +596,10 @@ func (r *Repository) GetOrderByUUID(ctx context.Context, orderUUID string) (*mod
 	var completedAt sql.NullTime
 	var txHash sql.NullString
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, user_id, order_uuid, checks_count, total_usd, currency, token_amount, payment_address, status, tx_hash, created_at, completed_at
+		`SELECT order_uuid, wallet_address, chain, checks_count, total_usd, currency, token_amount, payment_address, status, tx_hash, created_at, completed_at
 		FROM orders WHERE order_uuid = ?`,
 		orderUUID,
-	).Scan(&order.ID, &order.UserID, &order.OrderUUID, &order.ChecksCount, &order.TotalUSD,
+	).Scan(&order.OrderUUID, &order.WalletAddress, &order.Chain, &order.ChecksCount, &order.TotalUSD,
 		&order.Currency, &order.TokenAmount, &order.PaymentAddress, &order.Status,
 		&txHash, &order.CreatedAt, &completedAt)
 
@@ -623,10 +640,10 @@ func (r *Repository) GetOrderByTxHash(ctx context.Context, txHash string) (*mode
 	var order models.Order
 	var txHashNull sql.NullString
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, user_id, order_uuid, status, checks_count, total_usd, currency, token_amount, payment_address, tx_hash, created_at, updated_at
+		`SELECT order_uuid, wallet_address, chain, status, checks_count, total_usd, currency, token_amount, payment_address, tx_hash, created_at, updated_at
 		FROM orders WHERE tx_hash = ? LIMIT 1`,
 		txHash,
-	).Scan(&order.ID, &order.UserID, &order.OrderUUID, &order.Status, &order.ChecksCount, &order.TotalUSD, &order.Currency, &order.TokenAmount, &order.PaymentAddress, &txHashNull, &order.CreatedAt, &order.UpdatedAt)
+	).Scan(&order.OrderUUID, &order.WalletAddress, &order.Chain, &order.Status, &order.ChecksCount, &order.TotalUSD, &order.Currency, &order.TokenAmount, &order.PaymentAddress, &txHashNull, &order.CreatedAt, &order.UpdatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -640,15 +657,15 @@ func (r *Repository) GetOrderByTxHash(ctx context.Context, txHash string) (*mode
 	return &order, nil
 }
 
-// GetPendingOrderByUser finds a pending order for a user
-func (r *Repository) GetPendingOrderByUser(ctx context.Context, userID int64) (*models.Order, error) {
+// GetPendingOrderByWallet finds a pending order for a wallet
+func (r *Repository) GetPendingOrderByWallet(ctx context.Context, walletAddress string) (*models.Order, error) {
 	var order models.Order
 	var txHashNull sql.NullString
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, user_id, order_uuid, status, checks_count, total_usd, currency, token_amount, payment_address, tx_hash, created_at, updated_at
-		FROM orders WHERE user_id = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1`,
-		userID,
-	).Scan(&order.ID, &order.UserID, &order.OrderUUID, &order.Status, &order.ChecksCount, &order.TotalUSD, &order.Currency, &order.TokenAmount, &order.PaymentAddress, &txHashNull, &order.CreatedAt, &order.UpdatedAt)
+		`SELECT order_uuid, wallet_address, chain, status, checks_count, total_usd, currency, token_amount, payment_address, tx_hash, created_at, updated_at
+		FROM orders WHERE wallet_address = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1`,
+		walletAddress,
+	).Scan(&order.OrderUUID, &order.WalletAddress, &order.Chain, &order.Status, &order.ChecksCount, &order.TotalUSD, &order.Currency, &order.TokenAmount, &order.PaymentAddress, &txHashNull, &order.CreatedAt, &order.UpdatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -821,21 +838,21 @@ func (r *Repository) GetCheckHistory(ctx context.Context, limit int) ([]models.R
 
 // ==================== API Key Methods ====================
 
-func (r *Repository) CreateAPIKey(ctx context.Context, userID int64, keyHash, keyPrefix, name string, expiresAt *time.Time) (*models.APIKey, error) {
+func (r *Repository) CreateAPIKey(ctx context.Context, walletAddress, keyHash, keyPrefix, name string, expiresAt *time.Time) (*models.APIKey, error) {
 	var result sql.Result
 	var err error
 
 	if r.dbType == config.DBTypeSQLite {
 		result, err = r.db.ExecContext(ctx,
-			`INSERT INTO api_keys (user_id, key_hash, key_prefix, name, expires_at, created_at, is_revoked)
+			`INSERT INTO api_keys (wallet_address, key_hash, key_prefix, name, expires_at, created_at, is_revoked)
 			VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 0)`,
-			userID, keyHash, keyPrefix, name, expiresAt,
+			walletAddress, keyHash, keyPrefix, name, expiresAt,
 		)
 	} else {
 		result, err = r.db.ExecContext(ctx,
-			`INSERT INTO api_keys (user_id, key_hash, key_prefix, name, expires_at, created_at, is_revoked)
+			`INSERT INTO api_keys (wallet_address, key_hash, key_prefix, name, expires_at, created_at, is_revoked)
 			VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, false)`,
-			userID, keyHash, keyPrefix, name, expiresAt,
+			walletAddress, keyHash, keyPrefix, name, expiresAt,
 		)
 	}
 	if err != nil {
@@ -848,14 +865,14 @@ func (r *Repository) CreateAPIKey(ctx context.Context, userID int64, keyHash, ke
 	}
 
 	return &models.APIKey{
-		ID:        id,
-		UserID:    userID,
-		KeyHash:   keyHash,
-		KeyPrefix: keyPrefix,
-		Name:      name,
-		ExpiresAt: expiresAt,
-		CreatedAt: time.Now(),
-		IsRevoked: false,
+		ID:            id,
+		WalletAddress: walletAddress,
+		KeyHash:      keyHash,
+		KeyPrefix:    keyPrefix,
+		Name:         name,
+		ExpiresAt:    expiresAt,
+		CreatedAt:    time.Now(),
+		IsRevoked:    false,
 	}, nil
 }
 
@@ -864,10 +881,10 @@ func (r *Repository) GetAPIKeyByID(ctx context.Context, keyID int64) (*models.AP
 	var expiresAt, lastUsedAt, revokedAt sql.NullTime
 
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, user_id, key_hash, key_prefix, name, last_used_at, expires_at, created_at, revoked_at, is_revoked
+		`SELECT id, wallet_address, key_hash, key_prefix, name, last_used_at, expires_at, created_at, revoked_at, is_revoked
 		FROM api_keys WHERE id = ?`,
 		keyID,
-	).Scan(&key.ID, &key.UserID, &key.KeyHash, &key.KeyPrefix, &key.Name, &lastUsedAt, &expiresAt, &key.CreatedAt, &revokedAt, &key.IsRevoked)
+	).Scan(&key.ID, &key.WalletAddress, &key.KeyHash, &key.KeyPrefix, &key.Name, &lastUsedAt, &expiresAt, &key.CreatedAt, &revokedAt, &key.IsRevoked)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -894,10 +911,10 @@ func (r *Repository) GetAPIKeyByHash(ctx context.Context, keyHash string) (*mode
 	var expiresAt, lastUsedAt, revokedAt sql.NullTime
 
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, user_id, key_hash, key_prefix, name, last_used_at, expires_at, created_at, revoked_at, is_revoked
+		`SELECT id, wallet_address, key_hash, key_prefix, name, last_used_at, expires_at, created_at, revoked_at, is_revoked
 		FROM api_keys WHERE key_hash = ?`,
 		keyHash,
-	).Scan(&key.ID, &key.UserID, &key.KeyHash, &key.KeyPrefix, &key.Name, &lastUsedAt, &expiresAt, &key.CreatedAt, &revokedAt, &key.IsRevoked)
+	).Scan(&key.ID, &key.WalletAddress, &key.KeyHash, &key.KeyPrefix, &key.Name, &lastUsedAt, &expiresAt, &key.CreatedAt, &revokedAt, &key.IsRevoked)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -919,11 +936,11 @@ func (r *Repository) GetAPIKeyByHash(ctx context.Context, keyHash string) (*mode
 	return &key, nil
 }
 
-func (r *Repository) GetUserAPIKeys(ctx context.Context, userID int64) ([]models.APIKey, error) {
+func (r *Repository) GetUserAPIKeys(ctx context.Context, walletAddress string) ([]models.APIKey, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, user_id, key_hash, key_prefix, name, last_used_at, expires_at, created_at, revoked_at, is_revoked
-		FROM api_keys WHERE user_id = ? ORDER BY created_at DESC`,
-		userID,
+		`SELECT id, wallet_address, key_hash, key_prefix, name, last_used_at, expires_at, created_at, revoked_at, is_revoked
+		FROM api_keys WHERE wallet_address = ? ORDER BY created_at DESC`,
+		walletAddress,
 	)
 	if err != nil {
 		return nil, err
@@ -935,7 +952,7 @@ func (r *Repository) GetUserAPIKeys(ctx context.Context, userID int64) ([]models
 		var key models.APIKey
 		var expiresAt, lastUsedAt, revokedAt sql.NullTime
 
-		if err := rows.Scan(&key.ID, &key.UserID, &key.KeyHash, &key.KeyPrefix, &key.Name, &lastUsedAt, &expiresAt, &key.CreatedAt, &revokedAt, &key.IsRevoked); err != nil {
+		if err := rows.Scan(&key.ID, &key.WalletAddress, &key.KeyHash, &key.KeyPrefix, &key.Name, &lastUsedAt, &expiresAt, &key.CreatedAt, &revokedAt, &key.IsRevoked); err != nil {
 			return nil, err
 		}
 
@@ -954,17 +971,17 @@ func (r *Repository) GetUserAPIKeys(ctx context.Context, userID int64) ([]models
 	return keys, rows.Err()
 }
 
-func (r *Repository) RevokeAPIKey(ctx context.Context, keyID int64, userID int64) error {
+func (r *Repository) RevokeAPIKey(ctx context.Context, keyID int64, walletAddress string) error {
 	var err error
 	if r.dbType == config.DBTypeSQLite {
 		_, err = r.db.ExecContext(ctx,
-			`UPDATE api_keys SET is_revoked = 1, revoked_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`,
-			keyID, userID,
+			`UPDATE api_keys SET is_revoked = 1, revoked_at = CURRENT_TIMESTAMP WHERE id = ? AND wallet_address = ?`,
+			keyID, walletAddress,
 		)
 	} else {
 		_, err = r.db.ExecContext(ctx,
-			`UPDATE api_keys SET is_revoked = true, revoked_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`,
-			keyID, userID,
+			`UPDATE api_keys SET is_revoked = true, revoked_at = CURRENT_TIMESTAMP WHERE id = ? AND wallet_address = ?`,
+			keyID, walletAddress,
 		)
 	}
 	return err
@@ -978,10 +995,10 @@ func (r *Repository) UpdateAPIKeyLastUsed(ctx context.Context, keyID int64) erro
 	return err
 }
 
-func (r *Repository) DeleteAPIKey(ctx context.Context, keyID int64, userID int64) error {
+func (r *Repository) DeleteAPIKey(ctx context.Context, keyID int64, walletAddress string) error {
 	_, err := r.db.ExecContext(ctx,
-		`DELETE FROM api_keys WHERE id = ? AND user_id = ?`,
-		keyID, userID,
+		`DELETE FROM api_keys WHERE id = ? AND wallet_address = ?`,
+		keyID, walletAddress,
 	)
 	return err
 }

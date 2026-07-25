@@ -119,7 +119,7 @@ func (h *Handler) Authenticate(c *gin.Context) {
 
 // GetUserProfile returns the current user's profile
 func (h *Handler) GetUserProfile(c *gin.Context) {
-	userID, exists := c.Get("userID")
+	walletAddress, exists := c.Get("userAddress")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
 			Error: "unauthorized",
@@ -127,8 +127,10 @@ func (h *Handler) GetUserProfile(c *gin.Context) {
 		})
 		return
 	}
+	chain, _ := c.Get("userChain")
+	chainStr, _ := chain.(string)
 
-	user, err := h.authService.GetUserByID(userID.(int64))
+	user, err := h.authService.GetUserByWallet(walletAddress.(string), chainStr)
 	if err != nil || user == nil {
 		c.JSON(http.StatusNotFound, models.ErrorResponse{
 			Error: "user not found",
@@ -139,7 +141,6 @@ func (h *Handler) GetUserProfile(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"user": gin.H{
-			"id":             user.ID,
 			"wallet_address": user.WalletAddress,
 			"chain":          user.Chain,
 			"balance":        user.Balance,
@@ -175,7 +176,7 @@ func (h *Handler) GetPricing(c *gin.Context) {
 
 // CreateOrder creates a new payment order
 func (h *Handler) CreateOrder(c *gin.Context) {
-	userID, exists := c.Get("userID")
+	walletAddress, exists := c.Get("userAddress")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
 			Error: "authentication required",
@@ -226,10 +227,11 @@ func (h *Handler) CreateOrder(c *gin.Context) {
 	// Create order
 	order, err := h.repo.CreateOrder(
 		c.Request.Context(),
-		int(userID.(int64)),
+		walletAddress.(string),
+		req.Chain,
 		req.ChecksCount,
 		priceUSD,
-		req.Chain,
+		"solana",
 		solAmountFloat,
 		paymentAddress,
 	)
@@ -254,7 +256,7 @@ func (h *Handler) CreateOrder(c *gin.Context) {
 
 // ConfirmOrder confirms a payment by verifying the blockchain transaction or message signature
 func (h *Handler) ConfirmOrder(c *gin.Context) {
-	userID, exists := c.Get("userID")
+	walletAddress, exists := c.Get("userAddress")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
 			Error: "authentication required",
@@ -283,8 +285,8 @@ func (h *Handler) ConfirmOrder(c *gin.Context) {
 		return
 	}
 
-	// Verify ownership
-	if order.UserID != userID.(int64) {
+	// Verify ownership by wallet address
+	if order.WalletAddress != walletAddress.(string) {
 		c.JSON(http.StatusForbidden, models.ErrorResponse{
 			Error: "order does not belong to user",
 			Code:  "FORBIDDEN",
@@ -345,7 +347,7 @@ func (h *Handler) ConfirmOrder(c *gin.Context) {
 	}
 
 	// Update user balance
-	h.repo.AddUserBalance(c.Request.Context(), userID.(int64), order.ChecksCount)
+	h.repo.AddUserBalance(c.Request.Context(), walletAddress.(string), order.Chain, order.ChecksCount)
 
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "completed",
@@ -398,7 +400,7 @@ func (h *Handler) VerifyPayment(c *gin.Context) {
 	}
 
 	// Add balance to user
-	if err := h.repo.AddUserBalance(c.Request.Context(), order.UserID, order.ChecksCount); err != nil {
+	if err := h.repo.AddUserBalance(c.Request.Context(), order.WalletAddress, order.Chain, order.ChecksCount); err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error: "failed to add balance",
 			Code:  "DB_ERROR",
@@ -560,7 +562,7 @@ func (h *Handler) GetSupportedChains(c *gin.Context) {
 
 // CreateAPIKey creates a new API key for the authenticated user
 func (h *Handler) CreateAPIKey(c *gin.Context) {
-	userID, exists := c.Get("userID")
+	walletAddress, exists := c.Get("userAddress")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
 			Error: "authentication required",
@@ -578,7 +580,7 @@ func (h *Handler) CreateAPIKey(c *gin.Context) {
 		return
 	}
 
-	apiKey, err := h.authService.GenerateAPIKey(userID.(int64), req.Name, req.ExpiresIn)
+	apiKey, err := h.authService.GenerateAPIKey(walletAddress.(string), req.Name, req.ExpiresIn)
 	if err != nil {
 		errStr := err.Error()
 		if contains(errStr, "no such table") || contains(errStr, "doesn't exist") || contains(errStr, "Unknown column") {
@@ -605,7 +607,7 @@ func (h *Handler) CreateAPIKey(c *gin.Context) {
 
 // ListAPIKeys returns all API keys for the authenticated user
 func (h *Handler) ListAPIKeys(c *gin.Context) {
-	userID, exists := c.Get("userID")
+	walletAddress, exists := c.Get("userAddress")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
 			Error: "authentication required",
@@ -614,7 +616,7 @@ func (h *Handler) ListAPIKeys(c *gin.Context) {
 		return
 	}
 
-	keys, err := h.authService.GetUserAPIKeys(userID.(int64))
+	keys, err := h.authService.GetUserAPIKeys(walletAddress.(string))
 	if err != nil {
 		// Check if it's a table not found error
 		errStr := err.Error()
@@ -646,7 +648,7 @@ func (h *Handler) ListAPIKeys(c *gin.Context) {
 
 // RevokeAPIKey revokes an API key
 func (h *Handler) RevokeAPIKeyHandler(c *gin.Context) {
-	userID, exists := c.Get("userID")
+	walletAddress, exists := c.Get("userAddress")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
 			Error: "authentication required",
@@ -665,7 +667,7 @@ func (h *Handler) RevokeAPIKeyHandler(c *gin.Context) {
 		return
 	}
 
-	if err := h.authService.RevokeAPIKey(keyID, userID.(int64)); err != nil {
+	if err := h.authService.RevokeAPIKey(keyID, walletAddress.(string)); err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error:   "failed to revoke API key",
 			Code:    "SERVER_ERROR",
@@ -681,7 +683,7 @@ func (h *Handler) RevokeAPIKeyHandler(c *gin.Context) {
 
 // DeleteAPIKey permanently deletes an API key
 func (h *Handler) DeleteAPIKeyHandler(c *gin.Context) {
-	userID, exists := c.Get("userID")
+	walletAddress, exists := c.Get("userAddress")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
 			Error: "authentication required",
@@ -700,7 +702,7 @@ func (h *Handler) DeleteAPIKeyHandler(c *gin.Context) {
 		return
 	}
 
-	if err := h.authService.DeleteAPIKey(keyID, userID.(int64)); err != nil {
+	if err := h.authService.DeleteAPIKey(keyID, walletAddress.(string)); err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error:   "failed to delete API key",
 			Code:    "SERVER_ERROR",
@@ -812,15 +814,15 @@ func (h *Handler) GetPaymentStatus(c *gin.Context) {
 	}
 
 	// Get user info (REQUIRED - now enforced by middleware)
-	userID, exists := c.Get("userID")
-	if !exists || userID.(int64) == 0 {
+	walletAddress, exists := c.Get("userAddress")
+	if !exists || walletAddress == "" {
 		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
 			Error: "authentication required",
 			Code:  "UNAUTHORIZED",
 		})
 		return
 	}
-	userIDInt := userID.(int64)
+	walletAddrStr := walletAddress.(string)
 
 	// Query Solana RPC for transaction status
 	rpcURL := h.serverCfg.SolanaRPCURL
@@ -877,19 +879,19 @@ func (h *Handler) GetPaymentStatus(c *gin.Context) {
 		return
 	}
 
-	// Find pending order for this user
-	pendingOrder, err := h.repo.GetPendingOrderByUser(c.Request.Context(), userIDInt)
-	log.Printf("[DEBUG] GetPaymentStatus: userID=%d, pendingOrder=%v, err=%v", userIDInt, pendingOrder, err)
+	// Find pending order for this wallet
+	pendingOrder, err := h.repo.GetPendingOrderByWallet(c.Request.Context(), walletAddrStr)
+	log.Printf("[DEBUG] GetPaymentStatus: walletAddress=%s, pendingOrder=%v, err=%v", walletAddrStr, pendingOrder, err)
 	if err == nil && pendingOrder != nil {
 		log.Printf("[DEBUG] Found pending order: UUID=%s, ChecksCount=%d", pendingOrder.OrderUUID, pendingOrder.ChecksCount)
 		// Complete the order
 		if err := h.repo.CompleteOrder(c.Request.Context(), pendingOrder.OrderUUID, signature); err == nil {
-			log.Printf("[DEBUG] Order completed, adding balance for user %d", userIDInt)
+			log.Printf("[DEBUG] Order completed, adding balance for wallet %s", walletAddrStr)
 			// Add balance
-			if err := h.repo.AddUserBalance(c.Request.Context(), userIDInt, pendingOrder.ChecksCount); err == nil {
-				log.Printf("[DEBUG] Balance added for user %d", userIDInt)
+			if err := h.repo.AddUserBalance(c.Request.Context(), walletAddrStr, pendingOrder.Chain, pendingOrder.ChecksCount); err == nil {
+				log.Printf("[DEBUG] Balance added for wallet %s", walletAddrStr)
 				// Get new balance
-				user, err := h.repo.GetUserByID(c.Request.Context(), userIDInt)
+				user, err := h.repo.GetUserByWallet(c.Request.Context(), walletAddrStr, pendingOrder.Chain)
 				balance := pendingOrder.ChecksCount // Default to added checks
 				if err == nil && user != nil {
 					balance = user.Balance
@@ -910,7 +912,7 @@ func (h *Handler) GetPaymentStatus(c *gin.Context) {
 			log.Printf("[ERROR] Failed to complete order: %v", err)
 		}
 	} else {
-		log.Printf("[WARN] No pending order found for user %d", userIDInt)
+		log.Printf("[WARN] No pending order found for wallet %s", walletAddrStr)
 	}
 
 	// Transaction confirmed but no order found for this user

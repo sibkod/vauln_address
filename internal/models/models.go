@@ -41,10 +41,9 @@ func IsValidStatus(status string) bool {
 // ==================== User Authentication ====================
 
 type User struct {
-	ID            int64      `json:"id"`
 	WalletAddress string     `json:"wallet_address"`
 	Chain         Chain      `json:"chain"`
-	Nonce         string     `json:"nonce"`
+	Nonce         string     `json:"-"`
 	Balance       int        `json:"balance"` // Free checks remaining
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
@@ -66,7 +65,6 @@ type AuthResponse struct {
 }
 
 type UserPublic struct {
-	ID            int64  `json:"id"`
 	WalletAddress string `json:"wallet_address"`
 	Chain         string `json:"chain"`
 	Balance       int    `json:"balance"`
@@ -133,9 +131,9 @@ const (
 )
 
 type Order struct {
-	ID              int64      `json:"id"`
-	UserID          int64      `json:"user_id"`
 	OrderUUID       string     `json:"order_uuid"`
+	WalletAddress   string     `json:"wallet_address"`
+	Chain           string     `json:"chain"`
 	ChecksCount     int        `json:"checks_count"`
 	TotalUSD        float64    `json:"total_usd"`
 	Currency        string     `json:"currency"`
@@ -215,7 +213,7 @@ type ErrorResponse struct {
 
 type APIKey struct {
 	ID            int64     `json:"id"`
-	UserID        int64     `json:"user_id"`
+	WalletAddress string    `json:"wallet_address"`
 	KeyHash       string    `json:"-"`           // SHA-256 hash of the key (never exposed)
 	KeyPrefix     string    `json:"key_prefix"`  // First 8 chars for identification
 	Name          string    `json:"name"`        // User-defined name
