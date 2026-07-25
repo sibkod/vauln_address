@@ -187,7 +187,7 @@
             
             if (res.ok) {
                 const data = await res.json();
-                userBalance = data.balance || 0;
+                userBalance = (data.user && data.user.balance) || 0;
                 return true;
             } else {
                 // Token invalid or expired - clear localStorage
@@ -237,11 +237,12 @@
             connectedAddress = storedAddress;
         }
         
-        // If server says we're authenticated, sync with localStorage
-        if (SERVER_AUTH && authToken) {
+        // Check if we have a token to validate
+        if (authToken) {
             const valid = await validateSession();
             if (valid) {
-                // Server says authenticated and token is valid
+                // Token is valid - mark as authenticated
+                serverAuthenticated = true;
                 // Use server address if wallet not connected in this session
                 if (!connectedAddress && SERVER_ADDRESS) {
                     connectedAddress = SERVER_ADDRESS;
@@ -250,10 +251,8 @@
             } else {
                 // Token invalid or expired - clear localStorage
                 clearAuthData();
+                serverAuthenticated = false;
             }
-        } else if (authToken && !SERVER_AUTH) {
-            // We have token but server says not authenticated - clear it
-            clearAuthData();
         }
     }
 
