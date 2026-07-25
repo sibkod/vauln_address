@@ -1,14 +1,10 @@
 <script setup lang="ts">
 import { ref, inject, computed } from 'vue'
+import QRCode from 'qrcode'
 
 // Network config - MUST match App.vue
 const IS_MAINNET = false
 const SOLANA_NETWORK = IS_MAINNET ? 'mainnet-beta' : 'devnet'
-
-// USDC addresses
-const USDC_DEVNET = '4zMMC9srt5Ri5X14zfNUkFN5MkBYaAMDzAPBG7aajJJ'
-const USDC_MAINNET = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDj1'
-const USDC_ADDRESS = IS_MAINNET ? USDC_MAINNET : USDC_DEVNET
 
 // Merchant wallet for payments
 const MERCHANT_WALLET_DEVNET = '7bMD8B3a3yDj7JMBQZYse7x4FqNKLNmEACSUitKxVNXJ'
@@ -18,16 +14,20 @@ const MERCHANT_WALLET = IS_MAINNET ? MERCHANT_WALLET_MAINNET : MERCHANT_WALLET_D
 const globalWallet = inject<any>('wallet')
 
 const packages = [
-  { id: 'starter', name: 'Starter', checks: 50, priceSOL: 0.01, priceUSDC: 10, popular: false },
-  { id: 'pro', name: 'Pro', checks: 200, priceSOL: 0.03, priceUSDC: 35, popular: true },
-  { id: 'enterprise', name: 'Enterprise', checks: 1000, priceSOL: 0.1, priceUSDC: 100, popular: false },
+  { id: 'starter', name: 'Starter', checks: 50, priceSOL: 0.01, popular: false },
+  { id: 'pro', name: 'Pro', checks: 200, priceSOL: 0.03, popular: true },
+  { id: 'enterprise', name: 'Enterprise', checks: 1000, priceSOL: 0.1, popular: false },
 ]
 
 const selectedPackage = ref<typeof packages[0] | null>(null)
-const paymentMethod = ref<'SOL' | 'USDC'>('SOL')
+const paymentMethod = ref<'SOL'>('SOL')
 const processing = ref(false)
 const error = ref('')
 const success = ref('')
+const txSignature = ref('')
+const qrDataUrl = ref('')
+const pollInterval = ref<number | null>(null)
+
 const walletAddress = computed(() => globalWallet?.walletAddress?.value || '')
 const isConnected = computed(() => globalWallet?.connected?.value || false)
 
@@ -39,11 +39,99 @@ function selectPackage(pkg: typeof packages[0]) {
   selectedPackage.value = pkg
   error.value = ''
   success.value = ''
+  txSignature.value = ''
+  qrDataUrl.value = ''
+  
+  // Generate Solana Pay URL
+  generateSolanaPayLink(pkg)
 }
 
-async function openWallet() {
-  // This would trigger wallet connection - simplified for now
-  window.open('/pricing', '_self')
+async function generateSolanaPayLink(pkg: typeof packages[0]) {
+  // Create unique reference for this transaction
+  const reference = generateReference()
+  const amount = pkg.priceSOL.toString()
+  
+  // Solana Pay URL format
+  // solana:<recipient>?amount=<lamports>&reference=<reference>&label=<label>&message=<message>
+  const label = encodeURIComponent('WalletChecker - ' + pkg.name)
+  const message = encodeURIComponent(`Payment for ${pkg.checks} checks - ${pkg.name} package`)
+  
+  // Amount in SOL (not lamports for display)
+  const solanaPayUrl = `solana:${MERCHANT_WALLET}?amount=${amount}&reference=${reference}&label=${label}&message=${message}`
+  
+  // Generate QR code
+  try {
+    qrDataUrl.value = await QRCode.toDataURL(solanaPayUrl, {
+      width: 256,
+      margin: 2,
+      color: { dark: '#e7ecf5', light: '#151a24' }
+    })
+  } catch (err) {
+    console.error('QR generation error:', err)
+  }
+}
+
+function generateReference(): string {
+  // Generate random reference for the transaction
+  const array = new Uint8Array(32)
+  crypto.getRandomValues(array)
+  return btoa(String.fromCharCode(...array)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
+}
+
+function startPolling(signature: string) {
+  txSignature.value = signature
+  
+  // Poll backend every 3 seconds to check if payment is confirmed
+  pollInterval.value = window.setInterval(async () => {
+    try {
+      const res = await fetch(`/api/payment/status/${signature}`)
+      const data = await res.json()
+      
+      if (data.status === 'confirmed') {
+        stopPolling()
+        success.value = `Payment confirmed! You now have ${data.balance} checks.`
+        
+        // Update wallet balance
+        if (globalWallet) {
+          globalWallet.userBalance.value = data.balance
+          localStorage.setItem('userBalance', String(data.balance))
+        }
+        
+        // Reset after 3 seconds
+        setTimeout(() => {
+          selectedPackage.value = null
+          success.value = ''
+        }, 3000)
+      }
+    } catch (err) {
+      console.error('Poll error:', err)
+    }
+  }, 3000)
+}
+
+function stopPolling() {
+  if (pollInterval.value) {
+    clearInterval(pollInterval.value)
+    pollInterval.value = null
+  }
+}
+
+function cancelPayment() {
+  stopPolling()
+  selectedPackage.value = null
+  error.value = ''
+  success.value = ''
+  txSignature.value = ''
+  qrDataUrl.value = ''
+}
+
+function openWalletLink() {
+  if (selectedPackage.value) {
+    const amount = selectedPackage.value.priceSOL.toString()
+    const reference = generateReference()
+    const solanaPayUrl = `solana:${MERCHANT_WALLET}?amount=${amount}&reference=${reference}`
+    window.location.href = solanaPayUrl
+  }
 }
 </script>
 
@@ -85,29 +173,10 @@ async function openWallet() {
     </div>
   </div>
 
-  <!-- Payment Section -->
+  <!-- Payment Section with QR -->
   <div v-if="selectedPackage" class="payment-section">
-    <h2>Pay with {{ selectedPackage.name }}</h2>
+    <h2>Pay with SOL</h2>
     
-    <div class="payment-methods">
-      <button 
-        class="method-btn"
-        :class="{ active: paymentMethod === 'SOL' }"
-        @click="paymentMethod = 'SOL'"
-      >
-        <span class="method-icon">◎</span>
-        <span>Pay with SOL</span>
-      </button>
-      <button 
-        class="method-btn"
-        :class="{ active: paymentMethod === 'USDC' }"
-        @click="paymentMethod = 'USDC'"
-      >
-        <span class="method-icon">💲</span>
-        <span>Pay with USDC</span>
-      </button>
-    </div>
-
     <div class="payment-summary">
       <div class="summary-row">
         <span>Package</span>
@@ -115,33 +184,47 @@ async function openWallet() {
       </div>
       <div class="summary-row">
         <span>Amount</span>
-        <span>{{ paymentMethod === 'SOL' ? selectedPackage.priceSOL + ' SOL' : selectedPackage.priceUSDC + ' USDC' }}</span>
+        <span class="amount-highlight">{{ selectedPackage.priceSOL }} SOL</span>
       </div>
       <div class="summary-row">
         <span>Network</span>
-        <span>{{ SOLANA_NETWORK }}</span>
+        <span>{{ IS_MAINNET ? 'Mainnet' : 'Devnet' }}</span>
       </div>
+    </div>
+
+    <!-- QR Code -->
+    <div v-if="qrDataUrl" class="qr-section">
+      <img :src="qrDataUrl" alt="Payment QR Code" class="qr-code" />
+      <p class="qr-instruction">Scan with your Solana wallet</p>
+      <p class="qr-wallet">To: {{ MERCHANT_WALLET.slice(0, 8) }}...{{ MERCHANT_WALLET.slice(-4) }}</p>
+    </div>
+
+    <!-- Direct Link Button -->
+    <button class="wallet-link-btn" @click="openWalletLink">
+      🔗 Pay with Solana Wallet
+    </button>
+
+    <!-- Manual Signature Entry -->
+    <div class="signature-section">
+      <p>Or enter transaction signature after payment:</p>
+      <input 
+        v-model="txSignature" 
+        placeholder="Enter transaction signature (e.g., 4xJ4...)"
+        class="signature-input"
+      />
+      <button 
+        class="check-status-btn"
+        @click="startPolling(txSignature)"
+        :disabled="!txSignature || txSignature.length < 32"
+      >
+        Check Payment Status
+      </button>
     </div>
 
     <div v-if="error" class="error-msg">{{ error }}</div>
     <div v-if="success" class="success-msg">{{ success }}</div>
 
-    <div class="connect-wallet-prompt" v-if="!isConnected">
-      <p>Connect your wallet to complete purchase</p>
-      <button class="pay-btn" @click="$router.push('/')">
-        Go to Home to Connect
-      </button>
-    </div>
-    <div v-else>
-      <p class="wallet-info">Connected: {{ walletAddress }}</p>
-      <button 
-        class="pay-btn"
-        disabled
-        title="Payment will be available after wallet integration"
-      >
-        Payment Coming Soon
-      </button>
-    </div>
+    <button class="cancel-btn" @click="cancelPayment">Cancel</button>
   </div>
 
   <!-- Features -->
@@ -406,6 +489,117 @@ async function openWallet() {
   color: #4bc9a0;
   margin-bottom: 0.5rem;
   word-break: break-all;
+}
+
+/* QR Code */
+.qr-section {
+  text-align: center;
+  margin: 1.5rem 0;
+}
+.qr-code {
+  border-radius: 12px;
+  border: 2px solid #2a3548;
+}
+.qr-instruction {
+  margin: 0.8rem 0 0.3rem;
+  color: #98a8ce;
+  font-size: 0.85rem;
+}
+.qr-wallet {
+  margin: 0;
+  color: #5a6a8e;
+  font-size: 0.75rem;
+  font-family: monospace;
+}
+
+/* Wallet Link */
+.wallet-link-btn {
+  width: 100%;
+  padding: 0.9rem;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  border: none;
+  border-radius: 10px;
+  color: white;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: 1rem;
+}
+.wallet-link-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px #667eea40;
+}
+
+/* Signature */
+.signature-section {
+  margin: 1rem 0;
+  padding: 1rem;
+  background: #151a24;
+  border-radius: 10px;
+  border: 1px solid #252d3d;
+}
+.signature-section p {
+  margin: 0 0 0.8rem;
+  color: #6b7a9e;
+  font-size: 0.8rem;
+}
+.signature-input {
+  width: 100%;
+  padding: 0.7rem;
+  background: #0c0f14;
+  border: 1px solid #252d3d;
+  border-radius: 8px;
+  color: #e7ecf5;
+  font-size: 0.8rem;
+  font-family: monospace;
+  margin-bottom: 0.8rem;
+  box-sizing: border-box;
+}
+.signature-input:focus {
+  outline: none;
+  border-color: #667eea;
+}
+.check-status-btn {
+  width: 100%;
+  padding: 0.7rem;
+  background: #2a3548;
+  border: 1px solid #3a4568;
+  border-radius: 8px;
+  color: #e7ecf5;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.check-status-btn:hover:not(:disabled) {
+  background: #3a4568;
+}
+.check-status-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Cancel Button */
+.cancel-btn {
+  width: 100%;
+  padding: 0.7rem;
+  background: transparent;
+  border: 1px solid #2a3548;
+  border-radius: 8px;
+  color: #6b7a9e;
+  font-size: 0.85rem;
+  cursor: pointer;
+  margin-top: 1rem;
+}
+.cancel-btn:hover {
+  border-color: #ff6b6b40;
+  color: #ff6b6b;
+}
+
+/* Amount highlight */
+.amount-highlight {
+  color: #4bc9a0;
+  font-weight: 600;
 }
 
 .features-section {
