@@ -1,117 +1,36 @@
 {{define "content"}}
-<style>
-.timeline { position: relative; padding-left: 2rem; }
-.timeline::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 1px;
-    background: #0ff;
-}
-
-.item { margin-bottom: 2rem; position: relative; }
-.item::before {
-    content: '';
-    position: absolute;
-    left: -2rem;
-    top: 0.3rem;
-    width: 8px;
-    height: 8px;
-    background: #0ff;
-}
-
-.item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
-.item-title { font-weight: bold; }
-.item-date { font-size: 0.8rem; color: #088; }
-
-.item-body { color: #088; font-size: 0.9rem; }
-.item-body ul { margin: 0.5rem 0 0 1rem; }
-.item-body li { margin-bottom: 0.25rem; }
-
-.status-done { color: #0f0; }
-.status-progress { color: #ff0; }
-.status-planned { color: #088; }
-
-.section-title { margin-top: 2rem; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid #222; }
-</style>
-
 <h1>// ROADMAP</h1>
 <p class="text-dim mb-3">Development timeline and future plans.</p>
 
 <div class="card">
-    <div class="card-header">PROGRESS</div>
-    
-   </span>
-            </div>
-            <div class="item-body">
-                <strong>Core API</strong>
-                <ul>
-                    <li>EVM wallet checking</li>
-                    <li>Bitcoin address validation</li>
-                    <li>Solana address support</li>
-                </ul>
-            </div>
-        </div>
-        
-        <div class="item">
-            <div class-chain expansion</strong>
-                <ul>
-                    <li>Sui blockchain support</li>
-                    <li>Tron network integration</li>
-                    <li>Web3 wallet authentication</li>
-                </ul>
-            </div>
-        </div>
-        
-        <div class="item">
-            <div class="item-header">
-                <span class="item-title status-progress">[IN PROGRESS]</span>
-                <span class="item-date">Q3 2024</span>
-            </div>
-            <div class="item-body">
-                <strong>Payment system</strong>
-                <ul>
-                    <li>Solana payment integration</li>
-                    <li>USDC/SOL checkout</li>
-                    <li>API key management</li>
-                </ul>
-            </div>
-        </div>
-        
-        <div class="item">
-            <div class="item-header">
-                <span class="item-title status-planned">[PLANNED]</span>
-                <span class="item-date">Q4 2024</span>
-            </div>
-            <div class="item-body">
-                <strong>Advanced features</strong>
-                <ul>
-                    <li>Real-time monitoring</li>
-                    <li>Telegram bot alerts</li>
-                    <li>Portfolio tracking</li>
-                </ul>
-            </div>
-        </div>
-    </div>
+    <div class="card-header">DONE</div>
+    <ul style="color: #0f0; padding-left: 1.5rem;">
+        <li>EVM wallet checking</li>
+        <li>Bitcoin address validation</li>
+        <li>Solana address support</li>
+        <li>Sui blockchain integration</li>
+        <li>Tron network support</li>
+    </ul>
 </div>
 
 <div class="card">
-    <div class="card-header">NEXT</div>
-    <ul style="list-style: none; padding: 0;">
-        <li style="margin-bottom: 0.5rem;">
-            <span class="status status-progress">ACTIVE</span>
-            Batch wallet checking
-        </li>
-        <li style="margin-bottom: 0.5rem;">
-            <span class="status status-planned">PLANNED</span>
-            Mobile app
-        </li>
-        <li style="margin-bottom: 0.5rem;">
-            <span class="status status-planned">PLANNED</span>
-            Browser extension
-        </li>
+    <div class="card-header">IN PROGRESS</div>
+    <ul style="color: #ff0; padding-left: 1.5rem;">
+        <li>Solana payment integration</li>
+        <li>API key management</li>
+        <li>User dashboard</li>
+    </ul>
+</div>
+
+<div class="card">
+    <div class="card-header">PLANNED</div>
+    <ul style="color: #088; padding-left: 1.5rem;">
+        <li>Batch wallet checking</li>
+        <li>Real-time monitoring</li>
+        <li>Telegram bot alerts</li>
+        <li>Portfolio tracking</li>
+        <li>Mobile app</li>
+        <li>Browser extension</li>
     </ul>
 </div>
 {{end}}
