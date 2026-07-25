@@ -89,8 +89,30 @@ async function payWithSolana() {
   success.value = ''
   
   try {
+    const authToken = localStorage.getItem('authToken')
+    
+    // Create order first (requires auth)
+    const orderRes = await fetch('/api/payment/create', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': authToken ? `Bearer ${authToken}` : ''
+      },
+      body: JSON.stringify({
+        checks_count: selectedPackage.value.checks
+      })
+    })
+    
+    if (!orderRes.ok) {
+      const orderData = await orderRes.json()
+      throw new Error(orderData.error || 'Failed to create order')
+    }
+    
+    const orderData = await orderRes.json()
+    console.log('Order created:', orderData)
+    
     const senderPublicKey = phantom.publicKey
-    const recipientPublicKey = new PublicKey(MERCHANT_WALLET)
+    const recipientPublicKey = new PublicKey(orderData.payment_address || MERCHANT_WALLET)
     const lamports = Math.round(selectedPackage.value.priceSOL * LAMPORTS_PER_SOL)
     
     // Create a proper Transaction object
@@ -111,7 +133,7 @@ async function payWithSolana() {
     
     console.log('Sending transaction:', {
       from: senderPublicKey.toString(),
-      to: MERCHANT_WALLET,
+      to: recipientPublicKey.toString(),
       amount: selectedPackage.value.priceSOL + ' SOL',
       lamports: lamports
     })

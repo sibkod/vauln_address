@@ -177,6 +177,13 @@ function getResultClass() {
     <RouterLink to="/pricing" class="upgrade-link">Upgrade →</RouterLink>
   </div>
 
+  <!-- Balance info for authenticated users -->
+  <div v-else class="free-tier-info user-balance">
+    <span class="free-badge">PREMIUM</span>
+    <span>{{ userBalance }} checks available</span>
+    <RouterLink to="/pricing" class="upgrade-link">Buy more →</RouterLink>
+  </div>
+
   <!-- Logo -->
   <div class="logo-area">
     <div class="badge">⚡ multi‑chain security</div>
