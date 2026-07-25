@@ -222,12 +222,18 @@ window.waitForSolanaWeb3 = function() {
             if (window.phantom?.solana?.provider?.solanaWeb3) {
                 return window.phantom.solana.provider.solanaWeb3;
             }
+            if (window.phantom?.provider?.solanaWeb3) {
+                return window.phantom.provider.solanaWeb3;
+            }
             if (window.phantom?.solana?._solanaWeb3) {
                 return window.phantom.solana._solanaWeb3;
             }
             // Solflare
             if (window.solflare?.solana?.provider?.solanaWeb3) {
                 return window.solflare.solana.provider.solanaWeb3;
+            }
+            if (window.solflare?.provider?.solanaWeb3) {
+                return window.solflare.provider.solanaWeb3;
             }
             // Backpack
             if (window.backpack?.solana?.provider?.solanaWeb3) {
