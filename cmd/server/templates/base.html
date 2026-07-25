@@ -120,30 +120,47 @@
 #chainModal button:hover { border-color: #3b82f6 !important; }
 </style>
 
-<script src="https://unpkg.com/buffer@6.0.3/index.js"></script>
 <script>
+// Buffer polyfill - must be defined BEFORE any other scripts that need it
 (function() {
-    // Ensure Buffer is available globally for Solana Web3.js
     if (typeof window.Buffer === 'undefined') {
-        window.Buffer = {
-            from: function(arr, encoding) {
-                if (Array.isArray(arr)) return new Uint8Array(arr);
-                if (typeof arr === 'string') return new TextEncoder().encode(arr);
-                return new Uint8Array(arr);
+        window.Buffer = Buffer || {
+            from: function(data, encoding) {
+                if (data instanceof Uint8Array) return data;
+                if (Array.isArray(data)) return new Uint8Array(data);
+                if (typeof data === 'string') return new TextEncoder().encode(data);
+                return new Uint8Array(0);
             },
-            isBuffer: function() { return false; },
-            alloc: function(size, fill) { return new Uint8Array(size); },
+            isBuffer: function(obj) { return obj instanceof Uint8Array; },
+            alloc: function(size, fill, encoding) {
+                var buf = new Uint8Array(size);
+                if (fill !== undefined && fill !== null) {
+                    if (typeof fill === 'number') {
+                        buf.fill(fill);
+                    } else {
+                        var bytes = typeof fill === 'string' ? new TextEncoder().encode(fill) : fill;
+                        buf.set(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
+                    }
+                }
+                return buf;
+            },
             allocUnsafe: function(size) { return new Uint8Array(size); },
-            byteLength: function(str) { return new TextEncoder().encode(str).length; }
+            byteLength: function(str) { return new TextEncoder().encode(str).length; },
+            concat: function(list, length) {
+                if (!Array.isArray(list)) throw new TypeError('list argument must be an Array');
+                if (list.length === 0) return new Uint8Array(0);
+                var totalLen = length || list.reduce(function(a, b) { return a + b.length; }, 0);
+                var buf = new Uint8Array(totalLen);
+                var offset = 0;
+                for (var i = 0; i < list.length; i++) {
+                    buf.set(list[i] instanceof Uint8Array ? list[i] : new Uint8Array(list[i]), offset);
+                    offset += list[i].length;
+                }
+                return buf;
+            }
         };
     }
-    
-    // Also ensure it's available for Phantom
-    if (typeof require !== 'undefined') {
-        try { require('buffer').Buffer; } catch(e) { window.require = undefined; }
-    }
-    
-    console.log('Buffer polyfill ready');
+    console.log('Buffer polyfill initialized');
 })();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@solana/web3.js@1.95.8/lib/index.iife.min.js"></script>
