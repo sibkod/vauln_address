@@ -100,30 +100,17 @@
 <!-- Chain Selector Modal -->
 <div id="chainModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center;">
     <div style="background: #1a2135; border-radius: 1rem; padding: 1.5rem; max-width: 400px; width: 90%; border: 1px solid rgba(255,255,255,0.1);">
-        <h3 style="color: #f0f4ff; margin-bottom: 1rem; text-align: center;">🔗 Select Blockchain</h3>
-        <p style="color: #9aabcf; font-size: 0.85rem; margin-bottom: 1rem; text-align: center;">Choose which blockchain to connect with</p>
+        <h3 style="color: #f0f4ff; margin-bottom: 1rem; text-align: center;">🔗 Connect Wallet</h3>
+        <p style="color: #9aabcf; font-size: 0.85rem; margin-bottom: 1rem; text-align: center;">Connect with Solana Testnet</p>
         <div style="display: flex; flex-direction: column; gap: 0.8rem;">
             <button onclick="selectChainAndConnect('solana')" style="background: rgba(18, 24, 36, 0.7); border: 1px solid rgba(255,255,255,0.1); color: #f0f4ff; padding: 1rem; border-radius: 0.8rem; cursor: pointer; display: flex; align-items: center; gap: 0.8rem; transition: 0.2s;">
                 <span style="width: 32px; height: 32px; background: linear-gradient(135deg, #9945FF, #14F195); border-radius: 50%;"></span>
                 <div style="text-align: left;">
-                    <div style="font-weight: 600;">Solana</div>
+                    <div style="font-weight: 600;">Solana Testnet</div>
                     <div style="color: #6d7da0; font-size: 0.75rem;">Phantom, Solflare</div>
                 </div>
             </button>
-            <button onclick="selectChainAndConnect('sui')" style="background: rgba(18, 24, 36, 0.7); border: 1px solid rgba(255,255,255,0.1); color: #f0f4ff; padding: 1rem; border-radius: 0.8rem; cursor: pointer; display: flex; align-items: center; gap: 0.8rem; transition: 0.2s;">
-                <span style="width: 32px; height: 32px; background: linear-gradient(135deg, #6fcfeb, #8457f5); border-radius: 50%;"></span>
-                <div style="text-align: left;">
-                    <div style="font-weight: 600;">Sui</div>
-                    <div style="color: #6d7da0; font-size: 0.75rem;">Sui Wallet</div>
-                </div>
-            </button>
-            <button onclick="selectChainAndConnect('evm')" style="background: rgba(18, 24, 36, 0.7); border: 1px solid rgba(255,255,255,0.1); color: #f0f4ff; padding: 1rem; border-radius: 0.8rem; cursor: pointer; display: flex; align-items: center; gap: 0.8rem; transition: 0.2s;">
-                <span style="width: 32px; height: 32px; background: linear-gradient(135deg, #627EEA, #627EEA); border-radius: 50%;"></span>
-                <div style="text-align: left;">
-                    <div style="font-weight: 600;">Ethereum / EVM</div>
-                    <div style="color: #6d7da0; font-size: 0.75rem;">MetaMask, WalletConnect</div>
-                </div>
-            </button>
+            <div style="text-align: center; color: #fbbf24; font-size: 0.8rem; margin-top: 0.5rem;">⚠️ Testnet only - no real funds</div>
         </div>
         <button onclick="closeChainModal()" style="width: 100%; margin-top: 1rem; background: transparent; border: 1px solid rgba(255,255,255,0.1); color: #9aabcf; padding: 0.7rem; border-radius: 0.6rem; cursor: pointer;">Cancel</button>
     </div>
@@ -181,51 +168,8 @@
     window.selectChainAndConnect = async function(chain) {
         selectedChain = chain;
         closeChainModal();
-        
-        if (chain === 'evm') {
-            await connectEVM();
-        } else if (chain === 'solana') {
-            await connectSolana();
-        } else if (chain === 'sui') {
-            await connectSui();
-        }
+        await connectSolana();
     };
-
-    async function connectEVM() {
-        if (typeof window.ethereum !== 'undefined' && window.ethereum.isMetaMask) {
-            try {
-                const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-                if (accounts.length === 0) { showToast('No accounts found'); return; }
-                web3 = new Web3(window.ethereum);
-                connectedAddress = accounts[0];
-                isWalletConnected = true;
-                freeCheckUsed = true;
-                
-                localStorage.setItem('walletConnected', 'true');
-                localStorage.setItem('walletAddress', connectedAddress);
-                localStorage.setItem('walletChain', 'evm');
-                localStorage.setItem('freeCheckUsed', 'true');
-                
-                updateConnectUI();
-                updateCounter();
-                showToast('🔗 Wallet connected. Authenticating...');
-
-                const authSuccess = await authenticateWithBackend(connectedAddress);
-                if (authSuccess) {
-                    showToast('✅ Authenticated! ' + userBalance + ' credits.');
-                    updateCounter();
-                    document.dispatchEvent(new CustomEvent('walletAuthenticated'));
-                } else {
-                    showToast('⚠️ Wallet connected but auth failed');
-                }
-            } catch (error) {
-                console.error(error);
-                showToast('❌ ' + (error.message || 'Connection failed'));
-            }
-        } else {
-            showToast('⚠️ Please install MetaMask!');
-        }
-    }
 
     async function connectSolana() {
         showToast('🔗 Connecting to Solana...');
@@ -257,39 +201,6 @@
         } catch (error) {
             console.error('Solana connection error:', error);
             showToast('❌ Failed to connect Solana wallet');
-        }
-    }
-
-    async function connectSui() {
-        showToast('🔗 Connecting to Sui...');
-        try {
-            // Check for Sui wallet
-            const provider = window.suiWallet;
-            
-            if (!provider) {
-                showToast('⚠️ Please install Sui Wallet extension');
-                return;
-            }
-            
-            const resp = await provider.connect();
-            connectedAddress = resp.account.address;
-            isWalletConnected = true;
-            
-            localStorage.setItem('walletConnected', 'true');
-            localStorage.setItem('walletAddress', connectedAddress);
-            localStorage.setItem('walletChain', 'sui');
-            
-            updateConnectUI();
-            showToast('✅ Sui wallet connected!');
-            
-            // Authenticate
-            const authSuccess = await authenticateWithBackend(connectedAddress);
-            if (authSuccess) {
-                document.dispatchEvent(new CustomEvent('walletAuthenticated'));
-            }
-        } catch (error) {
-            console.error('Sui connection error:', error);
-            showToast('❌ Failed to connect Sui wallet');
         }
     }
 

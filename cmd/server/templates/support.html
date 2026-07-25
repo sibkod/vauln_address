@@ -79,11 +79,7 @@
         <div class="chain-selector">
             <button class="chain-btn active" data-chain="solana" onclick="selectChain('solana')">
                 <span class="chain-icon" style="background: linear-gradient(135deg, #9945FF, #14F195);"></span>
-                Solana
-            </button>
-            <button class="chain-btn" data-chain="sui" onclick="selectChain('sui')">
-                <span class="chain-icon" style="background: linear-gradient(135deg, #6fcfeb, #8457f5);"></span>
-                Sui
+                Solana (Testnet)
             </button>
         </div>
 
@@ -232,14 +228,9 @@ async function buyPackage() {
         
         const orderData = await orderRes.json();
         
-        // 2. For testnet: show payment instructions
-        if (selectedChain === 'solana') {
-            window.showToast(`🪙 Send $${selectedPackage.price} to payment address. Order ID: ${orderData.order_id}`);
-            // In production: integrate with Solana payment SDK
-        } else if (selectedChain === 'sui') {
-            window.showToast(`🟣 Send $${selectedPackage.price} to payment address. Order ID: ${orderData.order_id}`);
-            // In production: integrate with Sui payment SDK
-        }
+        // For testnet: show payment instructions
+        window.showToast(`🪙 Send $${selectedPackage.price} via Solana Testnet. Order ID: ${orderData.order_id}`);
+        // In production: integrate with Solana payment SDK
         
         // For now: simulate instant delivery for demo
         setTimeout(() => {
