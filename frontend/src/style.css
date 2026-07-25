@@ -125,6 +125,32 @@ body.light .network-badge.mainnet {
   background: #fce8e8;
   color: #c44040;
 }
+
+/* Backend warning */
+.backend-warning {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  padding: 0.6rem 1rem;
+  background: #2a1a1a;
+  border-bottom: 1px solid #ff6b6b40;
+  color: #ff6b6b;
+  font-size: 0.8rem;
+}
+.backend-warning button {
+  padding: 0.2rem 0.6rem;
+  background: #ff6b6b20;
+  border: 1px solid #ff6b6b40;
+  border-radius: 4px;
+  color: #ff6b6b;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.backend-warning button:hover {
+  background: #ff6b6b30;
+}
+
 .connect-btn { background: rgba(24, 32, 48, 0.7); border: 1px solid rgba(255, 255, 255, 0.05); color: #e1e8f5; padding: 0.45rem 1.2rem 0.45rem 1rem; border-radius: 60px; font-weight: 500; font-size: 0.8rem; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; transition: 0.2s; }
 .connect-btn:hover { background: rgba(40, 50, 70, 0.7); border-color: rgba(255, 255, 255, 0.08); }
 .connect-btn .dot { width: 8px; height: 8px; border-radius: 10px; background: #4c5a7a; display: inline-block; transition: 0.2s; }

@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import { ref, inject, onMounted, onUnmounted } from 'vue'
-import { useWallet, useConnection } from '@solana/wallet-adapter-react'
-import { PublicKey, SystemProgram, Transaction } from '@solana/web3.js'
-import { createTransferCheckedInstruction, getAssociatedTokenAddress } from '@solana/spl-token'
+import { ref, inject, computed } from 'vue'
 
 // Network config - MUST match App.vue
 const IS_MAINNET = false
@@ -18,8 +15,6 @@ const MERCHANT_WALLET_DEVNET = '7bMD8B3a3yDj7JMBQZYse7x4FqNKLNmEACSUitKxVNXJ'
 const MERCHANT_WALLET_MAINNET = 'MERCHANT_MAINNET_WALLET'
 const MERCHANT_WALLET = IS_MAINNET ? MERCHANT_WALLET_MAINNET : MERCHANT_WALLET_DEVNET
 
-const wallet = useWallet()
-const connection = useConnection()
 const globalWallet = inject<any>('wallet')
 
 const packages = [
@@ -33,9 +28,11 @@ const paymentMethod = ref<'SOL' | 'USDC'>('SOL')
 const processing = ref(false)
 const error = ref('')
 const success = ref('')
+const walletAddress = computed(() => globalWallet?.walletAddress?.value || '')
+const isConnected = computed(() => globalWallet?.connected?.value || false)
 
-async function selectPackage(pkg: typeof packages[0]) {
-  if (!wallet.connected) {
+function selectPackage(pkg: typeof packages[0]) {
+  if (!isConnected.value) {
     error.value = 'Please connect your wallet first'
     return
   }
@@ -44,110 +41,9 @@ async function selectPackage(pkg: typeof packages[0]) {
   success.value = ''
 }
 
-async function payWithSOL() {
-  if (!selectedPackage.value || !wallet.publicKey || !wallet.signTransaction) {
-    error.value = 'Wallet not connected'
-    return
-  }
-
-  processing.value = true
-  error.value = ''
-
-  try {
-    const transaction = new Transaction()
-    
-    const lamports = selectedPackage.value.priceSOL * 1e9
-    transaction.add(
-      SystemProgram.transfer({
-        fromPubkey: wallet.publicKey,
-        toPubkey: new PublicKey(MERCHANT_WALLET),
-        lamports: Math.round(lamports)
-      })
-    )
-
-    const { blockhash } = await connection.getLatestBlockhash()
-    transaction.recentBlockhash = blockhash
-    transaction.feePayer = wallet.publicKey
-
-    const signed = await wallet.signTransaction(transaction)
-    const signature = await connection.sendRawTransaction(signed.serialize())
-
-    if (signature) {
-      success.value = `Payment sent! TX: ${signature.slice(0, 8)}...`
-      await notifyBackend(signature, 'SOL')
-    }
-  } catch (err: any) {
-    error.value = 'Payment failed: ' + err.message
-  }
-
-  processing.value = false
-}
-
-async function payWithUSDC() {
-  if (!selectedPackage.value || !wallet.publicKey || !wallet.signTransaction) {
-    error.value = 'Wallet not connected'
-    return
-  }
-
-  processing.value = true
-  error.value = ''
-
-  try {
-    const usdcMint = new PublicKey(USDC_ADDRESS)
-    const merchantWallet = new PublicKey(MERCHANT_WALLET)
-    const sender = wallet.publicKey
-
-    const senderUsdc = await getAssociatedTokenAddress(usdcMint, sender, true)
-    const merchantUsdc = await getAssociatedTokenAddress(usdcMint, merchantWallet, true)
-
-    const transaction = new Transaction()
-    const amount = Math.round(selectedPackage.value.priceUSDC * 1e6)
-
-    transaction.add(
-      createTransferCheckedInstruction(
-        senderUsdc,
-        usdcMint,
-        merchantUsdc,
-        sender,
-        amount,
-        6
-      )
-    )
-
-    const { blockhash } = await connection.getLatestBlockhash()
-    transaction.recentBlockhash = blockhash
-    transaction.feePayer = wallet.publicKey
-
-    const signed = await wallet.signTransaction(transaction)
-    const signature = await connection.sendRawTransaction(signed.serialize())
-
-    if (signature) {
-      success.value = `Payment sent! TX: ${signature.slice(0, 8)}...`
-      await notifyBackend(signature, 'USDC')
-    }
-  } catch (err: any) {
-    error.value = 'Payment failed: ' + err.message
-  }
-
-  processing.value = false
-}
-
-async function notifyBackend(tx: string, method: string) {
-  try {
-    await fetch('/api/payment/confirm', {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${globalWallet.authToken?.value || ''}`
-      },
-      body: JSON.stringify({
-        tx,
-        package: selectedPackage.value?.id,
-        method,
-        network: SOLANA_NETWORK
-      })
-    })
-  } catch {}
+async function openWallet() {
+  // This would trigger wallet connection - simplified for now
+  window.open('/pricing', '_self')
 }
 </script>
 
@@ -230,21 +126,22 @@ async function notifyBackend(tx: string, method: string) {
     <div v-if="error" class="error-msg">{{ error }}</div>
     <div v-if="success" class="success-msg">{{ success }}</div>
 
-    <button 
-      v-if="!wallet.connected"
-      class="pay-btn"
-      disabled
-    >
-      Connect wallet to pay
-    </button>
-    <button 
-      v-else
-      class="pay-btn"
-      :disabled="processing"
-      @click="paymentMethod === 'SOL' ? payWithSOL() : payWithUSDC()"
-    >
-      {{ processing ? 'Processing...' : `Pay ${paymentMethod === 'SOL' ? selectedPackage.priceSOL + ' SOL' : selectedPackage.priceUSDC + ' USDC'}` }}
-    </button>
+    <div class="connect-wallet-prompt" v-if="!isConnected">
+      <p>Connect your wallet to complete purchase</p>
+      <button class="pay-btn" @click="$router.push('/')">
+        Go to Home to Connect
+      </button>
+    </div>
+    <div v-else>
+      <p class="wallet-info">Connected: {{ walletAddress }}</p>
+      <button 
+        class="pay-btn"
+        disabled
+        title="Payment will be available after wallet integration"
+      >
+        Payment Coming Soon
+      </button>
+    </div>
   </div>
 
   <!-- Features -->
@@ -495,6 +392,20 @@ async function notifyBackend(tx: string, method: string) {
   color: #4bc9a0;
   font-size: 0.85rem;
   margin-bottom: 1rem;
+}
+.connect-wallet-prompt {
+  text-align: center;
+  padding: 1rem;
+  color: #6b7a9e;
+}
+.connect-wallet-prompt p {
+  margin-bottom: 1rem;
+}
+.wallet-info {
+  font-size: 0.8rem;
+  color: #4bc9a0;
+  margin-bottom: 0.5rem;
+  word-break: break-all;
 }
 
 .features-section {
