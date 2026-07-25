@@ -251,54 +251,50 @@ async function buyPackage() {
             throw new Error('Please connect a Solana wallet first (Phantom, Solflare, etc.)');
         }
         
-        window.showToast('📝 Sign the transaction in your wallet...');
+        window.showToast('📝 Sign the message in your wallet...');
         
-        // 3. Wait for Solana Web3.js to be available (from any wallet)
-        const solanaWeb3 = await window.waitForSolanaWeb3();
-        if (!solanaWeb3) {
-            throw new Error('Solana Web3.js not available. Please refresh the page.');
+        // 3. Create a message to sign for payment verification
+        const message = JSON.stringify({
+            action: 'payment',
+            order_id: orderData.order_id,
+            amount: orderData.amount,
+            checks: selectedPackage.checks,
+            timestamp: Date.now()
+        });
+        
+        // 4. Sign the message with the wallet
+        const encodedMessage = new TextEncoder().encode(message);
+        let signedMessage;
+        
+        try {
+            // Try signMessage first (works with most wallets)
+            signedMessage = await provider.signMessage(encodedMessage);
+        } catch (signErr) {
+            throw new Error('Wallet does not support message signing. Please use Phantom or Solflare.');
         }
         
-        const lamports = Math.round(parseFloat(orderData.amount) * 1e9);
-        const { Connection, PublicKey, Transaction, SystemProgram } = solanaWeb3;
+        // Convert signature to base64 for transmission
+        const signatureBase64 = btoa(String.fromCharCode(...new Uint8Array(signedMessage.signature)));
         
-        // 4. Create transaction using wallet's Solana Web3.js
-        const connection = new Connection('https://api.devnet.solana.com');
-        const fromPubkey = new PublicKey(address);
-        const toPubkey = new PublicKey(orderData.payment_address);
+        window.showToast('🔄 Verifying signature...');
         
-        const transaction = new Transaction();
-        transaction.add(
-            SystemProgram.transfer({
-                fromPubkey: fromPubkey,
-                toPubkey: toPubkey,
-                lamports: lamports
-            })
-        );
-        
-        const { blockhash } = await connection.getRecentBlockhash();
-        transaction.recentBlockhash = blockhash;
-        transaction.feePayer = fromPubkey;
-        
-        // 5. Sign and send using any wallet
-        const signature = await provider.signAndSendTransaction(transaction);
-        const sigString = typeof signature === 'string' ? signature : signature.signature;
-        
-        window.showToast('🔄 Transaction sent: ' + sigString.slice(0, 8) + '...');
-        
-        // 6. Wait for confirmation
-        await new Promise(r => setTimeout(r, 3000));
-        
-        window.showToast('✅ Transaction confirmed! Verifying payment...');
-        
-        // 7. Verify payment on backend
-        const verifyRes = await fetch('/api/orders/' + orderData.order_id + '/confirm?tx_signature=' + sigString, {
+        // 5. Verify signature on backend
+        const verifyRes = await fetch('/api/orders/' + orderData.order_id + '/confirm', {
             method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + (authToken || '') }
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + (authToken || '')
+            },
+            body: JSON.stringify({
+                signature: signatureBase64,
+                message: message,
+                wallet_address: address
+            })
         });
         
         if (!verifyRes.ok) {
-            throw new Error('Payment verification failed');
+            const err = await verifyRes.json();
+            throw new Error(err.error || 'Payment verification failed');
         }
         
         const verifyData = await verifyRes.json();

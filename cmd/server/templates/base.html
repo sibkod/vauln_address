@@ -218,9 +218,12 @@ window.waitForSolanaWeb3 = function() {
     return new Promise(function(resolve) {
         // Check all possible wallet providers
         function checkWallets() {
-            // Phantom
+            // Phantom - check multiple possible locations
             if (window.phantom?.solana?.provider?.solanaWeb3) {
                 return window.phantom.solana.provider.solanaWeb3;
+            }
+            if (window.phantom?.solana?._solanaWeb3) {
+                return window.phantom.solana._solanaWeb3;
             }
             // Solflare
             if (window.solflare?.solana?.provider?.solanaWeb3) {
