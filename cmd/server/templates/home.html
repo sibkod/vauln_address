@@ -148,10 +148,10 @@
 
         // Check if user can perform check
         const freeCheckUsed = window.getFreeCheckUsed ? window.getFreeCheckUsed() : false;
-        if (!window.isWalletConnected() && freeCheckUsed) {
+        if (!window.isAuthenticated() && freeCheckUsed) {
             resultBox.className = 'result-box';
-            resultText.innerHTML = '⛔ Limit reached. Connect your wallet.';
-            resultSub.innerHTML = 'Free check(s) exhausted. <a href="/support" style="color: #60a5fa;">Buy checks</a> or connect wallet.';
+            resultText.innerHTML = '⛔ Limit reached. Sign in to continue.';
+            resultSub.innerHTML = 'Free check(s) exhausted. <a href="/support" style="color: #60a5fa;">Buy checks</a> or sign in.';
             return;
         }
 
@@ -178,7 +178,7 @@
                 resultBox.className = 'result-box';
                 resultText.innerHTML = '⛔ Rate limit reached';
                 resultSub.textContent = data.details || 'Too many requests. Please try again later.';
-                if (!window.isWalletConnected()) {
+                if (!window.isAuthenticated()) {
                     if (window.setFreeCheckUsed) window.setFreeCheckUsed(true);
                 }
                 return;
@@ -223,7 +223,7 @@
             addAlert(address, chain, data.status === 'not_found' ? 'safe' : data.status);
 
             // Mark free check as used after successful check
-            if (!window.isWalletConnected()) {
+            if (!window.isAuthenticated()) {
                 if (window.setFreeCheckUsed) window.setFreeCheckUsed(true);
             }
 

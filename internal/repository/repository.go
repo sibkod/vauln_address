@@ -92,17 +92,15 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 
 		CREATE TABLE IF NOT EXISTS users (
 			id BIGINT PRIMARY KEY AUTO_INCREMENT,
-			wallet_address VARCHAR(100) NOT NULL,
-			chain VARCHAR(20) NOT NULL,
-			nonce VARCHAR(100),
+			email VARCHAR(255) NOT NULL UNIQUE,
+			password_hash VARCHAR(255) NOT NULL,
 			balance INT DEFAULT 10,
 			is_premium TINYINT(1) DEFAULT 0,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-			last_login_at TIMESTAMP NULL,
-			UNIQUE KEY uk_users_wallet_chain (wallet_address, chain)
+			last_login_at TIMESTAMP NULL
 		);
-		CREATE INDEX idx_users_wallet ON users(wallet_address);
+		CREATE INDEX idx_users_email ON users(email);
 
 		CREATE TABLE IF NOT EXISTS orders (
 			id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -168,17 +166,15 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 
 		CREATE TABLE IF NOT EXISTS users (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			wallet_address TEXT NOT NULL,
-			chain TEXT NOT NULL,
-			nonce TEXT,
+			email TEXT NOT NULL UNIQUE,
+			password_hash TEXT NOT NULL,
 			balance INTEGER DEFAULT 10,
 			is_premium INTEGER DEFAULT 0,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			last_login_at DATETIME,
-			UNIQUE(wallet_address, chain)
+			last_login_at DATETIME
 		);
-		CREATE INDEX IF NOT EXISTS idx_users_wallet ON users(wallet_address);
+		CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
 		CREATE TABLE IF NOT EXISTS orders (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -244,17 +240,15 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 
 		CREATE TABLE IF NOT EXISTS users (
 			id BIGSERIAL PRIMARY KEY,
-			wallet_address VARCHAR(100) NOT NULL,
-			chain VARCHAR(20) NOT NULL,
-			nonce VARCHAR(100),
+			email VARCHAR(255) NOT NULL UNIQUE,
+			password_hash VARCHAR(255) NOT NULL,
 			balance INTEGER DEFAULT 10,
 			is_premium BOOLEAN DEFAULT FALSE,
 			created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
 			updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-			last_login_at TIMESTAMP WITH TIME ZONE,
-			UNIQUE(wallet_address, chain)
+			last_login_at TIMESTAMP WITH TIME ZONE
 		);
-		CREATE INDEX IF NOT EXISTS idx_users_wallet ON users(wallet_address);
+		CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
 		CREATE TABLE IF NOT EXISTS orders (
 			id BIGSERIAL PRIMARY KEY,
@@ -307,14 +301,14 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 
 // ==================== User Methods ====================
 
-func (r *Repository) GetUserByWallet(ctx context.Context, address, chain string) (*models.User, error) {
+func (r *Repository) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
 	var user models.User
 	var lastLoginAt sql.NullTime
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, wallet_address, chain, nonce, balance, created_at, updated_at, last_login_at 
-		FROM users WHERE wallet_address = ? AND chain = ?`,
-		address, chain,
-	).Scan(&user.ID, &user.WalletAddress, &user.Chain, &user.Nonce, &user.Balance,
+		`SELECT id, email, password_hash, balance, is_premium, created_at, updated_at, last_login_at 
+		FROM users WHERE email = ?`,
+		email,
+	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.Balance, &user.IsPremium,
 		&user.CreatedAt, &user.UpdatedAt, &lastLoginAt)
 
 	if err == sql.ErrNoRows {
@@ -333,10 +327,10 @@ func (r *Repository) GetUserByID(ctx context.Context, id int64) (*models.User, e
 	var user models.User
 	var lastLoginAt sql.NullTime
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, wallet_address, chain, nonce, balance, created_at, updated_at, last_login_at 
+		`SELECT id, email, password_hash, balance, is_premium, created_at, updated_at, last_login_at 
 		FROM users WHERE id = ?`,
 		id,
-	).Scan(&user.ID, &user.WalletAddress, &user.Chain, &user.Nonce, &user.Balance,
+	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.Balance, &user.IsPremium,
 		&user.CreatedAt, &user.UpdatedAt, &lastLoginAt)
 
 	if err == sql.ErrNoRows {
@@ -351,82 +345,33 @@ func (r *Repository) GetUserByID(ctx context.Context, id int64) (*models.User, e
 	return &user, nil
 }
 
-func (r *Repository) GetOrCreateUser(address, chain string) (*models.User, error) {
-	ctx := context.Background()
-
-	// Try to get existing user
-	user, err := r.GetUserByWallet(ctx, address, chain)
-	if err != nil {
-		return nil, err
-	}
-	if user != nil {
-		return user, nil
-	}
-
-	// Create new user with 10 free checks
-	if r.dbType == config.DBTypeSQLite {
-		_, err = r.db.ExecContext(ctx,
-			`INSERT INTO users (wallet_address, chain, balance, is_premium) 
-			VALUES (?, ?, 10, 0)`,
-			address, chain,
-		)
-	} else {
-		_, err = r.db.ExecContext(ctx,
-			`INSERT INTO users (wallet_address, chain, balance, is_premium) 
-			VALUES (?, ?, 10, FALSE)`,
-			address, chain,
-		)
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	// Fetch the created user
-	return r.GetUserByWallet(ctx, address, chain)
-}
-
-func (r *Repository) UpsertUserNonce(address, chain, nonce string) error {
-	ctx := context.Background()
-	
+func (r *Repository) CreateUser(ctx context.Context, email, passwordHash string) (*models.User, error) {
+	var result sql.Result
 	var err error
+
 	if r.dbType == config.DBTypeSQLite {
-		_, err = r.db.ExecContext(ctx,
-			`INSERT INTO users (wallet_address, chain, nonce, balance) 
-			VALUES (?, ?, ?, 10) 
-			ON CONFLICT(wallet_address, chain) 
-			DO UPDATE SET nonce = ?`,
-			address, chain, nonce, nonce,
+		result, err = r.db.ExecContext(ctx,
+			`INSERT INTO users (email, password_hash, balance, is_premium) 
+			VALUES (?, ?, 10, 0)`,
+			email, passwordHash,
 		)
 	} else {
-		_, err = r.db.ExecContext(ctx,
-			`INSERT INTO users (wallet_address, chain, nonce, balance) 
-			VALUES (?, ?, ?, 10) 
-			ON CONFLICT (wallet_address, chain) 
-			DO UPDATE SET nonce = ?`,
-			address, chain, nonce, nonce,
+		result, err = r.db.ExecContext(ctx,
+			`INSERT INTO users (email, password_hash, balance, is_premium) 
+			VALUES (?, ?, 10, FALSE)`,
+			email, passwordHash,
 		)
 	}
-	return err
-}
-
-func (r *Repository) GetUserNonce(address, chain string) (string, error) {
-	ctx := context.Background()
-	var nonce sql.NullString
-	err := r.db.QueryRowContext(ctx,
-		`SELECT nonce FROM users WHERE wallet_address = ? AND chain = ?`,
-		address, chain,
-	).Scan(&nonce)
-
-	if err == sql.ErrNoRows {
-		return "", nil
-	}
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	if nonce.Valid {
-		return nonce.String, nil
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return nil, err
 	}
-	return "", nil
+
+	return r.GetUserByID(ctx, id)
 }
 
 func (r *Repository) UpdateLastLogin(userID int64) error {
@@ -440,8 +385,8 @@ func (r *Repository) UpdateLastLogin(userID int64) error {
 
 func (r *Repository) AddUserBalance(ctx context.Context, userID int64, checks int) error {
 	_, err := r.db.ExecContext(ctx,
-		`UPDATE users SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-		checks, userID,
+		`UPDATE users SET balance = balance + ?, is_premium = CASE WHEN balance + ? > 10 THEN TRUE ELSE is_premium END, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		checks, checks, userID,
 	)
 	return err
 }

@@ -19,21 +19,19 @@ CREATE INDEX IF NOT EXISTS idx_wallets_chain ON wallets(chain);
 CREATE INDEX IF NOT EXISTS idx_wallets_status ON wallets(status);
 CREATE INDEX IF NOT EXISTS idx_wallets_chain_status ON wallets(chain, status);
 
--- Users table (Web3 authenticated)
+-- Users table (Email/Password authenticated)
 CREATE TABLE IF NOT EXISTS users (
     id BIGSERIAL PRIMARY KEY,
-    wallet_address VARCHAR(100) NOT NULL,
-    chain VARCHAR(20) NOT NULL,
-    nonce VARCHAR(100),
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
     balance INTEGER DEFAULT 10,
     is_premium BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    last_login_at TIMESTAMP WITH TIME ZONE,
-    UNIQUE(wallet_address, chain)
+    last_login_at TIMESTAMP WITH TIME ZONE
 );
 
-CREATE INDEX IF NOT EXISTS idx_users_wallet ON users(wallet_address);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
 -- Orders table
 CREATE TABLE IF NOT EXISTS orders (

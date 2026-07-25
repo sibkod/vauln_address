@@ -196,7 +196,7 @@ func AuthMiddleware(authService *auth.AuthService) gin.HandlerFunc {
 
 		// Set user info in context
 		c.Set("userID", claims.UserID)
-		c.Set("userAddress", claims.Address)
+		c.Set("userEmail", claims.Email)
 		c.Next()
 	}
 }

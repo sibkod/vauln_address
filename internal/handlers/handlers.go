@@ -41,49 +41,34 @@ func (h *Handler) HealthCheck(c *gin.Context) {
 
 // ==================== Authentication ====================
 
-// GetNonce generates a nonce for Web3 authentication
-func (h *Handler) GetNonce(c *gin.Context) {
-	address := strings.TrimSpace(c.Query("address"))
-	chain := strings.ToLower(strings.TrimSpace(c.Query("chain")))
-
-	if address == "" || chain == "" {
+// Register creates a new user account
+func (h *Handler) Register(c *gin.Context) {
+	var req models.RegisterRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
-			Error: "address and chain are required",
+			Error: "invalid request body",
 			Code:  "INVALID_REQUEST",
+			Details: "email and password are required (password must be at least 8 characters)",
 		})
 		return
 	}
 
-	if !models.IsValidChain(chain) {
-		c.JSON(http.StatusBadRequest, models.ErrorResponse{
-			Error: "unsupported chain",
-			Code:  "INVALID_CHAIN",
-		})
-		return
-	}
-
-	nonce, err := h.authService.GenerateNonce(address, chain)
+	authResp, err := h.authService.Register(req.Email, req.Password)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-			Error: "failed to generate nonce",
-			Code:  "SERVER_ERROR",
+		c.JSON(http.StatusConflict, models.ErrorResponse{
+			Error:   "registration failed",
+			Code:    "REGISTRATION_FAILED",
+			Details: err.Error(),
 		})
 		return
 	}
 
-	// Create the message to sign
-	message := fmt.Sprintf("Sign this message to authenticate with Vauln Address.\n\nNonce: %s\nTimestamp: %d", 
-		nonce, time.Now().Unix())
-
-	c.JSON(http.StatusOK, models.NonceResponse{
-		Nonce:   nonce,
-		Message: message,
-	})
+	c.JSON(http.StatusCreated, authResp)
 }
 
-// Authenticate verifies the signature and returns a JWT token
-func (h *Handler) Authenticate(c *gin.Context) {
-	var req models.AuthRequest
+// Login authenticates a user with email and password
+func (h *Handler) Login(c *gin.Context) {
+	var req models.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
 			Error: "invalid request body",
@@ -92,7 +77,7 @@ func (h *Handler) Authenticate(c *gin.Context) {
 		return
 	}
 
-	authResp, err := h.authService.VerifySignature(req.Address, req.Chain, req.Signature, req.Message)
+	authResp, err := h.authService.Login(req.Email, req.Password)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
 			Error:   "authentication failed",
@@ -127,13 +112,12 @@ func (h *Handler) GetUserProfile(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"user": gin.H{
-			"id":              user.ID,
-			"wallet_address":  user.WalletAddress,
-			"chain":           user.Chain,
-			"balance":         user.Balance,
-			"is_premium":      user.Balance > 10,
-			"created_at":      user.CreatedAt,
-			"last_login_at":   user.LastLoginAt,
+			"id":            user.ID,
+			"email":         user.Email,
+			"balance":       user.Balance,
+			"is_premium":    user.IsPremium,
+			"created_at":    user.CreatedAt,
+			"last_login_at": user.LastLoginAt,
 		},
 	})
 }

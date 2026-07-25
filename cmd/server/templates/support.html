@@ -17,13 +17,13 @@
 
 .buy-section { margin-top: 2rem; padding-top: 2rem; border-top: 1px solid rgba(255,255,255,0.08); }
 .buy-section h3 { color: #f0f4ff; font-size: 1.2rem; margin-bottom: 1rem; }
-.wallet-status { background: rgba(18, 24, 36, 0.5); padding: 1rem; border-radius: 0.8rem; margin-bottom: 1rem; }
-.wallet-status .address { color: #c8d2e8; font-family: monospace; }
-.wallet-status .balance { color: #34d399; font-weight: 600; }
+.user-status { background: rgba(18, 24, 36, 0.5); padding: 1rem; border-radius: 0.8rem; margin-bottom: 1rem; }
+.user-status .email { color: #c8d2e8; font-family: monospace; }
+.user-status .balance { color: #34d399; font-weight: 600; }
 .buy-btn { background: #3b82f6; border: none; color: white; font-weight: 600; padding: 0.9rem 2rem; border-radius: 60px; font-size: 1rem; cursor: pointer; transition: 0.15s; width: 100%; }
 .buy-btn:hover { background: #4f8df7; }
 .buy-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.buy-btn.connected { background: #34d399; }
+.buy-btn.authenticated { background: #34d399; }
 
 @media (max-width: 768px) { .support-content { padding: 1.2rem; } .support-content h2 { font-size: 1.3rem; } .packages-grid { grid-template-columns: 1fr; } }
 </style>
@@ -62,14 +62,14 @@
 
     <div class="buy-section">
         <h3>Purchase</h3>
-        <div class="wallet-status" id="walletStatus">
-            <div id="walletNotConnected">Please connect your wallet to purchase checks</div>
-            <div id="walletConnected" style="display: none;">
-                <div>Connected: <span class="address" id="walletAddress"></span></div>
+        <div class="user-status" id="userStatus">
+            <div id="userNotLoggedIn">Please sign in to purchase checks</div>
+            <div id="userLoggedIn" style="display: none;">
+                <div>Logged in as: <span class="email" id="userEmail"></span></div>
                 <div>Your balance: <span class="balance" id="userBalance">0</span> checks</div>
             </div>
         </div>
-        <button class="buy-btn" id="buyBtn" onclick="buyPackage()">Connect Wallet to Buy</button>
+        <button class="buy-btn" id="buyBtn" onclick="buyPackage()">Sign In to Buy</button>
     </div>
 </div>
 
@@ -83,18 +83,16 @@ function selectPackage(checks, price) {
     });
 }
 
-function updateWalletStatus() {
-    const isConnected = window.isWalletConnected();
-    const address = window.getConnectedAddress();
+function updateUserStatus() {
+    const isAuthenticated = window.isAuthenticated ? window.isAuthenticated() : false;
     
-    document.getElementById('walletNotConnected').style.display = isConnected ? 'none' : 'block';
-    document.getElementById('walletConnected').style.display = isConnected ? 'block' : 'none';
-    document.getElementById('walletAddress').textContent = address ? address.slice(0, 8) + '...' + address.slice(-4) : '';
+    document.getElementById('userNotLoggedIn').style.display = isAuthenticated ? 'none' : 'block';
+    document.getElementById('userLoggedIn').style.display = isAuthenticated ? 'block' : 'none';
     
     const btn = document.getElementById('buyBtn');
-    if (isConnected) {
+    if (isAuthenticated) {
         btn.textContent = `Buy ${selectedPackage.checks} Checks for $${selectedPackage.price}`;
-        btn.classList.add('connected');
+        btn.classList.add('authenticated');
         btn.disabled = false;
         
         // Fetch user balance
@@ -103,21 +101,25 @@ function updateWalletStatus() {
             fetch('/api/user/profile', {
                 headers: { 'Authorization': 'Bearer ' + authToken }
             }).then(r => r.json()).then(data => {
-                if (data.balance !== undefined) {
-                    document.getElementById('userBalance').textContent = data.balance;
+                if (data.user && data.user.balance !== undefined) {
+                    document.getElementById('userBalance').textContent = data.user.balance;
+                }
+                if (data.user && data.user.email) {
+                    document.getElementById('userEmail').textContent = data.user.email;
                 }
             }).catch(() => {});
         }
     } else {
-        btn.textContent = 'Connect Wallet to Buy';
-        btn.classList.remove('connected');
+        btn.textContent = 'Sign In to Buy';
+        btn.classList.remove('authenticated');
         btn.disabled = true;
     }
 }
 
 async function buyPackage() {
-    if (!window.isWalletConnected()) {
-        document.getElementById('connectWalletBtn').click();
+    if (!window.isAuthenticated || !window.isAuthenticated()) {
+        // Trigger the sign in modal via the user button
+        document.getElementById('userBtn').click();
         return;
     }
     
@@ -126,32 +128,25 @@ async function buyPackage() {
     btn.disabled = true;
     
     try {
-        // Get auth token first
-        const address = window.getConnectedAddress();
-        
         // For demo, show success message - in production, this would create an order
         window.showToast(`🪙 Purchase ${selectedPackage.checks} checks - Demo mode`);
         
         // In real implementation:
-        // 1. Fetch nonce from /api/auth/nonce
-        // 2. Sign message with wallet
-        // 3. Login via /api/auth/login to get JWT
-        // 4. Create order via /api/orders
-        // 5. Process payment (Sui blockchain or fiat)
+        // 1. Create order via /api/orders
+        // 2. Process payment (crypto or fiat)
         
     } catch (error) {
         window.showToast('❌ Purchase failed: ' + error.message);
     }
     
-    updateWalletStatus();
+    updateUserStatus();
 }
 
-// Update status periodically and on wallet changes
-updateWalletStatus();
-setInterval(updateWalletStatus, 3000);
+// Update status periodically and on auth events
+updateUserStatus();
+setInterval(updateUserStatus, 3000);
 
-// Listen for custom wallet events
-document.addEventListener('walletConnected', updateWalletStatus);
-document.addEventListener('walletDisconnected', updateWalletStatus);
+// Listen for custom auth events
+document.addEventListener('userAuthenticated', updateUserStatus);
 </script>
 {{end}}

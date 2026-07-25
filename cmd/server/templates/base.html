@@ -16,11 +16,11 @@
         .nav-link:hover { color: #c8d2e8; }
         .nav-link.active { background: #3b82f6; color: white; box-shadow: 0 2px 12px #3b82f640; }
         .nav-right { display: flex; align-items: center; gap: 0.5rem; }
-        .connect-btn { background: rgba(26, 34, 50, 0.7); border: 1px solid rgba(255,255,255,0.06); color: #e8edfc; padding: 0.5rem 1.2rem 0.5rem 1rem; border-radius: 60px; font-weight: 500; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; transition: 0.2s; }
-        .connect-btn:hover { background: rgba(40, 50, 70, 0.8); border-color: rgba(255,255,255,0.12); }
-        .connect-btn .dot { width: 8px; height: 8px; border-radius: 10px; background: #4f5b77; display: inline-block; transition: 0.2s; }
-        .connect-btn .dot.active { background: #34d399; box-shadow: 0 0 10px #34d39960; }
-        .connect-btn .addr-short { max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; color: #b0bbd6; font-size: 0.8rem; }
+        .user-btn { background: rgba(26, 34, 50, 0.7); border: 1px solid rgba(255,255,255,0.06); color: #e8edfc; padding: 0.5rem 1.2rem 0.5rem 1rem; border-radius: 60px; font-weight: 500; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; transition: 0.2s; }
+        .user-btn:hover { background: rgba(40, 50, 70, 0.8); border-color: rgba(255,255,255,0.12); }
+        .user-btn .dot { width: 8px; height: 8px; border-radius: 10px; background: #4f5b77; display: inline-block; transition: 0.2s; }
+        .user-btn .dot.active { background: #34d399; box-shadow: 0 0 10px #34d39960; }
+        .user-btn .email-short { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; color: #b0bbd6; font-size: 0.8rem; }
 
         .main-content { width: 100%; max-width: 700px; padding: 1.5rem 1.5rem 2rem; }
 
@@ -30,6 +30,25 @@
 
         .toast { position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%); background: #1a2135; color: #e3e9fc; padding: 0.8rem 1.8rem; border-radius: 60px; font-size: 0.9rem; border: 1px solid rgba(255,255,255,0.06); box-shadow: 0 8px 30px rgba(0,0,0,0.6); opacity: 0; transition: opacity 0.3s ease; pointer-events: none; z-index: 999; backdrop-filter: blur(8px); }
         .toast.show { opacity: 1; }
+
+        /* Auth Modal */
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(4px); }
+        .modal-overlay.hidden { display: none; }
+        .modal { background: #1a2135; border-radius: 16px; padding: 2rem; width: 90%; max-width: 400px; border: 1px solid rgba(255,255,255,0.06); box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+        .modal h2 { color: #f0f4ff; margin-bottom: 1.5rem; text-align: center; }
+        .modal .close-btn { position: absolute; top: 1rem; right: 1rem; background: none; border: none; color: #8892b0; cursor: pointer; font-size: 1.5rem; }
+        .form-group { margin-bottom: 1rem; }
+        .form-group label { display: block; color: #8892b0; font-size: 0.85rem; margin-bottom: 0.5rem; }
+        .form-group input { width: 100%; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: #141825; color: #f0f4ff; font-size: 0.95rem; }
+        .form-group input:focus { outline: none; border-color: #3b82f6; }
+        .btn-primary { width: 100%; padding: 0.75rem; background: #3b82f6; color: white; border: none; border-radius: 8px; font-weight: 500; cursor: pointer; font-size: 0.95rem; transition: 0.2s; }
+        .btn-primary:hover { background: #2563eb; }
+        .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+        .modal-footer { text-align: center; margin-top: 1rem; color: #8892b0; font-size: 0.85rem; }
+        .modal-footer a { color: #3b82f6; cursor: pointer; text-decoration: none; }
+        .modal-footer a:hover { text-decoration: underline; }
+        .error-text { color: #ef4444; font-size: 0.85rem; margin-top: 0.5rem; text-align: center; display: none; }
+        .error-text.show { display: block; }
 
         @media (max-width: 768px) {
             .nav { flex-direction: column; padding: 0.6rem 1rem; }
@@ -43,6 +62,32 @@
 <body>
 <div class="toast" id="toast"></div>
 
+<!-- Auth Modal -->
+<div class="modal-overlay hidden" id="authModal">
+    <div class="modal">
+        <h2 id="modalTitle">Sign In</h2>
+        <form id="authForm">
+            <div class="form-group" id="nameGroup" style="display: none;">
+                <label for="name">Name</label>
+                <input type="text" id="name" placeholder="Your name">
+            </div>
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" id="email" placeholder="you@example.com" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" placeholder="Min 8 characters" required>
+            </div>
+            <p class="error-text" id="authError"></p>
+            <button type="submit" class="btn-primary" id="authSubmitBtn">Sign In</button>
+        </form>
+        <div class="modal-footer">
+            <span id="modalFooterText">Don't have an account? <a id="toggleAuthMode">Sign up</a></span>
+        </div>
+    </div>
+</div>
+
 <nav class="nav">
     <a href="/" class="nav-brand">🔐 <span>Wallet</span>Checker</a>
     <div class="nav-center">
@@ -55,10 +100,10 @@
         <a href="/support" class="nav-link {{if eq .ActivePage "support"}}active{{end}}">💎 Buy</a>
     </div>
     <div class="nav-right">
-        <button class="connect-btn" id="connectWalletBtn">
-            <span class="dot" id="connectDot"></span>
-            <span id="connectLabel">Connect</span>
-            <span class="addr-short" id="connectAddressShort"></span>
+        <button class="user-btn" id="userBtn">
+            <span class="dot" id="userDot"></span>
+            <span id="userLabel">Sign In</span>
+            <span class="email-short" id="userEmailShort"></span>
         </button>
         <button class="nav-link" id="logoutBtn" style="display: none;" onclick="logout()">Logout</button>
     </div>
@@ -69,34 +114,39 @@
 </div>
 
 <div class="footer">
-    <span>⚡ Without connect — <span id="freeLimitDisplay">{{.FreeCheckLimit}}</span> check{{if ne .FreeCheckLimit 1}}s{{end}}</span>
+    <span>⚡ Without login — <span id="freeLimitDisplay">{{.FreeCheckLimit}}</span> check{{if ne .FreeCheckLimit 1}}s{{end}}</span>
     <span class="counter" id="checkCounter">0 / {{.FreeCheckLimit}}</span>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
 <script>
 (function() {
     const SERVER_AUTH = {{if .IsAuthenticated}}true{{else}}false{{end}};
-    const SERVER_ADDRESS = "{{.UserAddress}}";
+    const SERVER_EMAIL = "{{.UserEmail}}";
     const FREE_CHECK_LIMIT = {{.FreeCheckLimit}};
     const freeLimitDisplay = document.getElementById('freeLimitDisplay');
     if (freeLimitDisplay) freeLimitDisplay.textContent = FREE_CHECK_LIMIT;
 
-    let isWalletConnected = false;
-    let connectedAddress = '';
     let freeCheckUsed = localStorage.getItem('freeCheckUsed') === 'true';
-    let web3 = null;
     let authToken = localStorage.getItem('authToken');
     let serverAuthenticated = SERVER_AUTH;
+    let userEmail = SERVER_EMAIL;
     let userBalance = {{.UserBalance}};
+    let isLoginMode = true;
 
-    const connectBtn = document.getElementById('connectWalletBtn');
-    const connectDot = document.getElementById('connectDot');
-    const connectLabel = document.getElementById('connectLabel');
-    const connectAddressShort = document.getElementById('connectAddressShort');
+    const userBtn = document.getElementById('userBtn');
+    const userDot = document.getElementById('userDot');
+    const userLabel = document.getElementById('userLabel');
+    const userEmailShort = document.getElementById('userEmailShort');
     const logoutBtn = document.getElementById('logoutBtn');
     const checkCounter = document.getElementById('checkCounter');
     const toast = document.getElementById('toast');
+    const authModal = document.getElementById('authModal');
+    const authForm = document.getElementById('authForm');
+    const modalTitle = document.getElementById('modalTitle');
+    const modalFooterText = document.getElementById('modalFooterText');
+    const toggleAuthMode = document.getElementById('toggleAuthMode');
+    const authSubmitBtn = document.getElementById('authSubmitBtn');
+    const authError = document.getElementById('authError');
 
     function showToast(message) {
         toast.textContent = message;
@@ -105,16 +155,17 @@
         toast._timeout = setTimeout(() => toast.classList.remove('show'), 4000);
     }
 
-    function updateConnectUI() {
-        if (serverAuthenticated && connectedAddress) {
-            connectDot.className = 'dot active';
-            connectLabel.textContent = '';
-            connectAddressShort.textContent = connectedAddress.slice(0,6) + '...' + connectedAddress.slice(-4);
+    function updateUserUI() {
+        if (serverAuthenticated && userEmail) {
+            userDot.className = 'dot active';
+            userLabel.textContent = '';
+            const emailShort = userEmail.split('@')[0];
+            userEmailShort.textContent = emailShort.length > 12 ? emailShort.slice(0, 12) + '...' : emailShort;
             logoutBtn.style.display = 'inline-block';
         } else {
-            connectDot.className = 'dot';
-            connectLabel.textContent = 'Connect';
-            connectAddressShort.textContent = '';
+            userDot.className = 'dot';
+            userLabel.textContent = 'Sign In';
+            userEmailShort.textContent = '';
             logoutBtn.style.display = 'none';
         }
     }
@@ -122,11 +173,89 @@
     function updateCounter() {
         if (serverAuthenticated) {
             checkCounter.textContent = userBalance + ' credits';
-        } else if (isWalletConnected) {
-            checkCounter.textContent = '∞ / ∞ (not authed)';
         } else {
             const remaining = freeCheckUsed ? 0 : FREE_CHECK_LIMIT;
             checkCounter.textContent = remaining + ' / ' + FREE_CHECK_LIMIT;
+        }
+    }
+
+    function showAuthModal() {
+        authModal.classList.remove('hidden');
+        authError.classList.remove('show');
+        authError.textContent = '';
+        document.getElementById('email').value = '';
+        document.getElementById('password').value = '';
+    }
+
+    function hideAuthModal() {
+        authModal.classList.add('hidden');
+    }
+
+    function toggleMode() {
+        isLoginMode = !isLoginMode;
+        if (isLoginMode) {
+            modalTitle.textContent = 'Sign In';
+            authSubmitBtn.textContent = 'Sign In';
+            modalFooterText.innerHTML = 'Don\'t have an account? <a id="toggleAuthMode">Sign up</a>';
+        } else {
+            modalTitle.textContent = 'Sign Up';
+            authSubmitBtn.textContent = 'Sign Up';
+            modalFooterText.innerHTML = 'Already have an account? <a id="toggleAuthMode">Sign in</a></a>';
+        }
+        document.getElementById('toggleAuthMode').addEventListener('click', toggleMode);
+        authError.classList.remove('show');
+    }
+
+    async function performAuth() {
+        const email = document.getElementById('email').value.trim();
+        const password = document.getElementById('password').value;
+
+        if (!email || !password) {
+            authError.textContent = 'Please fill in all fields';
+            authError.classList.add('show');
+            return;
+        }
+
+        if (password.length < 8) {
+            authError.textContent = 'Password must be at least 8 characters';
+            authError.classList.add('show');
+            return;
+        }
+
+        authSubmitBtn.disabled = true;
+        authSubmitBtn.textContent = isLoginMode ? 'Signing in...' : 'Creating account...';
+
+        try {
+            const endpoint = isLoginMode ? '/api/auth/login' : '/api/auth/register';
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            });
+            
+            const data = await res.json();
+
+            if (res.ok && data.token) {
+                authToken = data.token;
+                localStorage.setItem('authToken', authToken);
+                serverAuthenticated = true;
+                userEmail = data.user.email;
+                userBalance = data.user.balance || 0;
+                hideAuthModal();
+                updateUserUI();
+                updateCounter();
+                showToast(isLoginMode ? '✅ Welcome back!' : '✅ Account created!');
+                document.dispatchEvent(new CustomEvent('userAuthenticated'));
+            } else {
+                authError.textContent = data.error || data.details || 'Authentication failed';
+                authError.classList.add('show');
+            }
+        } catch (error) {
+            authError.textContent = 'Network error. Please try again.';
+            authError.classList.add('show');
+        } finally {
+            authSubmitBtn.disabled = false;
+            authSubmitBtn.textContent = isLoginMode ? 'Sign In' : 'Sign Up';
         }
     }
 
@@ -143,10 +272,9 @@
             
             if (res.ok) {
                 const data = await res.json();
-                userBalance = data.balance || 0;
+                userBalance = data.user ? data.user.balance : 0;
                 return true;
             } else {
-                // Token invalid or expired - clear localStorage
                 clearAuthData();
                 return false;
             }
@@ -160,161 +288,61 @@
         localStorage.removeItem('authToken');
         authToken = null;
         serverAuthenticated = false;
+        userEmail = '';
         userBalance = 0;
     }
 
     window.logout = async function() {
         clearAuthData();
-        localStorage.removeItem('walletConnected');
-        localStorage.removeItem('walletAddress');
         localStorage.removeItem('freeCheckUsed');
-        isWalletConnected = false;
-        connectedAddress = '';
         freeCheckUsed = false;
-        
-        // Reload page to reflect server-side auth state
-        window.location.reload();
-        showToast('👋 Wallet disconnected');
+        updateUserUI();
+        updateCounter();
+        showToast('👋 Signed out');
     };
 
-    // Restore wallet state from localStorage
-    async function restoreWalletState() {
-        const storedConnected = localStorage.getItem('walletConnected');
-        const storedAddress = localStorage.getItem('walletAddress');
-        
-        if (storedConnected === 'true' && storedAddress) {
-            isWalletConnected = true;
-            connectedAddress = storedAddress;
-        }
-        
-        // If server says we're authenticated, sync with localStorage
+    // Restore state
+    async function restoreState() {
         if (SERVER_AUTH && authToken) {
             const valid = await validateSession();
             if (!valid) {
-                // Server says not authenticated, but we have token - clear it
                 clearAuthData();
             }
         } else if (authToken && !SERVER_AUTH) {
-            // We have token but server says not authenticated - clear it
             clearAuthData();
         }
     }
 
-    async function authenticateWithBackend(address) {
-        try {
-            // 1. Get nonce from backend
-            const nonceRes = await fetch('/api/auth/nonce?address=' + address);
-            const nonceData = await nonceRes.json();
-            
-            if (nonceData.error) {
-                showToast('❌ Failed to get nonce');
-                return false;
-            }
+    userBtn.addEventListener('click', function() {
+        if (serverAuthenticated) return;
+        isLoginMode = true;
+        modalTitle.textContent = 'Sign In';
+        authSubmitBtn.textContent = 'Sign In';
+        modalFooterText.innerHTML = 'Don\'t have an account? <a id="toggleAuthMode">Sign up</a>';
+        document.getElementById('toggleAuthMode').addEventListener('click', toggleMode);
+        showAuthModal();
+    });
 
-            // 2. Sign the message with wallet
-            const message = nonceData.message;
-            const signature = await window.ethereum.request({
-                method: 'personal_sign',
-                params: [message, address]
-            });
+    authForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        performAuth();
+    });
 
-            // 3. Send signature to backend and get JWT
-            const loginRes = await fetch('/api/auth/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    address: address,
-                    signature: signature,
-                    message: message
-                })
-            });
-            const loginData = await loginRes.json();
-
-            if (loginData.token) {
-                authToken = loginData.token;
-                localStorage.setItem('authToken', authToken);
-                serverAuthenticated = true;
-                userBalance = loginData.balance || 0;
-                return true;
-            } else {
-                showToast('❌ Auth failed: ' + (loginData.error || 'Unknown error'));
-                return false;
-            }
-        } catch (error) {
-            console.error('Auth error:', error);
-            showToast('❌ Auth error: ' + (error.message || 'Unknown'));
-            return false;
+    // Close modal on overlay click
+    authModal.addEventListener('click', function(e) {
+        if (e.target === authModal) {
+            hideAuthModal();
         }
-    }
-
-    async function connectWallet() {
-        if (typeof window.ethereum !== 'undefined' && window.ethereum.isMetaMask) {
-            try {
-                const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-                if (accounts.length === 0) { alert('No accounts found'); return; }
-                web3 = new Web3(window.ethereum);
-                connectedAddress = accounts[0];
-                isWalletConnected = true;
-                freeCheckUsed = true;
-                
-                // Persist state
-                localStorage.setItem('walletConnected', 'true');
-                localStorage.setItem('walletAddress', connectedAddress);
-                localStorage.setItem('freeCheckUsed', 'true');
-                
-                updateConnectUI();
-                updateCounter();
-                showToast('🔗 Wallet connected. Authenticating...');
-
-                // Authenticate with backend
-                const authSuccess = await authenticateWithBackend(connectedAddress);
-                if (authSuccess) {
-                    showToast('✅ Authenticated! ' + userBalance + ' credits.');
-                    updateCounter();
-                    document.dispatchEvent(new CustomEvent('walletAuthenticated'));
-                } else {
-                    showToast('⚠️ Wallet connected but auth failed');
-                }
-            } catch (error) {
-                console.error(error);
-                alert('Error: ' + (error.message || 'Unknown error'));
-            }
-        } else {
-            alert('Please install MetaMask!');
-        }
-    }
-
-    // Listen for account changes in MetaMask
-    if (typeof window.ethereum !== 'undefined') {
-        window.ethereum.on('accountsChanged', function(accounts) {
-            if (accounts.length === 0) {
-                logout();
-            } else if (accounts[0] !== connectedAddress) {
-                connectedAddress = accounts[0];
-                localStorage.setItem('walletAddress', connectedAddress);
-                // Re-authenticate with new address
-                authenticateWithBackend(connectedAddress).then(success => {
-                    if (success) {
-                        showToast('✅ Re-authenticated with new address');
-                    }
-                });
-                updateConnectUI();
-            }
-        });
-    }
-
-    connectBtn.addEventListener('click', connectWallet);
+    });
 
     // Initialize
-    restoreWalletState().then(() => {
-        updateConnectUI();
+    restoreState().then(() => {
+        updateUserUI();
         updateCounter();
     });
 
     // Re-export for pages
     window.showToast = showToast;
-    window.isWalletConnected = function() { return isWalletConnected; };
-    window.getConnectedAddress = function() { return connectedAddress; };
     window.updateCounter = updateCounter;
     window.setFreeCheckUsed = function(v) { 
         freeCheckUsed = v; 

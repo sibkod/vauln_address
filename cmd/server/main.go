@@ -54,12 +54,12 @@ func renderPage(c *gin.Context, pageTmpl, title, activePage string, repo *reposi
 	// Get user info if authenticated
 	userBalance := 0
 	isAuthenticated := false
-	var userAddress string
+	var userEmail string
 	if userID, exists := c.Get("userID"); exists && repo != nil {
 		if user, err := repo.GetUserByID(c.Request.Context(), userID.(int64)); err == nil && user != nil {
 			userBalance = user.Balance
 			isAuthenticated = true
-			userAddress = user.WalletAddress
+			userEmail = user.Email
 		}
 	}
 
@@ -71,7 +71,7 @@ func renderPage(c *gin.Context, pageTmpl, title, activePage string, repo *reposi
 		"FreeCheckLimit":   serverCfg.FreeCheckLimit,
 		"UserBalance":      userBalance,
 		"IsAuthenticated":  isAuthenticated,
-		"UserAddress":      userAddress,
+		"UserEmail":        userEmail,
 	})
 }
 
@@ -171,8 +171,8 @@ func main() {
 	api.GET("/chains", h.GetSupportedChains)
 	api.GET("/recent", h.GetRecentChecks)
 	api.GET("/pricing", h.GetPricing)
-	api.GET("/auth/nonce", h.GetNonce)
-	api.POST("/auth/login", h.Authenticate)
+	api.POST("/auth/register", h.Register)
+	api.POST("/auth/login", h.Login)
 	api.GET("/user/profile", middleware.RequireAuth(), h.GetUserProfile)
 	api.POST("/orders", middleware.RequireAuth(), h.CreateOrder)
 	api.GET("/orders/verify", h.VerifyPayment)

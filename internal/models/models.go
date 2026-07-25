@@ -41,36 +41,38 @@ func IsValidStatus(status string) bool {
 // ==================== User Authentication ====================
 
 type User struct {
-	ID            int64      `json:"id"`
-	WalletAddress string     `json:"wallet_address"`
-	Chain         Chain      `json:"chain"`
-	Nonce         string     `json:"nonce"`
-	Balance       int        `json:"balance"` // Free checks remaining
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
-	LastLoginAt   *time.Time `json:"last_login_at,omitempty"`
+	ID           int64      `json:"id"`
+	Email        string     `json:"email,omitempty"`
+	PasswordHash string     `json:"-"`
+	Balance      int        `json:"balance"` // Free checks remaining
+	IsPremium    bool       `json:"is_premium"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+	LastLoginAt  *time.Time `json:"last_login_at,omitempty"`
 }
 
-// Web3 Auth Request/Response
-type AuthRequest struct {
-	Address string `json:"address" binding:"required"`
-	Chain   string `json:"chain" binding:"required"`
-	Signature string `json:"signature" binding:"required"`
-	Message  string `json:"message" binding:"required"`
+// Email/Password Auth Request/Response
+type RegisterRequest struct {
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required,min=8"`
+}
+
+type LoginRequest struct {
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required"`
 }
 
 type AuthResponse struct {
-	Token    string `json:"token"`
-	User     *UserPublic `json:"user"`
-	ExpiresIn int    `json:"expires_in"`
+	Token     string       `json:"token"`
+	User      *UserPublic  `json:"user"`
+	ExpiresIn int          `json:"expires_in"`
 }
 
 type UserPublic struct {
-	ID            int64  `json:"id"`
-	WalletAddress string `json:"wallet_address"`
-	Chain         string `json:"chain"`
-	Balance       int    `json:"balance"`
-	IsPremium     bool   `json:"is_premium"`
+	ID        int64  `json:"id"`
+	Email     string `json:"email"`
+	Balance   int    `json:"balance"`
+	IsPremium bool   `json:"is_premium"`
 }
 
 type NonceResponse struct {
