@@ -216,7 +216,8 @@ func (h *Handler) CreateOrder(c *gin.Context) {
 
 	// Calculate SOL amount (testnet - approximate)
 	// 1 SOL ≈ $20 USD for demo
-	solAmount := fmt.Sprintf("%.4f", priceUSD/20.0)
+	solAmountFloat := priceUSD / 20.0
+	solAmount := fmt.Sprintf("%.4f", solAmountFloat)
 
 	// Create order
 	order, err := h.repo.CreateOrder(
@@ -225,7 +226,7 @@ func (h *Handler) CreateOrder(c *gin.Context) {
 		req.ChecksCount,
 		priceUSD,
 		req.Chain,
-		solAmount,
+		solAmountFloat,
 		paymentAddress,
 	)
 	if err != nil {
