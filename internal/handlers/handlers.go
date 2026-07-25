@@ -810,11 +810,16 @@ func (h *Handler) GetPaymentStatus(c *gin.Context) {
 		return
 	}
 
-	// Get user info (if authenticated)
-	var userID int64
-	if uid, exists := c.Get("userID"); exists {
-		userID = uid.(int64)
+	// Get user info (REQUIRED - now enforced by middleware)
+	userID, exists := c.Get("userID")
+	if !exists || userID.(int64) == 0 {
+		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
+			Error: "authentication required",
+			Code:  "UNAUTHORIZED",
+		})
+		return
 	}
+	userIDInt := userID.(int64)
 
 	// Query Solana RPC for transaction status
 	rpcURL := h.serverCfg.SolanaRPCURL
@@ -871,33 +876,31 @@ func (h *Handler) GetPaymentStatus(c *gin.Context) {
 		return
 	}
 
-	// Find pending order for this user (if authenticated)
-	if userID > 0 {
-		pendingOrder, err := h.repo.GetPendingOrderByUser(c.Request.Context(), userID)
-		if err == nil && pendingOrder != nil {
-			// Complete the order
-			if err := h.repo.CompleteOrder(c.Request.Context(), pendingOrder.UUID, signature); err == nil {
-				// Add balance
-				if err := h.repo.AddUserBalance(c.Request.Context(), userID, pendingOrder.ChecksCount); err == nil {
-					// Get new balance
-					user, _ := h.repo.GetUserByID(c.Request.Context(), userID)
-					balance := 0
-					if user != nil {
-						balance = user.Balance
-					}
-					c.JSON(http.StatusOK, gin.H{
-						"status":   "confirmed",
-						"confirmed": true,
-						"balance":  balance,
-						"message":  fmt.Sprintf("Payment confirmed! %d checks added.", pendingOrder.ChecksCount),
-					})
-					return
+	// Find pending order for this user
+	pendingOrder, err := h.repo.GetPendingOrderByUser(c.Request.Context(), userIDInt)
+	if err == nil && pendingOrder != nil {
+		// Complete the order
+		if err := h.repo.CompleteOrder(c.Request.Context(), pendingOrder.UUID, signature); err == nil {
+			// Add balance
+			if err := h.repo.AddUserBalance(c.Request.Context(), userIDInt, pendingOrder.ChecksCount); err == nil {
+				// Get new balance
+				user, _ := h.repo.GetUserByID(c.Request.Context(), userIDInt)
+				balance := 0
+				if user != nil {
+					balance = user.Balance
 				}
+				c.JSON(http.StatusOK, gin.H{
+					"status":   "confirmed",
+					"confirmed": true,
+					"balance":  balance,
+					"message":  fmt.Sprintf("Payment confirmed! %d checks added.", pendingOrder.ChecksCount),
+				})
+				return
 			}
 		}
 	}
 
-	// Transaction confirmed but no order found
+	// Transaction confirmed but no order found for this user
 	c.JSON(http.StatusOK, gin.H{
 		"status":    "confirmed",
 		"confirmed":  true,
