@@ -42,17 +42,21 @@ const walletOptions = [
 provide('wallet', { connected, walletAddress, walletChain, userBalance, authToken, refreshBalance, fetchPurchaseHistory })
 provide('network', { isMainnet: IS_MAINNET, solanaNetwork: SOLANA_NETWORK })
 
-// Fetch balance from backend
+// Fetch balance from backend (works for both auth and anonymous users)
 async function refreshBalance() {
-  if (!authToken.value) return
   try {
-    const res = await fetch('/api/user/balance', {
-      headers: { 'Authorization': `Bearer ${authToken.value}` }
-    })
+    const headers: Record<string, string> = {}
+    if (authToken.value) {
+      headers['Authorization'] = `Bearer ${authToken.value}`
+    }
+    const res = await fetch('/api/user/balance', { headers })
     if (res.ok) {
       const data = await res.json()
       userBalance.value = data.balance
-      localStorage.setItem('userBalance', data.balance.toString())
+      // For authenticated users, save to localStorage
+      if (data.source === 'purchased' && authToken.value) {
+        localStorage.setItem('userBalance', data.balance.toString())
+      }
     }
   } catch (err) {
     console.error('Failed to fetch balance:', err)
@@ -85,19 +89,18 @@ onMounted(async () => {
   const token = localStorage.getItem('authToken')
   const addr = localStorage.getItem('walletAddress')
   const chain = localStorage.getItem('walletChain')
-  const balance = localStorage.getItem('userBalance')
   
   if (token && addr) {
     authToken.value = token
     walletAddress.value = addr
     walletChain.value = chain || 'solana'
-    userBalance.value = parseInt(balance || '0')
     connected.value = true
-    // Fetch fresh balance from backend
-    await refreshBalance()
-    // Fetch purchase history
+    // Fetch purchase history for auth users
     await fetchPurchaseHistory()
   }
+  
+  // Always fetch balance from backend (works for auth and anonymous users)
+  await refreshBalance()
   
   // Check backend availability
   try {
@@ -464,6 +467,12 @@ function getTotal() {
       <span class="network-badge">{{ IS_MAINNET ? 'Mainnet' : 'Devnet' }}</span>
       <button class="theme-toggle" @click="toggleTheme">{{ darkMode ? '◐' : '◑' }}</button>
       
+      <!-- Balance display for all users -->
+      <div v-if="userBalance > 0" class="balance-display" :class="{ clickable: connected }" @click.stop="connected ? toggleWalletMenu() : openWalletModal()">
+        <span class="balance-icon">🔍</span>
+        <span class="balance-count">{{ userBalance }}</span>
+      </div>
+
       <!-- Connected state with dropdown -->
       <div v-if="connected" class="wallet-dropdown">
         <div class="wallet-connected" @click.stop="toggleWalletMenu">
@@ -832,5 +841,34 @@ function getTotal() {
 }
 .view-all-link:hover {
   text-decoration: underline;
+}
+
+/* Balance display */
+.balance-display {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.4rem 0.8rem;
+  background: rgba(75, 201, 160, 0.15);
+  border: 1px solid rgba(75, 201, 160, 0.3);
+  border-radius: 20px;
+  color: #4bc9a0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.balance-display.clickable {
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.balance-display.clickable:hover {
+  background: rgba(75, 201, 160, 0.25);
+  border-color: rgba(75, 201, 160, 0.5);
+}
+.balance-icon {
+  font-size: 0.9rem;
+}
+.balance-count {
+  min-width: 20px;
+  text-align: center;
 }
 </style>

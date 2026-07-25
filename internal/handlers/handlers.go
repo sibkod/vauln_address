@@ -416,30 +416,49 @@ func (h *Handler) VerifyPayment(c *gin.Context) {
 	})
 }
 
-// GetBalance returns the current user's balance
+// GetBalance returns the current user's balance (or remaining rate limit for anonymous)
 func (h *Handler) GetBalance(c *gin.Context) {
+	// Check if user is authenticated
 	walletAddress, exists := c.Get("userAddress")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
-			Error: "unauthorized",
-			Code:  "UNAUTHORIZED",
-		})
-		return
-	}
 	chain, _ := c.Get("userChain")
 	chainStr, _ := chain.(string)
 
-	balance, err := h.repo.GetUserBalance(c.Request.Context(), walletAddress.(string), chainStr)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-			Error: "failed to get balance",
-			Code:  "DB_ERROR",
+	if exists && walletAddress != nil && chainStr != "" {
+		// Authenticated user - return their purchased balance
+		balance, err := h.repo.GetUserBalance(c.Request.Context(), walletAddress.(string), chainStr)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+				Error: "failed to get balance",
+				Code:  "DB_ERROR",
+			})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"balance": balance,
+			"source": "purchased",
 		})
 		return
 	}
 
+	// Anonymous user - return IP-based rate limit remaining
+	ip := c.ClientIP()
+	rateLimit, err := h.repo.GetRateLimit(c.Request.Context(), ip)
+	if err != nil || rateLimit == nil {
+		c.JSON(http.StatusOK, gin.H{
+			"balance": h.serverCfg.RateLimitRequests,
+			"source":  "rate_limit",
+		})
+		return
+	}
+
+	remaining := h.serverCfg.RateLimitRequests - rateLimit.Count
+	if remaining < 0 {
+		remaining = 0
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"balance": balance,
+		"balance": remaining,
+		"source":  "rate_limit",
 	})
 }
 
