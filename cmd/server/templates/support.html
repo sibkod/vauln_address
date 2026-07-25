@@ -97,16 +97,20 @@
                 <span class="value" id="paymentPackage">1,000 checks</span>
             </div>
             <div class="row">
-                <span class="label">Price (USD)</span>
-                <span class="value" id="paymentUSD">$5.00</span>
+                <span class="label">Price</span>
+                <span class="value" id="paymentUSD">$5.00 USD</span>
             </div>
             <div class="row">
-                <span class="label">Network Fee (est.)</span>
-                <span class="value" id="paymentFee">~$0.01</span>
+                <span class="label">Pay with</span>
+                <span class="value" id="paymentSOL">~0.25 SOL</span>
+            </div>
+            <div class="row">
+                <span class="label">Network Fee</span>
+                <span class="value" id="paymentFee">~$0.0005 SOL</span>
             </div>
             <div class="row total">
                 <span class="label">Total</span>
-                <span class="value" id="paymentTotal">$5.01</span>
+                <span class="value" id="paymentTotal">~0.25 SOL</span>
             </div>
         </div>
 
@@ -139,23 +143,31 @@ function selectChain(chain) {
 
 function updatePaymentDetails() {
     const details = document.getElementById('paymentDetails');
-    const isReady = window.isWalletConnected() || (window.isAuthenticated && window.isAuthenticated());
+    const isConnected = window.isWalletConnected ? window.isWalletConnected() : false;
+    const isAuthed = window.isAuthenticated ? window.isAuthenticated() : false;
+    const isReady = isConnected || isAuthed;
     
     if (isReady && selectedPackage.checks) {
         details.style.display = 'block';
         document.getElementById('paymentPackage').textContent = selectedPackage.checks.toLocaleString() + ' checks';
-        document.getElementById('paymentUSD').textContent = '$' + selectedPackage.price.toFixed(2);
-        document.getElementById('paymentTotal').textContent = '$' + (selectedPackage.price + 0.01).toFixed(2);
+        document.getElementById('paymentUSD').textContent = '$' + selectedPackage.price.toFixed(2) + ' USD';
+        
+        // Calculate SOL amount (1 SOL ≈ $20)
+        const solAmount = (selectedPackage.price / 20).toFixed(4);
+        document.getElementById('paymentSOL').textContent = '~' + solAmount + ' SOL';
+        document.getElementById('paymentTotal').textContent = '~' + solAmount + ' SOL';
     } else {
         details.style.display = 'none';
     }
 }
 
 function updateWalletStatus() {
-    const isConnected = window.isWalletConnected();
+    const isConnected = window.isWalletConnected ? window.isWalletConnected() : false;
     const isAuthed = window.isAuthenticated ? window.isAuthenticated() : false;
-    const address = window.getConnectedAddress();
+    const address = window.getConnectedAddress ? window.getConnectedAddress() : '';
     const isReady = isConnected || isAuthed;
+    
+    console.log('updateWalletStatus:', { isConnected, isAuthed, isReady, address });
     
     document.getElementById('walletNotConnected').style.display = isReady ? 'none' : 'block';
     document.getElementById('walletConnected').style.display = isReady ? 'block' : 'none';
@@ -163,7 +175,8 @@ function updateWalletStatus() {
     
     const btn = document.getElementById('buyBtn');
     if (isReady) {
-        btn.textContent = `Pay $${selectedPackage.price} for ${selectedPackage.checks} Checks`;
+        const solAmount = (selectedPackage.price / 20).toFixed(2);
+        btn.textContent = `Pay ~${solAmount} SOL`;
         btn.classList.add('connected');
         btn.disabled = false;
         updatePaymentDetails();
