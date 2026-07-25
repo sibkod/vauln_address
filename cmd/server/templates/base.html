@@ -121,14 +121,18 @@
 </style>
 
 <script>
-// Buffer polyfill - must be defined BEFORE any other scripts that need it
+// Buffer polyfill - CRITICAL for Solana Web3.js
 (function() {
     if (typeof window.Buffer === 'undefined') {
-        window.Buffer = Buffer || {
+        window.Buffer = {
             from: function(data, encoding) {
                 if (data instanceof Uint8Array) return data;
                 if (Array.isArray(data)) return new Uint8Array(data);
-                if (typeof data === 'string') return new TextEncoder().encode(data);
+                if (typeof data === 'string') {
+                    var bytes = new Uint8Array(data.length);
+                    for (var i = 0; i < data.length; i++) bytes[i] = data.charCodeAt(i);
+                    return bytes;
+                }
                 return new Uint8Array(0);
             },
             isBuffer: function(obj) { return obj instanceof Uint8Array; },
@@ -137,9 +141,11 @@
                 if (fill !== undefined && fill !== null) {
                     if (typeof fill === 'number') {
                         buf.fill(fill);
-                    } else {
-                        var bytes = typeof fill === 'string' ? new TextEncoder().encode(fill) : fill;
-                        buf.set(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
+                    } else if (typeof fill === 'string') {
+                        var bytes = this.from(fill, encoding);
+                        buf.set(bytes);
+                    } else if (fill instanceof Uint8Array) {
+                        buf.set(fill);
                     }
                 }
                 return buf;
@@ -149,41 +155,26 @@
             concat: function(list, length) {
                 if (!Array.isArray(list)) throw new TypeError('list argument must be an Array');
                 if (list.length === 0) return new Uint8Array(0);
-                var totalLen = length || list.reduce(function(a, b) { return a + b.length; }, 0);
+                var totalLen = length || list.reduce(function(a, b) { return a + (b ? b.length : 0); }, 0);
                 var buf = new Uint8Array(totalLen);
                 var offset = 0;
                 for (var i = 0; i < list.length; i++) {
-                    buf.set(list[i] instanceof Uint8Array ? list[i] : new Uint8Array(list[i]), offset);
-                    offset += list[i].length;
+                    if (list[i]) {
+                        var bytes = list[i] instanceof Uint8Array ? list[i] : new Uint8Array(list[i]);
+                        buf.set(bytes, offset);
+                        offset += bytes.length;
+                    }
                 }
                 return buf;
             }
         };
     }
-    console.log('Buffer polyfill initialized');
+    console.log('Buffer polyfill ready');
 })();
 </script>
-<script src="https://cdn.jsdelivr.net/npm/@solana/web3.js@1.95.8/lib/index.iife.min.js"></script>
+<script src="https://unpkg.com/@solana/web3.js@1.95.8/lib/index.iife.min.js"></script>
 <script>
-    // Wait for Solana Web3.js to load
-    if (typeof solanaWeb3 === 'undefined') {
-        console.warn('Solana Web3.js not loaded, setting up fallback');
-        window.solanaWeb3 = {
-            Connection: function() { 
-                this.getRecentBlockhash = async () => ({ blockhash: '9'.repeat(32) });
-                this.confirmTransaction = async () => ({ value: {} });
-            },
-            PublicKey: function(key) { return { toString: () => key }; },
-            Transaction: function() { this.instructions = []; 
-                this.add = (i) => { this.instructions.push(i); return this; };
-                this.serialize = () => new Uint8Array([]);
-            },
-            SystemProgram: { transfer: () => ({}) },
-            LAMPORTS_PER_SOL: 1000000000
-        };
-    }
-</script>
-    
+(function() {
     const SERVER_AUTH = {{if .IsAuthenticated}}true{{else}}false{{end}};
     const SERVER_ADDRESS = "{{.UserAddress}}";
     const FREE_CHECK_LIMIT = {{.FreeCheckLimit}};
@@ -677,6 +668,7 @@
     };
     window.getUserBalance = function() { return userBalance; };
     window.getSolanaProvider = getSolanaProvider;
+    window.createSolanaTransaction = createSolanaTransaction;
 })();
 </script>
 </body>

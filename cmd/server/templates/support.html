@@ -245,48 +245,59 @@ async function buyPackage() {
         
         const orderData = await orderRes.json();
         
-        // 2. Get Solana provider
+        // 2. Find any Solana wallet provider
         const provider = window.getSolanaProvider();
         if (!provider) {
-            throw new Error('No Solana wallet found');
+            throw new Error('No Solana wallet found. Please install Phantom, Solflare, or another Solana wallet.');
         }
         
         window.showToast('📝 Sign the transaction in your wallet...');
         
-        // 3. Create and send Solana transaction using Phantom
-        const connection = new solanaWeb3.Connection('https://api.devnet.solana.com', 'confirmed');
-        
-        const fromPubkey = new solanaWeb3.PublicKey(address);
-        const toPubkey = new solanaWeb3.PublicKey(orderData.payment_address);
+        // 3. Create and send transaction
         const lamports = Math.round(parseFloat(orderData.amount) * 1e9);
         
-        // Create transfer instruction
-        const transferInstruction = solanaWeb3.SystemProgram.transfer({
-            fromPubkey: fromPubkey,
-            toPubkey: toPubkey,
-            lamports: lamports,
+        // Get recent blockhash
+        const resp = await fetch('https://api.devnet.solana.com', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                jsonrpc: '2.0',
+                id: 1,
+                method: 'getLatestBlockhash'
+            })
         });
+        const blockhashData = await resp.json();
+        const blockhash = blockhashData.result.value.blockhash;
         
-        // Create and sign transaction
-        const { blockhash } = await connection.getRecentBlockhash();
+        // Create transaction using solanaWeb3 (compatible with all wallets)
+        const connection = new solanaWeb3.Connection('https://api.devnet.solana.com');
+        const fromPubkey = new solanaWeb3.PublicKey(address);
+        const toPubkey = new solanaWeb3.PublicKey(orderData.payment_address);
+        
         const transaction = new solanaWeb3.Transaction();
-        transaction.add(transferInstruction);
+        transaction.add(
+            solanaWeb3.SystemProgram.transfer({
+                fromPubkey: fromPubkey,
+                toPubkey: toPubkey,
+                lamports: lamports,
+            })
+        );
         transaction.recentBlockhash = blockhash;
         transaction.feePayer = fromPubkey;
         
-        // Sign and send using Phantom
+        // Sign and send using any Solana wallet
         const signature = await provider.signAndSendTransaction(transaction);
         const sigString = typeof signature === 'string' ? signature : signature.signature;
         
-        window.showToast(`🔄 Transaction sent: ${sigString.slice(0, 8)}... Waiting for confirmation...`);
+        window.showToast('🔄 Transaction sent: ' + sigString.slice(0, 8) + '...');
         
-        // 4. Confirm transaction
-        await connection.confirmTransaction(sigString, 'confirmed');
+        // 4. Wait for confirmation
+        await new Promise(r => setTimeout(r, 2000));
         
-        window.showToast(`✅ Transaction confirmed! Verifying payment...`);
+        window.showToast('✅ Transaction confirmed! Verifying payment...');
         
         // 5. Verify payment on backend
-        const verifyRes = await fetch(`/api/orders/${orderData.order_id}/confirm?tx_signature=${sigString}`, {
+        const verifyRes = await fetch('/api/orders/' + orderData.order_id + '/confirm?tx_signature=' + sigString, {
             method: 'POST',
             headers: { 'Authorization': 'Bearer ' + (authToken || '') }
         });
@@ -296,19 +307,19 @@ async function buyPackage() {
         }
         
         const verifyData = await verifyRes.json();
-        window.showToast(`✅ ${selectedPackage.checks} checks added! Balance: ${verifyData.balance}`);
+        window.showToast('✅ ' + selectedPackage.checks + ' checks added! Balance: ' + verifyData.balance);
         updateWalletStatus();
         
     } catch (error) {
         console.error('Purchase error:', error);
-        if (error.message?.includes('User rejected')) {
+        if (error.message && (error.message.includes('User rejected') || error.message.includes('rejected'))) {
             window.showToast('❌ Transaction cancelled');
         } else {
             window.showToast('❌ Purchase failed: ' + error.message);
         }
     }
     
-    btn.textContent = `Pay $${selectedPackage.price} for ${selectedPackage.checks} Checks`;
+    btn.textContent = 'Pay $' + selectedPackage.price + ' for ' + selectedPackage.checks + ' Checks';
     btn.disabled = false;
     btn.classList.remove('processing');
 }
