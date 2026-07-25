@@ -1,8 +1,5 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useWallet } from '@solana/wallet-adapter-react'
-
-const { connected, publicKey } = useWallet()
 
 const chain = ref('evm')
 const address = ref('')
@@ -40,7 +37,7 @@ async function check() {
     result.value = { status: 'error', message: 'Enter a wallet address' }
     return
   }
-  if (!connected.value && freeCheckUsed.value) {
+  if (freeCheckUsed.value) {
     result.value = { status: 'error', message: 'Limit reached. Connect wallet for unlimited checks.' }
     return
   }
@@ -54,10 +51,7 @@ async function check() {
     })
     const data = await res.json()
     result.value = data
-    
-    if (!connected.value) freeCheckUsed.value = true
-    
-    // Add to alerts
+    freeCheckUsed.value = true
     addAlert(address.value.trim(), chain.value, data.status || 'safe')
   } catch (e) {
     result.value = { status: 'error', message: 'Request failed' }

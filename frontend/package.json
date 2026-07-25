@@ -9,11 +9,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@solana/wallet-adapter-base": "^0.9.23",
-    "@solana/wallet-adapter-react": "^0.15.35",
-    "@solana/wallet-adapter-react-ui": "^0.9.35",
-    "@solana/wallet-adapter-wallets": "^0.19.32",
-    "@solana/web3.js": "^1.95.4",
     "vue": "^3.5.13",
     "vue-router": "^4.5.0"
   },
