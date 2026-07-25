@@ -40,6 +40,9 @@ type Claims struct {
 
 // GenerateNonce creates a unique nonce for Web3 authentication
 func (s *AuthService) GenerateNonce(address string, chain string) (string, error) {
+	// Normalize address for consistent storage
+	address = strings.ToLower(strings.TrimSpace(address))
+	
 	nonceBytes := make([]byte, NonceLength)
 	if _, err := rand.Read(nonceBytes); err != nil {
 		return "", fmt.Errorf("failed to generate nonce: %w", err)

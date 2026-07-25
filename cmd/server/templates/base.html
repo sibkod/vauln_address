@@ -215,22 +215,29 @@
             
             const resp = await provider.connect();
             connectedAddress = resp.publicKey?.toString() || resp;
-            isWalletConnected = true;
             
-            localStorage.setItem('walletConnected', 'true');
-            localStorage.setItem('walletAddress', connectedAddress);
-            localStorage.setItem('walletChain', 'solana');
-            
-            updateConnectUI();
-            showToast('✅ Wallet connected!');
-            
-            // Authenticate
+            // Authenticate FIRST - don't show address until auth is complete
             const authSuccess = await authenticateWithBackend(connectedAddress, provider);
+            
             if (authSuccess) {
+                // Only save and show after successful auth
+                isWalletConnected = true;
+                localStorage.setItem('walletConnected', 'true');
+                localStorage.setItem('walletAddress', connectedAddress);
+                localStorage.setItem('walletChain', 'solana');
+                
                 updateConnectUI();
                 updateCounter();
                 document.dispatchEvent(new CustomEvent('walletAuthenticated'));
                 showToast('🔐 Authenticated! Balance: ' + userBalance + ' checks');
+            } else {
+                // Auth failed - disconnect wallet and clear
+                connectedAddress = '';
+                isWalletConnected = false;
+                localStorage.removeItem('walletConnected');
+                localStorage.removeItem('walletAddress');
+                localStorage.removeItem('walletChain');
+                updateConnectUI();
             }
         } catch (error) {
             console.error('Solana connection error:', error);
@@ -239,6 +246,10 @@
             } else {
                 showToast('❌ Failed to connect wallet');
             }
+            // Clear on error too
+            connectedAddress = '';
+            isWalletConnected = false;
+            updateConnectUI();
         }
     }
 
