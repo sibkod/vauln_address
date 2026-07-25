@@ -70,7 +70,7 @@ func main() {
 	api.GET("/auth/nonce", h.GetNonce)
 	api.POST("/auth/login", h.Authenticate)
 	api.GET("/user/profile", middleware.RequireAuth(), h.GetUserProfile)
-	api.GET("/user/balance", h.GetBalance) // Public - returns purchased balance for auth users, rate limit for anonymous
+	api.GET("/user/balance", middleware.AuthMiddleware(authService), h.GetBalance) // Returns purchased balance for auth users, rate limit for anonymous
 	api.GET("/user/purchases", middleware.RequireAuth(), h.GetPurchaseHistory)
 	api.POST("/orders", middleware.RequireAuth(), h.CreateOrder)
 	api.POST("/orders/:id/confirm", middleware.RequireAuth(), h.ConfirmOrder)

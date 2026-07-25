@@ -423,7 +423,8 @@ func (h *Handler) GetBalance(c *gin.Context) {
 	chain, _ := c.Get("userChain")
 	chainStr, _ := chain.(string)
 
-	if exists && walletAddress != nil && chainStr != "" {
+	// Validate that user is actually authenticated (not just token present)
+	if exists && walletAddress != nil && walletAddress != "" && chainStr != "" {
 		// Authenticated user - return their purchased balance
 		balance, err := h.repo.GetUserBalance(c.Request.Context(), walletAddress.(string), chainStr)
 		if err != nil {

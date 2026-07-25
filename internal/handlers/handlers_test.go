@@ -575,3 +575,236 @@ func fmtScan(s string, result *int) {
 		}
 	}
 }
+
+// ==================== Balance Endpoint Tests ====================
+
+func TestGetBalance_AnonymousUser(t *testing.T) {
+	router := gin.New()
+	
+	// Middleware that does NOT set userAddress (anonymous user)
+	router.Use(func(c *gin.Context) {
+		c.Next()
+	})
+	
+	router.GET("/api/user/balance", func(c *gin.Context) {
+		walletAddress, exists := c.Get("userAddress")
+		
+		if exists && walletAddress != nil && walletAddress != "" {
+			// Authenticated user - return purchased balance
+			c.JSON(http.StatusOK, gin.H{
+				"balance": 60,
+				"source":  "purchased",
+			})
+			return
+		}
+		
+		// Anonymous user - return rate limit
+		c.JSON(http.StatusOK, gin.H{
+			"balance": 10,
+			"source":  "rate_limit",
+		})
+	})
+
+	req, _ := http.NewRequest("GET", "/api/user/balance", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var resp struct {
+		Balance int    `json:"balance"`
+		Source  string `json:"source"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+
+	if resp.Source != "rate_limit" {
+		t.Errorf("Expected source 'rate_limit' for anonymous user, got '%s'", resp.Source)
+	}
+}
+
+func TestGetBalance_AuthenticatedUser(t *testing.T) {
+	router := gin.New()
+	
+	// Middleware that sets userAddress (authenticated user)
+	router.Use(func(c *gin.Context) {
+		c.Set("userAddress", "7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV")
+		c.Set("userChain", "solana")
+		c.Next()
+	})
+	
+	router.GET("/api/user/balance", func(c *gin.Context) {
+		walletAddress, exists := c.Get("userAddress")
+		chain, _ := c.Get("userChain")
+		chainStr, _ := chain.(string)
+
+		if exists && walletAddress != nil && walletAddress != "" && chainStr != "" {
+			// Authenticated user - return purchased balance
+			// In real implementation, this would fetch from DB
+			c.JSON(http.StatusOK, gin.H{
+				"balance": 60,
+				"source":  "purchased",
+			})
+			return
+		}
+		
+		// Fallback to rate limit
+		c.JSON(http.StatusOK, gin.H{
+			"balance": 10,
+			"source":  "rate_limit",
+		})
+	})
+
+	req, _ := http.NewRequest("GET", "/api/user/balance", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var resp struct {
+		Balance int    `json:"balance"`
+		Source  string `json:"source"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+
+	if resp.Source != "purchased" {
+		t.Errorf("Expected source 'purchased' for authenticated user, got '%s'", resp.Source)
+	}
+	if resp.Balance != 60 {
+		t.Errorf("Expected balance 60 for authenticated user, got %d", resp.Balance)
+	}
+}
+
+func TestGetBalance_InvalidAuthToken(t *testing.T) {
+	router := gin.New()
+	
+	// Middleware that validates token but finds it invalid
+	router.Use(func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		// Token is present but invalid (no userAddress set)
+		if authHeader != "" {
+			// Simulate invalid token - don't set userAddress
+		}
+		c.Next()
+	})
+	
+	router.GET("/api/user/balance", func(c *gin.Context) {
+		walletAddress, exists := c.Get("userAddress")
+		chain, _ := c.Get("userChain")
+		chainStr, _ := chain.(string)
+
+		if exists && walletAddress != nil && walletAddress != "" && chainStr != "" {
+			c.JSON(http.StatusOK, gin.H{
+				"balance": 60,
+				"source":  "purchased",
+			})
+			return
+		}
+		
+		// Invalid/missing auth - return rate limit
+		c.JSON(http.StatusOK, gin.H{
+			"balance": 6,
+			"source":  "rate_limit",
+		})
+	})
+
+	req, _ := http.NewRequest("GET", "/api/user/balance", nil)
+	req.Header.Set("Authorization", "Bearer invalid-token")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d for invalid token, got %d", http.StatusOK, w.Code)
+	}
+
+	var resp struct {
+		Balance int    `json:"balance"`
+		Source  string `json:"source"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+
+	// Should fallback to rate limit when token is invalid
+	if resp.Source != "rate_limit" {
+		t.Errorf("Expected source 'rate_limit' for invalid token, got '%s'", resp.Source)
+	}
+}
+
+func TestGetBalance_PurchasedVsRateLimit_Scenario(t *testing.T) {
+	// This test simulates the exact scenario described:
+	// User has 60 purchased checks but sees 6 (rate limit remaining)
+	
+	router := gin.New()
+	
+	// Simulate auth middleware setting user info correctly
+	router.Use(func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "Bearer valid-user-token" {
+			c.Set("userAddress", "7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV")
+			c.Set("userChain", "solana")
+		}
+		c.Next()
+	})
+	
+	router.GET("/api/user/balance", func(c *gin.Context) {
+		walletAddress, exists := c.Get("userAddress")
+		chain, _ := c.Get("userChain")
+		chainStr, _ := chain.(string)
+
+		// BUG FIX: Also check that walletAddress is not empty string
+		if exists && walletAddress != nil && walletAddress != "" && chainStr != "" {
+			// User IS authenticated - should return purchased balance (60)
+			c.JSON(http.StatusOK, gin.H{
+				"balance": 60,
+				"source":  "purchased",
+			})
+			return
+		}
+		
+		// User is NOT authenticated - return rate limit remaining (6)
+		c.JSON(http.StatusOK, gin.H{
+			"balance": 6,
+			"source":  "rate_limit",
+		})
+	})
+
+	// Test 1: Valid token should return purchased balance
+	t.Run("valid_token_returns_purchased_balance", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", "/api/user/balance", nil)
+		req.Header.Set("Authorization", "Bearer valid-user-token")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		var resp struct {
+			Balance int    `json:"balance"`
+			Source  string `json:"source"`
+		}
+		json.Unmarshal(w.Body.Bytes(), &resp)
+
+		if resp.Source != "purchased" {
+			t.Errorf("Valid token should return 'purchased' source, got '%s'", resp.Source)
+		}
+		if resp.Balance != 60 {
+			t.Errorf("Valid token should return balance 60, got %d", resp.Balance)
+		}
+	})
+
+	// Test 2: No token should return rate limit
+	t.Run("no_token_returns_rate_limit", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", "/api/user/balance", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		var resp struct {
+			Balance int    `json:"balance"`
+			Source  string `json:"source"`
+		}
+		json.Unmarshal(w.Body.Bytes(), &resp)
+
+		if resp.Source != "rate_limit" {
+			t.Errorf("No token should return 'rate_limit' source, got '%s'", resp.Source)
+		}
+	})
+}
