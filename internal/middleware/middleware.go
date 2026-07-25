@@ -32,7 +32,9 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 		ctx := c.Request.Context()
 
 		// Check if user is authenticated
-		userID, isAuthenticated := c.Get("userID")
+		walletAddress, isAuthenticated := c.Get("userAddress")
+		userChain, _ := c.Get("userChain")
+		chainStr, _ := userChain.(string)
 
 		// 1. Check IP rate limit
 		rl.checkAndResetWindow(ctx, ip)
@@ -56,12 +58,12 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 		if rateLimit.Count >= rl.cfg.RateLimitRequests {
 			// IP limit exhausted
 			// For authenticated users: try to use their balance as fallback
-			if isAuthenticated {
-				user, err := rl.repo.GetUserByID(ctx, userID.(int64))
-				if err == nil && user != nil && user.Balance > 0 {
+			if isAuthenticated && walletAddress != nil && chainStr != "" {
+				balance, err := rl.repo.GetUserBalance(ctx, walletAddress.(string), chainStr)
+				if err == nil && balance > 0 {
 					// Use user's balance instead of IP limit
-					if err := rl.repo.DeductUserBalance(ctx, userID.(int64), 1); err == nil {
-						c.Set("remainingBalance", user.Balance-1)
+					if err := rl.repo.DeductUserBalance(ctx, walletAddress.(string), chainStr, 1); err == nil {
+						c.Set("remainingBalance", balance-1)
 						c.Set("usingBalance", true)
 						c.Header("X-RateLimit-Source", "balance")
 						c.Next()
@@ -99,11 +101,11 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 		}
 
 		// For authenticated users, also deduct from balance
-		if isAuthenticated {
-			user, err := rl.repo.GetUserByID(ctx, userID.(int64))
-			if err == nil && user != nil && user.Balance > 0 {
-				if err := rl.repo.DeductUserBalance(ctx, userID.(int64), 1); err == nil {
-					c.Set("remainingBalance", user.Balance-1)
+		if isAuthenticated && walletAddress != nil && chainStr != "" {
+			balance, err := rl.repo.GetUserBalance(ctx, walletAddress.(string), chainStr)
+			if err == nil && balance > 0 {
+				if err := rl.repo.DeductUserBalance(ctx, walletAddress.(string), chainStr, 1); err == nil {
+					c.Set("remainingBalance", balance-1)
 					c.Set("usingBalance", true)
 					c.Header("X-RateLimit-Source", "balance")
 				}
@@ -195,8 +197,8 @@ func AuthMiddleware(authService *auth.AuthService) gin.HandlerFunc {
 		}
 
 		// Set user info in context
-		c.Set("userID", claims.UserID)
 		c.Set("userAddress", claims.Address)
+		c.Set("userChain", claims.Chain)
 		c.Next()
 	}
 }
@@ -204,7 +206,7 @@ func AuthMiddleware(authService *auth.AuthService) gin.HandlerFunc {
 // RequireAuth ensures the user is authenticated
 func RequireAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if _, exists := c.Get("userID"); !exists {
+		if _, exists := c.Get("userAddress"); !exists {
 			c.JSON(http.StatusUnauthorized, models.ErrorResponse{
 				Error: "authentication required",
 				Code:  "UNAUTHORIZED",

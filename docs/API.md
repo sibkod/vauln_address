@@ -6,9 +6,11 @@ API for checking wallet addresses against a database of compromised/hacked walle
 
 **Base URL:** `/api`
 
+**Note:** This API uses wallet address as the primary user identifier (not numeric user IDs).
+
 ## Authentication
 
-Most endpoints require Web3 authentication. After successful authentication, you'll receive a JWT token.
+Most endpoints require Web3 authentication. After successful authentication, you'll receive a JWT token containing your wallet address.
 
 ### Web3 Authentication Flow
 
@@ -167,7 +169,6 @@ Verifies signature and returns JWT token.
   "token": "eyJhbGciOiJIUzI1NiIs...",
   "expires_in": 86400,
   "user": {
-    "id": 1,
     "wallet_address": "0x742d35Cc...",
     "chain": "evm",
     "balance": 100,
@@ -175,6 +176,8 @@ Verifies signature and returns JWT token.
   }
 }
 ```
+
+**Note:** User response no longer contains numeric `id` field - users are identified by wallet address.
 
 **Errors:**
 - `400 INVALID_REQUEST` - Invalid request body
@@ -193,7 +196,6 @@ Verifies signature and returns JWT token.
 ```json
 {
   "user": {
-    "id": 1,
     "wallet_address": "0x742d35Cc...",
     "chain": "evm",
     "balance": 100,
@@ -284,7 +286,7 @@ Confirms payment by providing transaction signature or message signature.
 **Errors:**
 - `401 UNAUTHORIZED` - Authentication required
 - `404 NOT_FOUND` - Order not found
-- `403 FORBIDDEN` - Order doesn't belong to user
+- `403 FORBIDDEN` - Order doesn't belong to user (verified by wallet address)
 
 ---
 
@@ -451,6 +453,7 @@ Submit a contact message.
   "keys": [
     {
       "id": 1,
+      "wallet_address": "0x742d35Cc...",
       "key_prefix": "vkn_abc1",
       "name": "My API Key",
       "created_at": "2024-01-01T00:00:00Z",
@@ -462,6 +465,8 @@ Submit a contact message.
   "count": 1
 }
 ```
+
+**Note:** API keys are now associated with wallet address instead of user ID.
 
 ---
 

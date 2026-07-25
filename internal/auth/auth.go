@@ -34,8 +34,8 @@ func NewAuthService(repo *repository.Repository) *AuthService {
 }
 
 type Claims struct {
-	UserID int64  `json:"user_id"`
 	Address string `json:"address"`
+	Chain   string `json:"chain"`
 	jwt.RegisteredClaims
 }
 
@@ -110,13 +110,13 @@ func (s *AuthService) VerifySignature(address, chain, signature, message string)
 	}
 
 	// Generate JWT token
-	token, err := s.generateToken(user.ID, address)
+	token, err := s.generateToken(address, chain)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token: %w", err)
 	}
 
 	// Update last login
-	s.repo.UpdateLastLogin(user.ID)
+	s.repo.UpdateLastLogin(address, chain)
 
 	return &models.AuthResponse{
 		Token:     token,
@@ -230,10 +230,10 @@ func (s *AuthService) verifyTron(address, signature, message string) bool {
 	return s.verifyEVMWithoutPrefix(address, signature, message)
 }
 
-func (s *AuthService) generateToken(userID int64, address string) (string, error) {
+func (s *AuthService) generateToken(address, chain string) (string, error) {
 	claims := Claims{
-		UserID:  userID,
 		Address: address,
+		Chain:   chain,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(TokenExpiry)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -269,7 +269,6 @@ func (s *AuthService) ValidateToken(tokenString string) (*Claims, error) {
 
 func (s *AuthService) toUserPublic(user *models.User) *models.UserPublic {
 	return &models.UserPublic{
-		ID:            user.ID,
 		WalletAddress: user.WalletAddress,
 		Chain:         string(user.Chain),
 		Balance:       user.Balance,
@@ -277,15 +276,15 @@ func (s *AuthService) toUserPublic(user *models.User) *models.UserPublic {
 	}
 }
 
-// GetUserByID retrieves user by ID
-func (s *AuthService) GetUserByID(userID int64) (*models.User, error) {
-	return s.repo.GetUserByID(context.Background(), userID)
+// GetUserByWallet retrieves user by wallet address and chain
+func (s *AuthService) GetUserByWallet(address, chain string) (*models.User, error) {
+	return s.repo.GetUserByWallet(context.Background(), address, chain)
 }
 
 // ==================== API Key Management ====================
 
 // GenerateAPIKey creates a new API key for a user
-func (s *AuthService) GenerateAPIKey(userID int64, name string, expiresInDays int) (*models.APIKeyResponse, error) {
+func (s *AuthService) GenerateAPIKey(walletAddress, name string, expiresInDays int) (*models.APIKeyResponse, error) {
 	// Generate random key bytes
 	keyBytes := make([]byte, APIKeyLength)
 	if _, err := rand.Read(keyBytes); err != nil {
@@ -307,7 +306,7 @@ func (s *AuthService) GenerateAPIKey(userID int64, name string, expiresInDays in
 	}
 
 	// Store in database
-	apiKey, err := s.repo.CreateAPIKey(context.Background(), userID, keyHash, keyPrefix, name, expiresAt)
+	apiKey, err := s.repo.CreateAPIKey(context.Background(), walletAddress, keyHash, keyPrefix, name, expiresAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to store API key: %w", err)
 	}
@@ -322,42 +321,42 @@ func (s *AuthService) GenerateAPIKey(userID int64, name string, expiresInDays in
 }
 
 // GetUserAPIKeys retrieves all API keys for a user (without the actual key)
-func (s *AuthService) GetUserAPIKeys(userID int64) ([]models.APIKey, error) {
-	return s.repo.GetUserAPIKeys(context.Background(), userID)
+func (s *AuthService) GetUserAPIKeys(walletAddress string) ([]models.APIKey, error) {
+	return s.repo.GetUserAPIKeys(context.Background(), walletAddress)
 }
 
 // RevokeAPIKey revokes an API key
-func (s *AuthService) RevokeAPIKey(keyID int64, userID int64) error {
-	return s.repo.RevokeAPIKey(context.Background(), keyID, userID)
+func (s *AuthService) RevokeAPIKey(keyID int64, walletAddress string) error {
+	return s.repo.RevokeAPIKey(context.Background(), keyID, walletAddress)
 }
 
 // DeleteAPIKey permanently deletes an API key
-func (s *AuthService) DeleteAPIKey(keyID int64, userID int64) error {
-	return s.repo.DeleteAPIKey(context.Background(), keyID, userID)
+func (s *AuthService) DeleteAPIKey(keyID int64, walletAddress string) error {
+	return s.repo.DeleteAPIKey(context.Background(), keyID, walletAddress)
 }
 
-// ValidateAPIKey validates an API key and returns the associated user ID
-func (s *AuthService) ValidateAPIKey(apiKey string) (int64, error) {
+// ValidateAPIKey validates an API key and returns the associated wallet address
+func (s *AuthService) ValidateAPIKey(apiKey string) (string, error) {
 	// Hash the provided key
 	keyHash := s.hashAPIKey(apiKey)
 
 	// Look up the key in the database
 	key, err := s.repo.GetAPIKeyByHash(context.Background(), keyHash)
 	if err != nil {
-		return 0, fmt.Errorf("failed to look up API key: %w", err)
+		return "", fmt.Errorf("failed to look up API key: %w", err)
 	}
 	if key == nil {
-		return 0, fmt.Errorf("invalid API key")
+		return "", fmt.Errorf("invalid API key")
 	}
 
 	// Check if revoked
 	if key.IsRevoked {
-		return 0, fmt.Errorf("API key has been revoked")
+		return "", fmt.Errorf("API key has been revoked")
 	}
 
 	// Check if expired
 	if key.ExpiresAt != nil && time.Now().After(*key.ExpiresAt) {
-		return 0, fmt.Errorf("API key has expired")
+		return "", fmt.Errorf("API key has expired")
 	}
 
 	// Update last used timestamp
@@ -365,7 +364,7 @@ func (s *AuthService) ValidateAPIKey(apiKey string) (int64, error) {
 		s.repo.UpdateAPIKeyLastUsed(context.Background(), key.ID)
 	}()
 
-	return key.UserID, nil
+	return key.WalletAddress, nil
 }
 
 // hashAPIKey creates a SHA-256 hash of the API key
@@ -430,22 +429,18 @@ func (s *AuthService) RenewAPIKey(address, chain, signature, message string, key
 		return nil, fmt.Errorf("API key not found")
 	}
 
-	// Verify the user owns this key
-	user, err := s.repo.GetOrCreateUser(address, chain)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user: %w", err)
-	}
-	if user.ID != existingKey.UserID {
+	// Verify the user owns this key (by wallet address)
+	if existingKey.WalletAddress != address {
 		return nil, fmt.Errorf("you do not own this API key")
 	}
 
 	// Revoke the old key
-	if err := s.repo.RevokeAPIKey(context.Background(), keyID, user.ID); err != nil {
+	if err := s.repo.RevokeAPIKey(context.Background(), keyID, address); err != nil {
 		return nil, fmt.Errorf("failed to revoke old API key: %w", err)
 	}
 
 	// Generate a new API key with the same name
-	return s.GenerateAPIKey(user.ID, existingKey.Name, 0)
+	return s.GenerateAPIKey(address, existingKey.Name, 0)
 }
 
 // GenerateRenewalNonce generates a nonce specifically for API key renewal
