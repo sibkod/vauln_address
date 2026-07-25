@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -116,12 +118,16 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 			status VARCHAR(20) DEFAULT 'pending',
 			tx_hash VARCHAR(200),
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 			completed_at TIMESTAMP NULL,
 			FOREIGN KEY (user_id) REFERENCES users(id)
 		);
 		CREATE INDEX idx_orders_user ON orders(user_id);
 		CREATE INDEX idx_orders_uuid ON orders(order_uuid);
 		CREATE INDEX idx_orders_status ON orders(status);
+
+		-- Migration: add updated_at to orders (ignore error if column exists)
+		-- We'll handle this in code after table creation
 
 		CREATE TABLE IF NOT EXISTS contact_messages (
 			id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -208,6 +214,7 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 			status TEXT DEFAULT 'pending',
 			tx_hash TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			completed_at DATETIME,
 			FOREIGN KEY (user_id) REFERENCES users(id)
 		);
@@ -300,6 +307,7 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 			status VARCHAR(20) DEFAULT 'pending',
 			tx_hash VARCHAR(200),
 			created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+			updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
 			completed_at TIMESTAMP WITH TIME ZONE
 		);
 		CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id);
@@ -350,7 +358,27 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 	}
 
 	_, err := r.db.ExecContext(ctx, schema)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Run migrations
+	return r.runMigrations(ctx)
+}
+
+func (r *Repository) runMigrations(ctx context.Context) error {
+	// Migration: add updated_at to orders if not exists
+	// For MySQL/MariaDB
+	_, err := r.db.ExecContext(ctx, "ALTER TABLE orders ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP")
+	if err != nil && !strings.Contains(err.Error(), "Duplicate column") {
+		log.Printf("Migration note: %v (this is ok if column already exists)", err)
+	}
+	// For SQLite
+	_, err = r.db.ExecContext(ctx, "ALTER TABLE orders ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP")
+	if err != nil && !strings.Contains(err.Error(), "no such column") && !strings.Contains(err.Error(), "duplicate column") {
+		log.Printf("Migration note: %v (this is ok if column already exists)", err)
+	}
+	return nil
 }
 
 // ==================== User Methods ====================
