@@ -106,10 +106,13 @@
     }
 
     function updateConnectUI() {
-        if (serverAuthenticated && connectedAddress) {
+        // If server says authenticated, use server address OR connected wallet address
+        const displayAddress = serverAuthenticated ? (connectedAddress || SERVER_ADDRESS) : connectedAddress;
+        
+        if (displayAddress) {
             connectDot.className = 'dot active';
             connectLabel.textContent = '';
-            connectAddressShort.textContent = connectedAddress.slice(0,6) + '...' + connectedAddress.slice(-4);
+            connectAddressShort.textContent = displayAddress.slice(0,6) + '...' + displayAddress.slice(-4);
             logoutBtn.style.display = 'inline-block';
         } else {
             connectDot.className = 'dot';
@@ -190,8 +193,15 @@
         // If server says we're authenticated, sync with localStorage
         if (SERVER_AUTH && authToken) {
             const valid = await validateSession();
-            if (!valid) {
-                // Server says not authenticated, but we have token - clear it
+            if (valid) {
+                // Server says authenticated and token is valid
+                // Use server address if wallet not connected in this session
+                if (!connectedAddress && SERVER_ADDRESS) {
+                    connectedAddress = SERVER_ADDRESS;
+                    isWalletConnected = true;
+                }
+            } else {
+                // Token invalid or expired - clear localStorage
                 clearAuthData();
             }
         } else if (authToken && !SERVER_AUTH) {
