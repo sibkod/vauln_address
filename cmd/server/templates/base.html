@@ -227,7 +227,10 @@
             // Authenticate
             const authSuccess = await authenticateWithBackend(connectedAddress, provider);
             if (authSuccess) {
+                updateConnectUI();
+                updateCounter();
                 document.dispatchEvent(new CustomEvent('walletAuthenticated'));
+                showToast('🔐 Authenticated! Balance: ' + userBalance + ' checks');
             }
         } catch (error) {
             console.error('Solana connection error:', error);
@@ -425,10 +428,13 @@
                 authToken = loginData.token;
                 localStorage.setItem('authToken', authToken);
                 serverAuthenticated = true;
-                userBalance = loginData.balance || 0;
+                userBalance = (loginData.user && loginData.user.balance) || 0;
                 return true;
-            } else {
+            } else if (loginData.error) {
                 showToast('❌ Auth failed: ' + (loginData.error || 'Unknown error'));
+                return false;
+            } else {
+                showToast('❌ Auth failed: Unknown response');
                 return false;
             }
         } catch (error) {
