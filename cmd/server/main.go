@@ -63,15 +63,30 @@ func renderPage(c *gin.Context, pageTmpl, title, activePage string, repo *reposi
 		}
 	}
 
+	// Solana configuration for payment page
+	solanaNetwork := "mainnet"
+	if serverCfg.SolanaUseDevnet {
+		solanaNetwork = "devnet"
+	}
+	solanaPaymentAddr := serverCfg.SolanaPaymentAddr
+	if solanaPaymentAddr == "" {
+		solanaPaymentAddr = "CW58CLARKr9mL4d7oRDj6FKv3cM2xT6vH3kQVZqW4xXy" // demo address
+	}
+
 	// Execute base.html with the rendered content as a string
 	tmpl.ExecuteTemplate(c.Writer, "base.html", gin.H{
-		"Title":            title,
-		"ActivePage":       activePage,
-		"Content":          contentBuf.String(),
-		"FreeCheckLimit":   serverCfg.FreeCheckLimit,
-		"UserBalance":      userBalance,
-		"IsAuthenticated":  isAuthenticated,
-		"UserAddress":      userAddress,
+		"Title":             title,
+		"ActivePage":        activePage,
+		"Content":           contentBuf.String(),
+		"FreeCheckLimit":    serverCfg.FreeCheckLimit,
+		"UserBalance":       userBalance,
+		"IsAuthenticated":   isAuthenticated,
+		"UserAddress":       userAddress,
+		"SolanaUseDevnet":   serverCfg.SolanaUseDevnet,
+		"SolanaNetwork":     solanaNetwork,
+		"SolanaRPCURL":      serverCfg.SolanaRPCURL,
+		"SolanaPaymentAddr": solanaPaymentAddr,
+		"Debug":             false, // Set to true for debug info
 	})
 }
 
@@ -149,6 +164,7 @@ func main() {
 	router.GET("/support", func(c *gin.Context) { renderPage(c, "support", "Support", "support", r) })
 	router.GET("/api-docs", func(c *gin.Context) { renderPage(c, "api", "API", "api", r) })
 	router.GET("/api-keys", func(c *gin.Context) { renderPage(c, "api-keys", "API Keys", "api-keys", r) })
+	router.GET("/payment", func(c *gin.Context) { renderPage(c, "payment", "Payment", "payment", r) })
 
 	// 404 for pages (HTML)
 	router.NoRoute(func(c *gin.Context) {
