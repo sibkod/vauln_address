@@ -93,9 +93,10 @@ func (h *Handler) GetNonce(c *gin.Context) {
 func (h *Handler) Authenticate(c *gin.Context) {
 	var req models.AuthRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, models.ErrorResponse{
-			Error: "invalid request body",
-			Code:  "INVALID_REQUEST",
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid request body",
+			"code":  "INVALID_REQUEST",
+			"detail": err.Error(),
 		})
 		return
 	}
