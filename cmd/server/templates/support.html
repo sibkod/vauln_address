@@ -256,113 +256,55 @@ async function buyPackage() {
         const lamports = Math.round(parseFloat(orderData.amount) * 1e9);
         const RPC_URL = 'https://api.devnet.solana.com';
         
-        // 3. Try to get solanaWeb3 from wallet
-        const solanaWeb3 = await window.waitForSolanaWeb3();
-        
-        let signature;
-        
-        if (solanaWeb3 && solanaWeb3.Transaction && solanaWeb3.PublicKey && solanaWeb3.SystemProgram) {
-            // Use wallet's bundled solanaWeb3
-            console.log('Using wallet solanaWeb3');
-            const { Connection, PublicKey, Transaction, SystemProgram } = solanaWeb3;
-            
-            const connection = new Connection(RPC_URL);
-            const fromPubkey = new PublicKey(address);
-            const toPubkey = new PublicKey(orderData.payment_address);
-            
-            const transaction = new Transaction();
-            transaction.add(
-                SystemProgram.transfer({
-                    fromPubkey: fromPubkey,
-                    toPubkey: toPubkey,
-                    lamports: lamports
-                })
-            );
-            
-            const { blockhash } = await connection.getRecentBlockhash();
-            transaction.recentBlockhash = blockhash;
-            transaction.feePayer = fromPubkey;
-            
-            window.showToast('📝 Sign transaction in wallet...');
-            
-            const result = await provider.signAndSendTransaction(transaction);
-            signature = typeof result === 'string' ? result : result.signature;
-        } else {
-            // Fallback: create transaction manually with RPC
-            console.log('Using manual transaction creation');
-            
-            // Get recent blockhash
-            const blockhashResp = await fetch(RPC_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    jsonrpc: '2.0',
-                    id: 1,
-                    method: 'getLatestBlockhash'
-                })
-            });
-            const blockhashData = await blockhashResp.json();
-            const blockhash = blockhashData.result.value.blockhash;
-            
-            // Create transfer instruction
-            const instructionData = new Uint8Array(12);
-            instructionData[0] = 2; // System instruction 2 = transfer
-            for (let i = 0; i < 8; i++) {
-                instructionData[4 + i] = (lamports >> (8 * i)) & 0xff;
-            }
-            
-            // Build message for wallet
-            const message = {
-                version: 0,
-                recentBlockhash: blockhash,
-                feePayer: address,
-                instructions: [{
-                    programId: '11111111111111111111111111111111',
-                    keys: [
-                        { pubkey: address, isSigner: true, isWritable: true },
-                        { pubkey: orderData.payment_address, isSigner: false, isWritable: true }
-                    ],
-                    data: Array.from(instructionData)
-                }]
-            };
-            
-            window.showToast('📝 Sign transaction in wallet...');
-            
-            // Try signAndSendTransaction first
-            if (provider.signAndSendTransaction) {
-                const result = await provider.signAndSendTransaction(message);
-                signature = typeof result === 'string' ? result : result.signature;
-            } else if (provider.signTransaction) {
-                // signTransaction + sendTransaction
-                const signedTx = await provider.signTransaction(message);
-                const txBase64 = btoa(String.fromCharCode(...new Uint8Array(signedTx.serialize())));
-                
-                const sendResp = await fetch(RPC_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        jsonrpc: '2.0',
-                        id: 1,
-                        method: 'sendTransaction',
-                        params: [txBase64, { encoding: 'base64' }]
-                    })
-                });
-                const sendData = await sendResp.json();
-                if (sendData.error) throw new Error(sendData.error.message);
-                signature = sendData.result;
-            } else {
-                throw new Error('Wallet does not support transaction signing');
-            }
+        // 3. Wait for solanaWeb3 to be available
+        let solanaWeb3 = null;
+        for (let i = 0; i < 30; i++) {
+            solanaWeb3 = await window.waitForSolanaWeb3();
+            if (solanaWeb3 && solanaWeb3.Transaction) break;
+            await new Promise(r => setTimeout(r, 200));
         }
+        
+        if (!solanaWeb3 || !solanaWeb3.Transaction) {
+            throw new Error('Solana Web3.js not loaded. Please refresh the page.');
+        }
+        
+        console.log('Using solanaWeb3 from:', solanaWeb3.Connection ? 'Connection available' : 'Connection missing');
+        
+        const { Connection, PublicKey, Transaction, SystemProgram } = solanaWeb3;
+        const connection = new Connection(RPC_URL);
+        const fromPubkey = new PublicKey(address);
+        const toPubkey = new PublicKey(orderData.payment_address);
+        
+        // 4. Create proper Transaction object
+        const transaction = new Transaction();
+        transaction.add(
+            SystemProgram.transfer({
+                fromPubkey: fromPubkey,
+                toPubkey: toPubkey,
+                lamports: lamports
+            })
+        );
+        
+        const { blockhash } = await connection.getRecentBlockhash();
+        transaction.recentBlockhash = blockhash;
+        transaction.feePayer = fromPubkey;
+        
+        console.log('Transaction created, signing...');
+        
+        window.showToast('📝 Sign transaction in wallet...');
+        
+        // 5. Sign and send - Phantom needs proper Transaction object
+        const result = await provider.signAndSendTransaction(transaction);
+        const signature = typeof result === 'string' ? result : result.signature;
         
         window.showToast('🔄 Transaction sent: ' + signature.slice(0, 8) + '...');
         
-        // 7. Wait for confirmation
+        // 6. Wait for confirmation
         await new Promise(r => setTimeout(r, 5000));
         
         window.showToast('✅ Verifying payment on blockchain...');
         
-        // 8. Verify payment on backend
+        // 7. Verify payment on backend
         const verifyRes = await fetch('/api/orders/' + orderData.order_id + '/confirm?tx_signature=' + signature, {
             method: 'POST',
             headers: { 'Authorization': 'Bearer ' + (authToken || '') }
