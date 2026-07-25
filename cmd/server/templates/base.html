@@ -120,21 +120,16 @@
 #chainModal button:hover { border-color: #3b82f6 !important; }
 </style>
 
+<script src="https://unpkg.com/buffer@6.0.3/index.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@solana/web3.js@1.95.8/lib/index.iife.min.js"></script>
 <script>
 (function() {
-    // Simple Buffer polyfill for Solana Web3.js
-    (function(root) {
-        if (!root.Buffer) {
-            root.Buffer = {
-                isBuffer: function() { return false; },
-                from: function(arr) { return arr instanceof Uint8Array ? arr : new Uint8Array(arr); },
-                alloc: function(size) { return new Uint8Array(size); },
-                allocUnsafe: function(size) { return new Uint8Array(size); },
-                byteLength: function(str) { return new TextEncoder().encode(str).length; }
-            };
-        }
-    })(window);
+    // Buffer should already be loaded from unpkg
+    if (typeof window.Buffer === 'undefined') {
+        console.error('Buffer not loaded!');
+    } else {
+        console.log('Buffer loaded successfully');
+    }
     
     const SERVER_AUTH = {{if .IsAuthenticated}}true{{else}}false{{end}};
     const SERVER_ADDRESS = "{{.UserAddress}}";
@@ -585,7 +580,9 @@
     }
 
     // Initialize
+    console.log('Initial state:', { SERVER_AUTH, SERVER_ADDRESS, hasAuthToken: !!authToken });
     restoreWalletState().then(() => {
+        console.log('After restore:', { serverAuthenticated, connectedAddress, isWalletConnected });
         updateConnectUI();
         updateCounter();
         // Try to auto-reconnect Phantom after restoring state
