@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 
 const chain = ref('evm')
 const address = ref('')
 const loading = ref(false)
 const result = ref<any>(null)
-const freeCheckUsed = ref(false)
-const alerts = ref<any[]>([])
+const chains = ref<any[]>([])
+const recentChecks = ref<any[]>([])
 const alertId = ref(0)
 
 const chainIcons: Record<string, string> = { evm: '🟣', btc: '🟠', solana: '🟢', sui: '🔵', tron: '🔴' }
@@ -18,31 +18,39 @@ const chainPlaceholders: Record<string, string> = {
   tron: 'Enter Tron address (T…)'
 }
 
-const checkCount = computed(() => freeCheckUsed.value ? '1 / 1' : '0 / 1')
-const resultClass = computed(() => {
-  if (!result.value) return ''
-  if (result.value.status === 'hacked') return 'danger'
-  if (result.value.status === 'vulnerable') return 'vulnerable'
-  return 'success'
-})
+onMounted(async () => {
+  // Fetch supported chains
+  try {
+    const res = await fetch('/api/chains')
+    if (res.ok) {
+      const data = await res.json()
+      chains.value = data.chains || []
+    }
+  } catch {}
 
-const exampleAddresses = [
-  { chain: 'evm', addr: '0xdeadbeef1234567890abcdef1234567890abcdef' },
-  { chain: 'btc', addr: '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa' },
-  { chain: 'solana', addr: '4f3v9w8x2y7z6a5b4c3d2e1f0g9h8i7j6k5l4m3n2o1p' },
-]
+  // Fetch recent checks
+  try {
+    const res = await fetch('/api/recent')
+    if (res.ok) {
+      const data = await res.json()
+      recentChecks.value = (data.checks || []).map((c: any) => ({
+        ...c,
+        address: c.address ? `${c.address.slice(0,6)}…${c.address.slice(-4)}` : 'unknown',
+        time: new Date(c.checked_at).toLocaleTimeString()
+      }))
+    }
+  } catch {}
+})
 
 async function check() {
   if (!address.value.trim()) {
     result.value = { status: 'error', message: 'Enter a wallet address' }
     return
   }
-  if (freeCheckUsed.value) {
-    result.value = { status: 'error', message: 'Limit reached. Connect wallet for unlimited checks.' }
-    return
-  }
 
   loading.value = true
+  result.value = null
+  
   try {
     const res = await fetch('/api/check', {
       method: 'POST',
@@ -51,28 +59,20 @@ async function check() {
     })
     const data = await res.json()
     result.value = data
-    freeCheckUsed.value = true
-    addAlert(address.value.trim(), chain.value, data.status || 'safe')
+    
+    // Add to recent checks
+    recentChecks.value.unshift({
+      id: alertId.value++,
+      address: `${address.value.slice(0,6)}…${address.value.slice(-4)}`,
+      chain: chain.value,
+      status: data.status === 'not_found' ? 'safe' : data.status,
+      time: new Date().toLocaleTimeString()
+    })
+    if (recentChecks.value.length > 30) recentChecks.value.pop()
   } catch (e) {
-    result.value = { status: 'error', message: 'Request failed' }
+    result.value = { status: 'error', message: 'Request failed. Is the backend running?' }
   }
   loading.value = false
-}
-
-function addAlert(addr: string, ch: string, status: string) {
-  const now = new Date()
-  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-  const users = ['0xMike', 'CryptoGuy', 'WalletWhale', 'DeFiKing']
-  alerts.value.unshift({
-    id: alertId.value++,
-    address: `${addr.slice(0,6)}…${addr.slice(-4)}`,
-    full: addr,
-    chain: ch,
-    status,
-    time: timeStr,
-    user: users[Math.floor(Math.random() * users.length)]
-  })
-  if (alerts.value.length > 30) alerts.value.pop()
 }
 
 function useExample(ex: { chain: string, addr: string }) {
@@ -86,7 +86,15 @@ function setResultText() {
   if (result.value.error) return result.value.error
   if (result.value.status === 'hacked') return '🚨 COMPROMISED — DO NOT use this wallet.'
   if (result.value.status === 'vulnerable') return '⚠️ VULNERABLE — data available, not yet exploited.'
-  return '✅ Safe. Not found in database.'
+  if (result.value.status === 'not_found' || result.value.status === 'safe') return '✅ Safe. Not found in database.'
+  return `Status: ${result.value.status}`
+}
+
+function getResultClass() {
+  if (!result.value) return ''
+  if (result.value.status === 'hacked' || result.value.status === 'compromised') return 'danger'
+  if (result.value.status === 'vulnerable') return 'vulnerable'
+  return 'success'
 }
 </script>
 
@@ -114,11 +122,6 @@ function setResultText() {
     <div class="sub">EVM · BTC · Solana · Sui · Tron</div>
   </div>
 
-  <!-- Search info -->
-  <div class="search-info">
-    <span class="counter">{{ checkCount }}</span>
-  </div>
-
   <!-- Search box -->
   <div class="search-box">
     <div class="chain-selector-wrapper">
@@ -143,48 +146,38 @@ function setResultText() {
     </button>
   </div>
 
-  <!-- Example hints -->
-  <div class="example-hint">
-    <span>💡 try:</span>
-    <template v-for="ex in exampleAddresses" :key="ex.chain + ex.addr">
-      <span class="example-addr" @click="useExample(ex)">{{ ex.addr.slice(0,8) }}…</span>
-      <span class="chain-tag">{{ ex.chain.toUpperCase() }}</span>
-    </template>
-  </div>
-
   <!-- Result -->
-  <div class="result-box" :class="resultClass">
-    <div class="result-text">{{ setResultText() }}</div>
-    <div class="result-sub" v-if="result && !result.error">
+  <div class="result-box" :class="getResultClass()">
+    <div class="result-text">{{ setResultText() || 'Enter address and click Check' }}</div>
+    <div class="result-sub" v-if="result && !result.error && result.status !== 'not_found'">
       Found in database · {{ chain.toUpperCase() }}
     </div>
     <div class="result-chain" v-if="result && !result.error">🔗 {{ chain.toUpperCase() }}</div>
   </div>
 
-  <!-- Alerts -->
+  <!-- Recent Checks -->
   <div class="alerts-section">
     <div class="alerts-header">
-      <span class="alerts-title">🔴 live alerts</span>
-      <span class="alerts-badge" :class="{ idle: alerts.length === 0 }">
-        {{ alerts.length }} alert{{ alerts.length !== 1 ? 's' : '' }}
+      <span class="alerts-title">🔴 recent checks</span>
+      <span class="alerts-badge" :class="{ idle: recentChecks.length === 0 }">
+        {{ recentChecks.length }} checked
       </span>
     </div>
     <div class="alerts-container">
-      <div v-if="alerts.length === 0" style="color:#4c5a7a; font-size:0.8rem; padding:0.6rem; text-align:center;">
-        waiting for checks…
+      <div v-if="recentChecks.length === 0" style="color:#4c5a7a; font-size:0.8rem; padding:0.6rem; text-align:center;">
+        No checks yet. Try one above!
       </div>
       <div 
-        v-for="alert in alerts" 
-        :key="alert.id" 
+        v-for="check in recentChecks" 
+        :key="check.id || check.address + check.time"
         class="alert-item"
-        :class="alert.status === 'hacked' ? 'danger' : alert.status === 'vulnerable' ? 'vulnerable' : 'success'"
+        :class="check.status === 'hacked' || check.status === 'compromised' ? 'danger' : check.status === 'vulnerable' ? 'vulnerable' : 'success'"
       >
-        <span class="alert-icon">{{ alert.status === 'hacked' ? '🚨' : alert.status === 'vulnerable' ? '⚠️' : '✅' }}</span>
-        <span class="alert-addr">{{ alert.address }}</span>
-        <span class="alert-chain">{{ alert.chain.toUpperCase() }}</span>
-        <span class="alert-status" :class="alert.status">{{ alert.status.toUpperCase() }}</span>
-        <span class="alert-user">{{ alert.user }}</span>
-        <span class="alert-time">{{ alert.time }}</span>
+        <span class="alert-icon">{{ check.status === 'hacked' || check.status === 'compromised' ? '🚨' : check.status === 'vulnerable' ? '⚠️' : '✅' }}</span>
+        <span class="alert-addr">{{ check.address }}</span>
+        <span class="alert-chain">{{ (check.chain || chain).toUpperCase() }}</span>
+        <span class="alert-status" :class="check.status">{{ (check.status || 'safe').toUpperCase() }}</span>
+        <span class="alert-time">{{ check.time }}</span>
       </div>
     </div>
   </div>

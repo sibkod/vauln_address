@@ -1,7 +1,15 @@
 /* Reset & Base */
 * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif; }
 
-body { min-height: 100vh; background: #0c0f14; background-image: radial-gradient(circle at 30% 20%, #1a202a, #07090c 95%); color: #e7ecf5; transition: background 0.25s, color 0.2s; }
+body { 
+  min-height: 100vh; 
+  background: #0c0f14; 
+  background-image: radial-gradient(circle at 30% 20%, #1a202a, #07090c 95%); 
+  color: #e7ecf5; 
+  transition: background 0.25s, color 0.2s; 
+  display: flex;
+  flex-direction: column;
+}
 body.light { background: #e6e9ef; background-image: none; color: #1e2330; }
 
 /* Light theme overrides */
@@ -89,7 +97,29 @@ body.light .search-info { color: #4a5578; }
 .connect-btn .addr-short { max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; color: #a8b6d6; font-size: 0.75rem; }
 
 /* Main layout */
-.main-content { width: 100%; max-width: 720px; padding: 1.5rem 1.5rem 0.5rem; flex: 1; }
+.main-content { 
+  width: 100%; 
+  max-width: 720px; 
+  padding: 1.5rem 1.5rem 0.5rem; 
+  flex: 1;
+  margin: 0 auto;
+}
+
+/* Footer */
+.footer { 
+  width: 100%; 
+  margin-top: auto;
+  padding: 1rem 2rem 1.5rem; 
+  background: rgba(10, 14, 20, 0.6); 
+  backdrop-filter: blur(8px); 
+  border-top: 1px solid rgba(255, 255, 255, 0.03); 
+  display: flex; 
+  flex-direction: column; 
+  align-items: center; 
+  gap: 0.6rem; 
+  color: #5a6a8e; 
+  font-size: 0.7rem; 
+}
 
 /* Search info */
 .search-info { display: flex; justify-content: flex-end; font-size: 0.7rem; color: #5a6a8e; margin-bottom: 0.4rem; padding: 0 0.2rem; }
@@ -172,8 +202,7 @@ body.light .search-info { color: #4a5578; }
 .alert-item.vulnerable { border-left-color: #d9a24b; background: #1e1a1060; }
 .alert-item.success { border-left-color: #4bc9a0; background: #11221c40; }
 
-/* Footer */
-.footer { width: 100%; margin-top: 2rem; padding: 1rem 2rem 1.5rem; background: rgba(10, 14, 20, 0.6); backdrop-filter: blur(8px); border-top: 1px solid rgba(255, 255, 255, 0.03); display: flex; flex-direction: column; align-items: center; gap: 0.6rem; color: #5a6a8e; font-size: 0.7rem; }
+/* Footer (duplicated - removed) */
 .footer .footer-stats { display: flex; flex-wrap: wrap; justify-content: center; gap: 1.2rem 2rem; font-size: 0.7rem; }
 .footer .footer-stats .stat-item { display: flex; align-items: center; gap: 0.3rem; }
 .footer .footer-stats .stat-item .num { font-weight: 600; color: #c8d2ea; }
