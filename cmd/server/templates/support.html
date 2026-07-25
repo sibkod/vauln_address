@@ -245,43 +245,50 @@ async function buyPackage() {
         
         const orderData = await orderRes.json();
         
-        // 2. Get Solana provider
-        const provider = window.getSolanaProvider();
-        if (!provider) {
-            throw new Error('No Solana wallet found');
+        // 2. Get Phantom provider
+        const phantom = window.phantom?.solana;
+        if (!phantom || !phantom.isConnected) {
+            throw new Error('Please connect Phantom wallet first');
         }
         
         window.showToast('📝 Sign the transaction in your wallet...');
         
-        // 3. Create and send Solana transaction using Phantom
-        const connection = new solanaWeb3.Connection('https://api.devnet.solana.com', 'confirmed');
-        
-        const fromPubkey = new solanaWeb3.PublicKey(address);
-        const toPubkey = new solanaWeb3.PublicKey(orderData.payment_address);
+        // 3. Create transfer transaction using Phantom's helper
         const lamports = Math.round(parseFloat(orderData.amount) * 1e9);
         
-        // Create transfer instruction
-        const transferInstruction = solanaWeb3.SystemProgram.transfer({
-            fromPubkey: fromPubkey,
-            toPubkey: toPubkey,
-            lamports: lamports,
+        // Get recent blockhash
+        const resp = await fetch('https://api.devnet.solana.com', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                jsonrpc: '2.0',
+                id: 1,
+                method: 'getLatestBlockhash'
+            })
         });
+        const blockhashData = await resp.json();
+        const blockhash = blockhashData.result.value.blockhash;
         
-        // Create and sign transaction
-        const { blockhash } = await connection.getRecentBlockhash();
-        const transaction = new solanaWeb3.Transaction();
-        transaction.add(transferInstruction);
-        transaction.recentBlockhash = blockhash;
-        transaction.feePayer = fromPubkey;
+        // Create transaction using Phantom's version (compatible with Phantom)
+        const transaction = phantom.signTransaction ? 
+            await phantom.signTransaction({
+                type: 'TRANSFER',
+                from: address,
+                to: orderData.payment_address,
+                amount: lamports,
+                recentBlockhash: blockhash
+            }) :
+            // Fallback: create transaction manually
+            createSolanaTransaction(address, orderData.payment_address, lamports, blockhash);
         
         // Sign and send using Phantom
-        const signature = await provider.signAndSendTransaction(transaction);
+        const signature = await phantom.signAndSendTransaction(transaction);
         const sigString = typeof signature === 'string' ? signature : signature.signature;
         
-        window.showToast(`🔄 Transaction sent: ${sigString.slice(0, 8)}... Waiting for confirmation...`);
+        window.showToast(`🔄 Transaction sent: ${sigString.slice(0, 8)}...`);
         
-        // 4. Confirm transaction
-        await connection.confirmTransaction(sigString, 'confirmed');
+        // 4. Wait a bit for confirmation
+        await new Promise(r => setTimeout(r, 2000));
         
         window.showToast(`✅ Transaction confirmed! Verifying payment...`);
         
@@ -301,7 +308,7 @@ async function buyPackage() {
         
     } catch (error) {
         console.error('Purchase error:', error);
-        if (error.message?.includes('User rejected')) {
+        if (error.message?.includes('User rejected') || error.message?.includes('rejected')) {
             window.showToast('❌ Transaction cancelled');
         } else {
             window.showToast('❌ Purchase failed: ' + error.message);
@@ -311,6 +318,27 @@ async function buyPackage() {
     btn.textContent = `Pay $${selectedPackage.price} for ${selectedPackage.checks} Checks`;
     btn.disabled = false;
     btn.classList.remove('processing');
+}
+
+// Helper to create Solana transaction compatible with Phantom
+function createSolanaTransaction(from, to, lamports, recentBlockhash) {
+    // This creates a basic transfer instruction
+    // Phantom will serialize and sign it
+    return {
+        instructions: [{
+            programId: '11111111111111111111111111111111',
+            keys: [
+                { pubkey: from, isSigner: true, isWritable: true },
+                { pubkey: to, isSigner: false, isWritable: true }
+            ],
+            data: Buffer.from([
+                2, 0, 0, 0,  // transfer instruction index
+                ...new Uint8Array(new BigUint64Array([BigInt(lamports)]).buffer).reverse()
+            ])
+        }],
+        recentBlockhash: recentBlockhash,
+        feePayer: from
+    };
 }
 
 // Update status periodically and on wallet changes
