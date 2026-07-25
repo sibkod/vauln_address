@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/joho/godotenv"
 
 	"vauln-address/internal/config"
 	"vauln-address/internal/handlers"
@@ -19,9 +18,6 @@ import (
 )
 
 func main() {
-	// Load .env file if it exists
-	_ = godotenv.Load()
-
 	cfg := config.Load()
 
 	repo, err := repository.New(cfg)
