@@ -97,6 +97,29 @@
     <span class="counter" id="checkCounter">0 / {{.FreeCheckLimit}}</span>
 </div>
 
+<!-- Chain Selector Modal -->
+<div id="chainModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center;">
+    <div style="background: #1a2135; border-radius: 1rem; padding: 1.5rem; max-width: 400px; width: 90%; border: 1px solid rgba(255,255,255,0.1);">
+        <h3 style="color: #f0f4ff; margin-bottom: 1rem; text-align: center;">🔗 Connect Wallet</h3>
+        <p style="color: #9aabcf; font-size: 0.85rem; margin-bottom: 1rem; text-align: center;">Connect with Solana Testnet</p>
+        <div style="display: flex; flex-direction: column; gap: 0.8rem;">
+            <button onclick="selectChainAndConnect('solana')" style="background: rgba(18, 24, 36, 0.7); border: 1px solid rgba(255,255,255,0.1); color: #f0f4ff; padding: 1rem; border-radius: 0.8rem; cursor: pointer; display: flex; align-items: center; gap: 0.8rem; transition: 0.2s;">
+                <span style="width: 32px; height: 32px; background: linear-gradient(135deg, #9945FF, #14F195); border-radius: 50%;"></span>
+                <div style="text-align: left;">
+                    <div style="font-weight: 600;">Solana Testnet</div>
+                    <div style="color: #6d7da0; font-size: 0.75rem;">Phantom, Solflare</div>
+                </div>
+            </button>
+            <div style="text-align: center; color: #fbbf24; font-size: 0.8rem; margin-top: 0.5rem;">⚠️ Testnet only - no real funds</div>
+        </div>
+        <button onclick="closeChainModal()" style="width: 100%; margin-top: 1rem; background: transparent; border: 1px solid rgba(255,255,255,0.1); color: #9aabcf; padding: 0.7rem; border-radius: 0.6rem; cursor: pointer;">Cancel</button>
+    </div>
+</div>
+
+<style>
+#chainModal button:hover { border-color: #3b82f6 !important; }
+</style>
+
 <script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
 <script>
 (function() {
@@ -108,6 +131,7 @@
 
     let isWalletConnected = false;
     let connectedAddress = '';
+    let selectedChain = 'evm'; // Default chain
     let freeCheckUsed = localStorage.getItem('freeCheckUsed') === 'true';
     let web3 = null;
     let authToken = localStorage.getItem('authToken');
@@ -130,6 +154,54 @@
         toast.classList.add('show');
         clearTimeout(toast._timeout);
         toast._timeout = setTimeout(() => toast.classList.remove('show'), 4000);
+    }
+
+    // Chain selector modal functions
+    window.showChainModal = function() {
+        document.getElementById('chainModal').style.display = 'flex';
+    };
+
+    window.closeChainModal = function() {
+        document.getElementById('chainModal').style.display = 'none';
+    };
+
+    window.selectChainAndConnect = async function(chain) {
+        selectedChain = chain;
+        closeChainModal();
+        await connectSolana();
+    };
+
+    async function connectSolana() {
+        showToast('🔗 Connecting to Solana...');
+        try {
+            // Check for Solana wallet (Phantom, Solflare)
+            const provider = window.phantom?.solana || window.solflare;
+            
+            if (!provider?.isConnected) {
+                showToast('⚠️ Please install Phantom or Solflare wallet');
+                return;
+            }
+            
+            const resp = await provider.connect();
+            connectedAddress = resp.publicKey.toString();
+            isWalletConnected = true;
+            
+            localStorage.setItem('walletConnected', 'true');
+            localStorage.setItem('walletAddress', connectedAddress);
+            localStorage.setItem('walletChain', 'solana');
+            
+            updateConnectUI();
+            showToast('✅ Solana wallet connected!');
+            
+            // Authenticate
+            const authSuccess = await authenticateWithBackend(connectedAddress);
+            if (authSuccess) {
+                document.dispatchEvent(new CustomEvent('walletAuthenticated'));
+            }
+        } catch (error) {
+            console.error('Solana connection error:', error);
+            showToast('❌ Failed to connect Solana wallet');
+        }
     }
 
     function updateConnectUI() {
@@ -187,7 +259,7 @@
             
             if (res.ok) {
                 const data = await res.json();
-                userBalance = data.balance || 0;
+                userBalance = (data.user && data.user.balance) || 0;
                 return true;
             } else {
                 // Token invalid or expired - clear localStorage
@@ -237,11 +309,12 @@
             connectedAddress = storedAddress;
         }
         
-        // If server says we're authenticated, sync with localStorage
-        if (SERVER_AUTH && authToken) {
+        // Check if we have a token to validate
+        if (authToken) {
             const valid = await validateSession();
             if (valid) {
-                // Server says authenticated and token is valid
+                // Token is valid - mark as authenticated
+                serverAuthenticated = true;
                 // Use server address if wallet not connected in this session
                 if (!connectedAddress && SERVER_ADDRESS) {
                     connectedAddress = SERVER_ADDRESS;
@@ -250,10 +323,8 @@
             } else {
                 // Token invalid or expired - clear localStorage
                 clearAuthData();
+                serverAuthenticated = false;
             }
-        } else if (authToken && !SERVER_AUTH) {
-            // We have token but server says not authenticated - clear it
-            clearAuthData();
         }
     }
 
@@ -305,40 +376,8 @@
     }
 
     async function connectWallet() {
-        if (typeof window.ethereum !== 'undefined' && window.ethereum.isMetaMask) {
-            try {
-                const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-                if (accounts.length === 0) { alert('No accounts found'); return; }
-                web3 = new Web3(window.ethereum);
-                connectedAddress = accounts[0];
-                isWalletConnected = true;
-                freeCheckUsed = true;
-                
-                // Persist state
-                localStorage.setItem('walletConnected', 'true');
-                localStorage.setItem('walletAddress', connectedAddress);
-                localStorage.setItem('freeCheckUsed', 'true');
-                
-                updateConnectUI();
-                updateCounter();
-                showToast('🔗 Wallet connected. Authenticating...');
-
-                // Authenticate with backend
-                const authSuccess = await authenticateWithBackend(connectedAddress);
-                if (authSuccess) {
-                    showToast('✅ Authenticated! ' + userBalance + ' credits.');
-                    updateCounter();
-                    document.dispatchEvent(new CustomEvent('walletAuthenticated'));
-                } else {
-                    showToast('⚠️ Wallet connected but auth failed');
-                }
-            } catch (error) {
-                console.error(error);
-                alert('Error: ' + (error.message || 'Unknown error'));
-            }
-        } else {
-            alert('Please install MetaMask!');
-        }
+        // Show chain selector modal first
+        showChainModal();
     }
 
     // Listen for account changes in MetaMask

@@ -8,6 +8,7 @@
 .package-card { background: rgba(18, 24, 36, 0.7); border-radius: 1rem; padding: 1.5rem; border: 1px solid rgba(255,255,255,0.08); transition: 0.2s; cursor: pointer; }
 .package-card:hover { border-color: #3b82f6; transform: translateY(-2px); }
 .package-card.popular { border-color: #3b82f6; box-shadow: 0 0 20px #3b82f620; }
+.package-card.selected { border-color: #34d399; background: rgba(52, 211, 153, 0.1); }
 .package-card .badge { background: #3b82f6; color: white; font-size: 0.65rem; padding: 0.2rem 0.6rem; border-radius: 20px; display: inline-block; margin-bottom: 0.5rem; }
 .package-card .checks { font-size: 2rem; font-weight: 700; color: #f0f4ff; }
 .package-card .checks-label { color: #6d7da0; font-size: 0.8rem; }
@@ -17,20 +18,32 @@
 
 .buy-section { margin-top: 2rem; padding-top: 2rem; border-top: 1px solid rgba(255,255,255,0.08); }
 .buy-section h3 { color: #f0f4ff; font-size: 1.2rem; margin-bottom: 1rem; }
+.chain-selector { display: flex; gap: 0.5rem; justify-content: center; margin-bottom: 1rem; }
+.chain-btn { background: rgba(18, 24, 36, 0.7); border: 1px solid rgba(255,255,255,0.1); color: #9aabcf; padding: 0.6rem 1.2rem; border-radius: 8px; cursor: pointer; font-size: 0.85rem; transition: 0.2s; display: flex; align-items: center; gap: 0.4rem; }
+.chain-btn:hover { border-color: #3b82f6; color: #f0f4ff; }
+.chain-btn.active { background: rgba(59, 130, 246, 0.2); border-color: #3b82f6; color: #60a5fa; }
+.chain-btn .chain-icon { width: 18px; height: 18px; border-radius: 50%; }
 .wallet-status { background: rgba(18, 24, 36, 0.5); padding: 1rem; border-radius: 0.8rem; margin-bottom: 1rem; }
 .wallet-status .address { color: #c8d2e8; font-family: monospace; }
 .wallet-status .balance { color: #34d399; font-weight: 600; }
+.payment-details { background: rgba(18, 24, 36, 0.5); padding: 1rem; border-radius: 0.8rem; margin-bottom: 1rem; text-align: left; }
+.payment-details .row { display: flex; justify-content: space-between; padding: 0.4rem 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+.payment-details .row:last-child { border-bottom: none; }
+.payment-details .label { color: #9aabcf; }
+.payment-details .value { color: #f0f4ff; font-weight: 500; }
+.payment-details .total { color: #34d399; font-weight: 600; font-size: 1.1rem; }
 .buy-btn { background: #3b82f6; border: none; color: white; font-weight: 600; padding: 0.9rem 2rem; border-radius: 60px; font-size: 1rem; cursor: pointer; transition: 0.15s; width: 100%; }
 .buy-btn:hover { background: #4f8df7; }
 .buy-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .buy-btn.connected { background: #34d399; }
+.buy-btn.processing { background: #f59e0b; }
 
 @media (max-width: 768px) { .support-content { padding: 1.2rem; } .support-content h2 { font-size: 1.3rem; } .packages-grid { grid-template-columns: 1fr; } }
 </style>
 
 <div class="support-content">
     <h2>💎 Get More Checks</h2>
-    <p class="subtitle">Choose a package that works for you. More checks, better value!</p>
+    <p class="subtitle">Choose a package and pay with crypto. More checks, better value!</p>
 
     <div class="packages-grid" id="packagesGrid">
         <div class="package-card" data-checks="100" data-price="1" onclick="selectPackage(100, 1)">
@@ -62,25 +75,80 @@
 
     <div class="buy-section">
         <h3>Purchase</h3>
+        
+        <div class="chain-selector">
+            <button class="chain-btn active" data-chain="solana" onclick="selectChain('solana')">
+                <span class="chain-icon" style="background: linear-gradient(135deg, #9945FF, #14F195);"></span>
+                Solana (Testnet)
+            </button>
+        </div>
+
         <div class="wallet-status" id="walletStatus">
             <div id="walletNotConnected">Please connect your wallet to purchase checks</div>
             <div id="walletConnected" style="display: none;">
-                <div>Connected: <span class="address" id="walletAddress"></span></div>
+                <div>Connected: <span class="address" id="walletAddress"></span> (<span id="walletChain">Solana</span>)</div>
                 <div>Your balance: <span class="balance" id="userBalance">0</span> checks</div>
             </div>
         </div>
+
+        <div class="payment-details" id="paymentDetails" style="display: none;">
+            <div class="row">
+                <span class="label">Package</span>
+                <span class="value" id="paymentPackage">1,000 checks</span>
+            </div>
+            <div class="row">
+                <span class="label">Price (USD)</span>
+                <span class="value" id="paymentUSD">$5.00</span>
+            </div>
+            <div class="row">
+                <span class="label">Network Fee (est.)</span>
+                <span class="value" id="paymentFee">~$0.01</span>
+            </div>
+            <div class="row total">
+                <span class="label">Total</span>
+                <span class="value" id="paymentTotal">$5.01</span>
+            </div>
+        </div>
+
         <button class="buy-btn" id="buyBtn" onclick="buyPackage()">Connect Wallet to Buy</button>
     </div>
 </div>
 
 <script>
 let selectedPackage = { checks: 1000, price: 5 };
+let selectedChain = 'solana';
 
 function selectPackage(checks, price) {
     selectedPackage = { checks, price };
     document.querySelectorAll('.package-card').forEach(card => {
-        card.style.borderColor = card.dataset.checks == checks ? '#3b82f6' : '';
+        card.classList.remove('selected');
+        if (parseInt(card.dataset.checks) === checks) {
+            card.classList.add('selected');
+        }
     });
+    updatePaymentDetails();
+}
+
+function selectChain(chain) {
+    selectedChain = chain;
+    document.querySelectorAll('.chain-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.chain === chain);
+    });
+    document.getElementById('walletChain').textContent = chain.charAt(0).toUpperCase() + chain.slice(1);
+}
+
+function updatePaymentDetails() {
+    const details = document.getElementById('paymentDetails');
+    const isReady = window.isWalletConnected() || (window.isAuthenticated && window.isAuthenticated());
+    
+    if (isReady && selectedPackage.checks) {
+        details.style.display = 'block';
+        document.getElementById('paymentPackage').textContent = selectedPackage.checks.toLocaleString() + ' checks';
+        document.getElementById('paymentUSD').textContent = '$' + selectedPackage.price.toFixed(2);
+        document.getElementById('paymentTotal').textContent = '$' + (selectedPackage.price + 0.01).toFixed(2);
+    } else {
+        details.style.display = 'none';
+    }
 }
 
 function updateWalletStatus() {
@@ -95,9 +163,10 @@ function updateWalletStatus() {
     
     const btn = document.getElementById('buyBtn');
     if (isReady) {
-        btn.textContent = `Buy ${selectedPackage.checks} Checks for $${selectedPackage.price}`;
+        btn.textContent = `Pay $${selectedPackage.price} for ${selectedPackage.checks} Checks`;
         btn.classList.add('connected');
         btn.disabled = false;
+        updatePaymentDetails();
         
         // Fetch user balance
         const authToken = window.getAuthToken ? window.getAuthToken() : null;
@@ -110,7 +179,6 @@ function updateWalletStatus() {
                 }
             }).catch(() => {});
         } else if (isAuthed) {
-            // If authenticated via server but no token, fetch profile anyway
             fetch('/api/user/profile').then(r => r.json()).then(data => {
                 if (data.user && data.user.balance !== undefined) {
                     document.getElementById('userBalance').textContent = data.user.balance;
@@ -121,11 +189,12 @@ function updateWalletStatus() {
         btn.textContent = 'Connect Wallet to Buy';
         btn.classList.remove('connected');
         btn.disabled = true;
+        document.getElementById('paymentDetails').style.display = 'none';
     }
 }
 
 async function buyPackage() {
-    if (!window.isWalletConnected() && !window.isAuthenticated()) {
+    if (!window.isWalletConnected() && !(window.isAuthenticated && window.isAuthenticated())) {
         document.getElementById('connectWalletBtnNotAuth').click();
         return;
     }
@@ -133,26 +202,49 @@ async function buyPackage() {
     const btn = document.getElementById('buyBtn');
     btn.textContent = 'Processing...';
     btn.disabled = true;
+    btn.classList.add('processing');
     
     try {
-        // Get auth token first
         const address = window.getConnectedAddress();
+        const authToken = window.getAuthToken ? window.getAuthToken() : null;
         
-        // For demo, show success message - in production, this would create an order
-        window.showToast(`🪙 Purchase ${selectedPackage.checks} checks - Demo mode`);
+        // 1. Create order on backend
+        const headers = { 'Content-Type': 'application/json' };
+        if (authToken) headers['Authorization'] = 'Bearer ' + authToken';
         
-        // In real implementation:
-        // 1. Fetch nonce from /api/auth/nonce
-        // 2. Sign message with wallet
-        // 3. Login via /api/auth/login to get JWT
-        // 4. Create order via /api/orders
-        // 5. Process payment (Sui blockchain or fiat)
+        const orderRes = await fetch('/api/orders', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+                checks: selectedPackage.checks,
+                chain: selectedChain,
+                wallet_address: address
+            })
+        });
+        
+        if (!orderRes.ok) {
+            throw new Error('Failed to create order');
+        }
+        
+        const orderData = await orderRes.json();
+        
+        // For testnet: show payment instructions
+        window.showToast(`🪙 Send $${selectedPackage.price} via Solana Testnet. Order ID: ${orderData.order_id}`);
+        // In production: integrate with Solana payment SDK
+        
+        // For now: simulate instant delivery for demo
+        setTimeout(() => {
+            window.showToast(`✅ ${selectedPackage.checks} checks added!`);
+            updateWalletStatus();
+        }, 1500);
         
     } catch (error) {
         window.showToast('❌ Purchase failed: ' + error.message);
     }
     
-    updateWalletStatus();
+    btn.textContent = `Pay $${selectedPackage.price} for ${selectedPackage.checks} Checks`;
+    btn.disabled = false;
+    btn.classList.remove('processing');
 }
 
 // Update status periodically and on wallet changes
