@@ -15,6 +15,11 @@ import (
 	"vauln-address/internal/validators"
 )
 
+// contains checks if s contains substr
+func contains(s, substr string) bool {
+	return strings.Contains(s, substr)
+}
+
 type Handler struct {
 	repo       *repository.Repository
 	authService *auth.AuthService
@@ -468,10 +473,19 @@ func (h *Handler) CreateAPIKey(c *gin.Context) {
 
 	apiKey, err := h.authService.GenerateAPIKey(userID.(int64), req.Name, req.ExpiresIn)
 	if err != nil {
+		errStr := err.Error()
+		if contains(errStr, "no such table") || contains(errStr, "doesn't exist") || contains(errStr, "Unknown column") {
+			c.JSON(http.StatusServiceUnavailable, models.ErrorResponse{
+				Error:   "API keys not available",
+				Code:    "TABLE_NOT_FOUND",
+				Details: "Please run database migrations. The api_keys table may not exist.",
+			})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error:   "failed to create API key",
 			Code:    "SERVER_ERROR",
-			Details: err.Error(),
+			Details: errStr,
 		})
 		return
 	}
@@ -495,10 +509,20 @@ func (h *Handler) ListAPIKeys(c *gin.Context) {
 
 	keys, err := h.authService.GetUserAPIKeys(userID.(int64))
 	if err != nil {
+		// Check if it's a table not found error
+		errStr := err.Error()
+		if contains(errStr, "no such table") || contains(errStr, "doesn't exist") || contains(errStr, "Unknown column") {
+			c.JSON(http.StatusServiceUnavailable, models.ErrorResponse{
+				Error:   "API keys not available",
+				Code:    "TABLE_NOT_FOUND",
+				Details: "Please run database migrations. The api_keys table may not exist.",
+			})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error:   "failed to get API keys",
 			Code:    "SERVER_ERROR",
-			Details: err.Error(),
+			Details: errStr,
 		})
 		return
 	}
