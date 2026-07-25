@@ -85,14 +85,16 @@ function selectPackage(checks, price) {
 
 function updateWalletStatus() {
     const isConnected = window.isWalletConnected();
+    const isAuthed = window.isAuthenticated ? window.isAuthenticated() : false;
     const address = window.getConnectedAddress();
+    const isReady = isConnected || isAuthed;
     
-    document.getElementById('walletNotConnected').style.display = isConnected ? 'none' : 'block';
-    document.getElementById('walletConnected').style.display = isConnected ? 'block' : 'none';
+    document.getElementById('walletNotConnected').style.display = isReady ? 'none' : 'block';
+    document.getElementById('walletConnected').style.display = isReady ? 'block' : 'none';
     document.getElementById('walletAddress').textContent = address ? address.slice(0, 8) + '...' + address.slice(-4) : '';
     
     const btn = document.getElementById('buyBtn');
-    if (isConnected) {
+    if (isReady) {
         btn.textContent = `Buy ${selectedPackage.checks} Checks for $${selectedPackage.price}`;
         btn.classList.add('connected');
         btn.disabled = false;
@@ -103,8 +105,15 @@ function updateWalletStatus() {
             fetch('/api/user/profile', {
                 headers: { 'Authorization': 'Bearer ' + authToken }
             }).then(r => r.json()).then(data => {
-                if (data.balance !== undefined) {
-                    document.getElementById('userBalance').textContent = data.balance;
+                if (data.user && data.user.balance !== undefined) {
+                    document.getElementById('userBalance').textContent = data.user.balance;
+                }
+            }).catch(() => {});
+        } else if (isAuthed) {
+            // If authenticated via server but no token, fetch profile anyway
+            fetch('/api/user/profile').then(r => r.json()).then(data => {
+                if (data.user && data.user.balance !== undefined) {
+                    document.getElementById('userBalance').textContent = data.user.balance;
                 }
             }).catch(() => {});
         }
@@ -116,8 +125,8 @@ function updateWalletStatus() {
 }
 
 async function buyPackage() {
-    if (!window.isWalletConnected()) {
-        document.getElementById('connectWalletBtn').click();
+    if (!window.isWalletConnected() && !window.isAuthenticated()) {
+        document.getElementById('connectWalletBtnNotAuth').click();
         return;
     }
     

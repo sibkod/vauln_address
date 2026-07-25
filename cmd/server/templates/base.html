@@ -21,6 +21,16 @@
         .connect-btn .dot { width: 8px; height: 8px; border-radius: 10px; background: #4f5b77; display: inline-block; transition: 0.2s; }
         .connect-btn .dot.active { background: #34d399; box-shadow: 0 0 10px #34d39960; }
         .connect-btn .addr-short { max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; color: #b0bbd6; font-size: 0.8rem; }
+        
+        /* Dropdown menu */
+        .wallet-dropdown { position: relative; display: inline-block; }
+        .wallet-dropdown-content { display: none; position: absolute; right: 0; top: 100%; background: rgba(18, 24, 36, 0.98); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; min-width: 180px; box-shadow: 0 8px 30px rgba(0,0,0,0.5); overflow: hidden; z-index: 100; margin-top: 8px; }
+        .wallet-dropdown-content.show { display: block; }
+        .wallet-dropdown-item { padding: 12px 16px; color: #c8d2e8; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; transition: 0.15s; text-decoration: none; }
+        .wallet-dropdown-item:hover { background: rgba(59, 130, 246, 0.15); color: #fff; }
+        .wallet-dropdown-item.danger { color: #ff6b6b; }
+        .wallet-dropdown-item.danger:hover { background: rgba(255, 59, 59, 0.15); }
+        .wallet-dropdown-divider { height: 1px; background: rgba(255,255,255,0.06); margin: 4px 0; }
 
         .main-content { width: 100%; max-width: 700px; padding: 1.5rem 1.5rem 2rem; }
 
@@ -55,12 +65,26 @@
         <a href="/support" class="nav-link {{if eq .ActivePage "support"}}active{{end}}">💎 Buy</a>
     </div>
     <div class="nav-right">
-        <button class="connect-btn" id="connectWalletBtn">
-            <span class="dot" id="connectDot"></span>
-            <span id="connectLabel">Connect</span>
-            <span class="addr-short" id="connectAddressShort"></span>
+        <div class="wallet-dropdown" id="walletDropdown" style="display: none;">
+            <button class="connect-btn" id="connectWalletBtn">
+                <span class="dot active" id="connectDot"></span>
+                <span id="connectLabel"></span>
+                <span class="addr-short" id="connectAddressShort"></span>
+            </button>
+            <div class="wallet-dropdown-content" id="walletDropdownMenu">
+                <a href="/api-keys" class="wallet-dropdown-item">
+                    <span>🔑</span> API Keys
+                </a>
+                <div class="wallet-dropdown-divider"></div>
+                <div class="wallet-dropdown-item danger" onclick="logout()">
+                    <span>🚪</span> Logout
+                </div>
+            </div>
+        </div>
+        <button class="connect-btn" id="connectWalletBtnNotAuth">
+            <span class="dot" id="connectDotNotAuth"></span>
+            <span id="connectLabelNotAuth">Connect</span>
         </button>
-        <button class="nav-link" id="logoutBtn" style="display: none;" onclick="logout()">Logout</button>
     </div>
 </nav>
 
@@ -94,6 +118,9 @@
     const connectDot = document.getElementById('connectDot');
     const connectLabel = document.getElementById('connectLabel');
     const connectAddressShort = document.getElementById('connectAddressShort');
+    const connectWalletBtnNotAuth = document.getElementById('connectWalletBtnNotAuth');
+    const walletDropdown = document.getElementById('walletDropdown');
+    const walletDropdownMenu = document.getElementById('walletDropdownMenu');
     const logoutBtn = document.getElementById('logoutBtn');
     const checkCounter = document.getElementById('checkCounter');
     const toast = document.getElementById('toast');
@@ -110,16 +137,30 @@
         const displayAddress = serverAuthenticated ? (connectedAddress || SERVER_ADDRESS) : connectedAddress;
         
         if (displayAddress) {
-            connectDot.className = 'dot active';
-            connectLabel.textContent = '';
+            // Show dropdown menu with address
+            walletDropdown.style.display = 'inline-block';
+            connectWalletBtnNotAuth.style.display = 'none';
             connectAddressShort.textContent = displayAddress.slice(0,6) + '...' + displayAddress.slice(-4);
-            logoutBtn.style.display = 'inline-block';
         } else {
-            connectDot.className = 'dot';
-            connectLabel.textContent = 'Connect';
-            connectAddressShort.textContent = '';
-            logoutBtn.style.display = 'none';
+            // Show simple connect button
+            walletDropdown.style.display = 'none';
+            connectWalletBtnNotAuth.style.display = 'inline-flex';
         }
+    }
+    
+    // Dropdown menu toggle
+    if (walletDropdown) {
+        walletDropdown.querySelector('.connect-btn').addEventListener('click', function(e) {
+            e.stopPropagation();
+            walletDropdownMenu.classList.toggle('show');
+        });
+        
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!walletDropdown.contains(e.target)) {
+                walletDropdownMenu.classList.remove('show');
+            }
+        });
     }
 
     function updateCounter() {
@@ -174,6 +215,12 @@
         isWalletConnected = false;
         connectedAddress = '';
         freeCheckUsed = false;
+        serverAuthenticated = false;
+        
+        // Close dropdown
+        if (walletDropdownMenu) {
+            walletDropdownMenu.classList.remove('show');
+        }
         
         // Reload page to reflect server-side auth state
         window.location.reload();
@@ -314,6 +361,9 @@
     }
 
     connectBtn.addEventListener('click', connectWallet);
+    if (connectWalletBtnNotAuth) {
+        connectWalletBtnNotAuth.addEventListener('click', connectWallet);
+    }
 
     // Initialize
     restoreWalletState().then(() => {
