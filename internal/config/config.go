@@ -7,13 +7,25 @@ import (
 	"github.com/joho/godotenv"
 )
 
+// DBType represents the type of database
+type DBType string
+
+const (
+	DBTypePostgres DBType = "postgres"
+	DBTypeMySQL    DBType = "mysql"
+	DBTypeSQLite   DBType = "sqlite"
+)
+
 type Config struct {
+	DBType            DBType
 	DBHost            string
 	DBPort            int
 	DBUser            string
 	DBPassword        string
 	DBName            string
 	DBSSLMode         string
+	DBCharset        string
+	SQLitePath        string
 	ServerPort        string
 	RateLimitRequests int
 	RateLimitHours    int
@@ -22,13 +34,18 @@ type Config struct {
 func Load() *Config {
 	godotenv.Load()
 
+	dbType := DBType(getEnv("DB_TYPE", "postgres"))
+
 	return &Config{
+		DBType:            dbType,
 		DBHost:            getEnv("DB_HOST", "localhost"),
 		DBPort:            getEnvInt("DB_PORT", 5432),
 		DBUser:            getEnv("DB_USER", "postgres"),
 		DBPassword:        getEnv("DB_PASSWORD", "postgres"),
 		DBName:            getEnv("DB_NAME", "vauln_address"),
 		DBSSLMode:         getEnv("DB_SSLMODE", "disable"),
+		DBCharset:         getEnv("DB_CHARSET", "utf8mb4"),
+		SQLitePath:        getEnv("SQLITE_PATH", "./data/vauln_address.db"),
 		ServerPort:        getEnv("SERVER_PORT", "8080"),
 		RateLimitRequests: getEnvInt("RATE_LIMIT_REQUESTS", 10),
 		RateLimitHours:    getEnvInt("RATE_LIMIT_WINDOW_HOURS", 24),
