@@ -253,10 +253,10 @@ async function buyPackage() {
         
         window.showToast('📝 Sign the transaction in your wallet...');
         
-        // 3. Create and send transaction
+        // 3. Create transfer instruction manually (no Buffer needed)
         const lamports = Math.round(parseFloat(orderData.amount) * 1e9);
         
-        // Get recent blockhash
+        // Get recent blockhash from Solana RPC
         const resp = await fetch('https://api.devnet.solana.com', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -269,29 +269,53 @@ async function buyPackage() {
         const blockhashData = await resp.json();
         const blockhash = blockhashData.result.value.blockhash;
         
-        // Create transaction using solanaWeb3 (compatible with all wallets)
-        const fromPubkey = new solanaWeb3.PublicKey(address);
-        const toPubkey = new solanaWeb3.PublicKey(orderData.payment_address);
+        // Create simple transfer instruction bytes
+        // SystemProgram.transfer: 2 (instruction index) + 8 bytes lamports
+        const instructionData = new Uint8Array(12);
+        instructionData[0] = 2; // transfer instruction
+        // Write lamports as 8-byte little-endian
+        for (let i = 0; i < 8; i++) {
+            instructionData[4 + i] = (lamports >> (8 * i)) & 0xff;
+        }
         
-        const transaction = new solanaWeb3.Transaction();
-        transaction.add(
-            solanaWeb3.SystemProgram.transfer({
-                fromPubkey: fromPubkey,
-                toPubkey: toPubkey,
-                lamports: lamports
-            })
-        );
-        transaction.recentBlockhash = blockhash;
-        transaction.feePayer = fromPubkey;
+        // Build transaction message (simplified version)
+        const message = {
+            recentBlockhash: blockhash,
+            feePayer: address,
+            instructions: [{
+                programId: '11111111111111111111111111111111',
+                keys: [
+                    { pubkey: address, isSigner: true, isWritable: true },
+                    { pubkey: orderData.payment_address, isSigner: false, isWritable: true }
+                ],
+                data: instructionData
+            }]
+        };
         
-        // Sign and send using any Solana wallet
-        const signature = await provider.signAndSendTransaction(transaction);
-        const sigString = typeof signature === 'string' ? signature : signature.signature;
+        // Try to sign and send using wallet
+        let signature;
+        try {
+            // Method 1: signAndSendTransaction (Phantom, Solflare)
+            if (provider.signAndSendTransaction) {
+                signature = await provider.signAndSendTransaction(message);
+            } else if (provider.signTransaction) {
+                // Method 2: signTransaction (older wallets)
+                const tx = await provider.signTransaction(message);
+                signature = await provider.sendTransaction(tx);
+            } else {
+                throw new Error('Wallet does not support transaction signing');
+            }
+        } catch (walletError) {
+            // Fallback: try serializing properly for different wallet formats
+            throw new Error('Transaction signing failed: ' + walletError.message);
+        }
+        
+        const sigString = typeof signature === 'string' ? signature : signature.signature || signature.signatures?.[0];
         
         window.showToast('🔄 Transaction sent: ' + sigString.slice(0, 8) + '...');
         
         // 4. Wait for confirmation
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise(r => setTimeout(r, 3000));
         
         window.showToast('✅ Transaction confirmed! Verifying payment...');
         
