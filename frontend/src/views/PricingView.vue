@@ -14,16 +14,16 @@ const IS_MAINNET = false
 const SOLANA_NETWORK = IS_MAINNET ? 'mainnet-beta' : 'devnet'
 const RPC_URL = IS_MAINNET ? 'https://api.mainnet-beta.solana.com' : 'https://api.devnet.solana.com'
 
-// Price config - MUST match backend (PricePerCheckUSD = $0.10, SOL~$20)
+// Price config - MUST match backend (PricePerCheckUSD = $0.10)
 const PRICE_PER_CHECK_USD = 0.10
-const SOL_PRICE_USD = 20.0
 
-// Calculate price in SOL from checks count
+// SOL price is now FIXED at 0.01 SOL for testing (backend returns this value)
+// Previously: priceUSD / SOL_PRICE_USD where SOL_PRICE_USD = 20.0
+const SOL_AMOUNT_TEST = 0.01
+
+// Calculate price in SOL - now uses fixed value from backend
 function calcPriceSOL(checks: number): number {
-  let priceUSD = checks * PRICE_PER_CHECK_USD
-  if (checks >= 1000) priceUSD *= 0.5 // 50% discount
-  else if (checks >= 500) priceUSD *= 0.6 // 40% discount
-  return Math.round((priceUSD / SOL_PRICE_USD) * 10000) / 10000 // Round to 4 decimals
+  return SOL_AMOUNT_TEST
 }
 
 // Calculate price in USD (for USDC)
@@ -146,8 +146,8 @@ async function payWithSolana() {
     
     const senderPublicKey = phantom.publicKey
     const recipientPublicKey = new PublicKey(orderData.payment_address || MERCHANT_WALLET)
-    // Use amount from backend order response
-    const solAmount = parseFloat(orderData.amount) || selectedPackage.value.priceSOL
+    // Use amount from backend order response (now FIXED at 0.01 SOL for testing)
+    const solAmount = parseFloat(orderData.amount) || SOL_AMOUNT_TEST
     const lamports = Math.round(solAmount * LAMPORTS_PER_SOL)
     
     // Create a proper Transaction object
