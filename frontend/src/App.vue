@@ -21,9 +21,17 @@ const connectError = ref('')
 const stats = ref({ evm: 0, btc: 0, solana: 0, sui: 0, tron: 0 })
 
 const walletOptions = [
-  { id: 'phantom', name: 'Phantom', icon: '👻', url: 'https://phantom.app/' },
-  { id: 'solflare', name: 'Solflare', icon: '☀️', url: 'https://solflare.com/' },
-  { id: 'torus', name: 'Torus', icon: '🔮', url: 'https://toruswallet.io/' },
+  // Browser Extensions
+  { id: 'phantom', name: 'Phantom', icon: '👻', url: 'https://phantom.app/', type: 'extension' },
+  { id: 'solflare', name: 'Solflare', icon: '☀️', url: 'https://solflare.com/', type: 'extension' },
+  { id: 'slope', name: 'Slope', icon: '🛡️', url: 'https://slope.finance/', type: 'extension' },
+  { id: 'glow', name: 'Glow', icon: '✨', url: 'https://glow.app/', type: 'extension' },
+  { id: 'coinbase', name: 'Coinbase Wallet', icon: '💰', url: 'https://www.coinbase.com/wallet', type: 'extension' },
+  { id: 'backpack', name: 'Backpack', icon: '🎒', url: 'https://backpack.app/', type: 'extension' },
+  // Mobile & Hardware
+  { id: 'walletconnect', name: 'WalletConnect', icon: '🔗', url: 'https://walletconnect.com/', type: 'mobile' },
+  { id: 'exodus', name: 'Exodus', icon: '🚀', url: 'https://exodus.com/', type: 'mobile' },
+  { id: 'ledger', name: 'Ledger Live', icon: '📱', url: 'https://www.ledger.com/ledger-live', type: 'hardware' },
 ]
 
 // Provide auth state to all components
@@ -93,47 +101,59 @@ async function connectWallet(walletId: string) {
   connectError.value = ''
   
   try {
-    // Check for Solana wallet providers
-    if (walletId === 'phantom') {
-      const phantom = (window as any).solana
-      if (phantom?.isPhantom) {
-        const res = await phantom.connect()
-        if (res.publicKey) {
-          await authenticateWithBackend(phantom, res.publicKey.toString())
+    const providers: Record<string, any> = {
+      phantom: (window as any).solana,
+      solflare: (window as any).solflare,
+      slope: (window as any).slope,
+      glow: (window as any).glow,
+    }
+    
+    // Direct connection for browser extensions
+    if (providers[walletId]) {
+      const provider = providers[walletId]
+      if (provider?.isConnected || provider?.publicKey) {
+        // Already connected
+        await authenticateWithBackend(provider, provider.publicKey.toString())
+        return
+      }
+      if (provider?.connect) {
+        await provider.connect()
+        if (provider.publicKey) {
+          await authenticateWithBackend(provider, provider.publicKey.toString())
           return
         }
-      } else {
-        // Redirect to install
-        window.open('https://phantom.app/', '_blank')
-        connectError.value = 'Please install Phantom wallet'
-        connecting.value = false
-        return
       }
     }
     
-    if (walletId === 'solflare') {
-      const solflare = (window as any).solflare
-      if (solflare?.isSolflare) {
-        await solflare.connect()
-        if (solflare.publicKey) {
-          await authenticateWithBackend(solflare, solflare.publicKey.toString())
-          return
-        }
-      } else {
-        window.open('https://solflare.com/', '_blank')
-        connectError.value = 'Please install Solflare wallet'
-        connecting.value = false
-        return
-      }
-    }
-    
-    if (walletId === 'torus') {
-      connectError.value = 'Torus wallet connection coming soon'
+    // Mobile wallets - need WalletConnect or deep link
+    if (walletId === 'walletconnect') {
+      connectError.value = 'WalletConnect integration coming soon'
       connecting.value = false
       return
     }
     
-    connectError.value = 'Wallet not found. Please install a supported wallet.'
+    if (walletId === 'exodus') {
+      // Exodus deep link
+      window.location.href = 'exodus://solana/wc'
+      connectError.value = 'Opening Exodus wallet...'
+      connecting.value = false
+      return
+    }
+    
+    if (walletId === 'ledger') {
+      connectError.value = 'Ledger connection via WalletConnect coming soon'
+      connecting.value = false
+      return
+    }
+    
+    // If we get here, wallet not installed - redirect to install
+    const wallet = walletOptions.find(w => w.id === walletId)
+    if (wallet) {
+      window.open(wallet.url, '_blank')
+      connectError.value = `Please install ${wallet.name} wallet`
+    } else {
+      connectError.value = 'Wallet not found. Please install a supported wallet.'
+    }
   } catch (err: any) {
     connectError.value = err.message || 'Failed to connect wallet'
   }
@@ -252,29 +272,45 @@ function getTotal() {
         <h2>Connect Wallet</h2>
         <button class="modal-close" @click="closeWalletModal">×</button>
       </div>
-      <p class="modal-desc">Select a wallet to connect</p>
+      <p class="modal-desc">Choose your preferred wallet</p>
       
-      <div class="wallet-options">
-        <button 
-          v-for="wallet in walletOptions" 
-          :key="wallet.id"
-          class="wallet-option"
-          @click="connectWallet(wallet.id)"
-          :disabled="connecting"
-        >
-          <span class="wallet-icon">{{ wallet.icon }}</span>
-          <span class="wallet-name">{{ wallet.name }}</span>
-          <span v-if="connecting" class="connecting-spinner">⏳</span>
-        </button>
+      <!-- Extension Wallets -->
+      <div class="wallet-section">
+        <div class="wallet-section-title">Browser Extensions</div>
+        <div class="wallet-options">
+          <button 
+            v-for="wallet in walletOptions.filter(w => w.type === 'extension')" 
+            :key="wallet.id"
+            class="wallet-option"
+            @click="connectWallet(wallet.id)"
+            :disabled="connecting"
+          >
+            <span class="wallet-icon">{{ wallet.icon }}</span>
+            <span class="wallet-name">{{ wallet.name }}</span>
+            <span class="wallet-badge extension">Extension</span>
+          </button>
+        </div>
+      </div>
+      
+      <!-- Mobile Wallets -->
+      <div class="wallet-section">
+        <div class="wallet-section-title">Mobile & Hardware</div>
+        <div class="wallet-options">
+          <button 
+            v-for="wallet in walletOptions.filter(w => w.type !== 'extension')" 
+            :key="wallet.id"
+            class="wallet-option"
+            @click="connectWallet(wallet.id)"
+            :disabled="connecting"
+          >
+            <span class="wallet-icon">{{ wallet.icon }}</span>
+            <span class="wallet-name">{{ wallet.name }}</span>
+            <span class="wallet-badge mobile">{{ wallet.type }}</span>
+          </button>
+        </div>
       </div>
       
       <div v-if="connectError" class="wallet-error">{{ connectError }}</div>
-      
-      <p class="modal-hint">
-        Don't have a wallet? 
-        <a href="https://phantom.app/" target="_blank">Get Phantom</a> or 
-        <a href="https://solflare.com/" target="_blank">Get Solflare</a>
-      </p>
     </div>
   </div>
 
@@ -322,7 +358,9 @@ function getTotal() {
   border-radius: 16px;
   padding: 1.5rem;
   width: 90%;
-  max-width: 380px;
+  max-width: 420px;
+  max-height: 90vh;
+  overflow-y: auto;
 }
 .modal-header {
   display: flex;
@@ -350,41 +388,71 @@ function getTotal() {
   font-size: 0.85rem;
   margin-bottom: 1.2rem;
 }
+.wallet-section {
+  margin-bottom: 1.2rem;
+}
+.wallet-section-title {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #5a6a8e;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.6rem;
+}
 .wallet-options {
   display: flex;
   flex-direction: column;
-  gap: 0.8rem;
+  gap: 0.5rem;
 }
 .wallet-option {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  padding: 1rem;
+  gap: 0.8rem;
+  padding: 0.8rem 1rem;
   background: #151a24;
   border: 1px solid #252d3d;
-  border-radius: 12px;
+  border-radius: 10px;
   cursor: pointer;
   transition: all 0.2s;
 }
 .wallet-option:hover:not(:disabled) {
   border-color: #667eea;
   background: #1a1f2e;
+  transform: translateX(4px);
 }
 .wallet-option:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 .wallet-icon {
-  font-size: 1.8rem;
+  font-size: 1.5rem;
+  width: 32px;
+  text-align: center;
 }
 .wallet-name {
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 500;
   color: #e7ecf5;
   flex: 1;
 }
-.connecting-spinner {
-  font-size: 1.2rem;
+.wallet-badge {
+  font-size: 0.6rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.wallet-badge.extension {
+  background: #667eea20;
+  color: #667eea;
+}
+.wallet-badge.mobile {
+  background: #4bc9a020;
+  color: #4bc9a0;
+}
+.wallet-badge.hardware {
+  background: #ffa50220;
+  color: #ffa502;
 }
 .wallet-error {
   margin-top: 1rem;
@@ -395,18 +463,5 @@ function getTotal() {
   color: #ff6b6b;
   font-size: 0.85rem;
   text-align: center;
-}
-.modal-hint {
-  margin-top: 1.2rem;
-  font-size: 0.8rem;
-  color: #5a6a8e;
-  text-align: center;
-}
-.modal-hint a {
-  color: #667eea;
-  text-decoration: none;
-}
-.modal-hint a:hover {
-  text-decoration: underline;
 }
 </style>
