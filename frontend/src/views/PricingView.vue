@@ -196,10 +196,14 @@ async function payWithSolana() {
 
 function startPolling(signature: string) {
   // Poll backend every 3 seconds
+  const authToken = localStorage.getItem('authToken')
   pollInterval.value = window.setInterval(async () => {
     try {
       const res = await fetch(`/api/payment/status/${signature}`, {
-        method: 'POST'
+        method: 'POST',
+        headers: {
+          'Authorization': authToken ? `Bearer ${authToken}` : ''
+        }
       })
       const data = await res.json()
       
