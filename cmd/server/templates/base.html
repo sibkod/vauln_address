@@ -66,7 +66,7 @@
     </div>
     <div class="nav-right">
         <div class="wallet-dropdown" id="walletDropdown" style="display: none;">
-            <button class="connect-btn" id="connectWalletBtn">
+            <button class="connect-btn" id="connectWalletBtn" onclick="toggleWalletMenu(event)">
                 <span class="dot active" id="connectDot"></span>
                 <span id="connectLabel"></span>
                 <span class="addr-short" id="connectAddressShort"></span>
@@ -76,7 +76,7 @@
                     <span>🔑</span> API Keys
                 </a>
                 <div class="wallet-dropdown-divider"></div>
-                <div class="wallet-dropdown-item danger" onclick="logout()">
+                <div class="wallet-dropdown-item danger" onclick="handleLogout(event)">
                     <span>🚪</span> Logout
                 </div>
             </div>
@@ -284,21 +284,25 @@
         }
     }
     
-    // Dropdown menu toggle
-    if (walletDropdown) {
-        connectBtn.addEventListener('click', function(e) {
-            console.log('Dropdown button clicked');
-            e.stopPropagation();
-            walletDropdownMenu.classList.toggle('show');
-        });
-        
-        // Close dropdown when clicking outside
-        document.addEventListener('click', function(e) {
-            if (!walletDropdown.contains(e.target)) {
-                walletDropdownMenu.classList.remove('show');
-            }
-        });
-    }
+    // Wallet dropdown menu functions
+    window.toggleWalletMenu = function(e) {
+        if (e) e.stopPropagation();
+        console.log('toggleWalletMenu called, menu shown:', walletDropdownMenu.classList.contains('show'));
+        walletDropdownMenu.classList.toggle('show');
+    };
+    
+    window.handleLogout = function(e) {
+        if (e) e.stopPropagation();
+        walletDropdownMenu.classList.remove('show');
+        logout();
+    };
+    
+    // Close dropdown when clicking outside
+    document.addEventListener('click', function(e) {
+        if (walletDropdown && walletDropdownMenu && !walletDropdown.contains(e.target)) {
+            walletDropdownMenu.classList.remove('show');
+        }
+    });
     
     // Auto-reconnect Phantom wallet if previously connected
     async function tryAutoReconnect() {
