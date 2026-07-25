@@ -211,8 +211,8 @@ func (h *Handler) CreateOrder(c *gin.Context) {
 	// Get payment address
 	paymentAddress := h.serverCfg.SolanaPaymentAddr
 	if paymentAddress == "" {
-		// Demo mode - use a placeholder
-		paymentAddress = "DemoAddress123456789"
+		// Demo mode - use a valid Solana testnet address (example receiving address)
+		paymentAddress = "CW58CLARKr9mL4d7oRDj6FKv3cM2xT6vH3kQVZqW4xXy"
 	}
 
 	// Calculate SOL amount (testnet - approximate)

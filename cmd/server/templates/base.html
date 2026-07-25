@@ -254,15 +254,20 @@
     }
 
     function updateConnectUI() {
+        console.log('updateConnectUI called:', { serverAuthenticated, connectedAddress, SERVER_ADDRESS });
+        
         // If server says authenticated, use server address OR connected wallet address
         const displayAddress = serverAuthenticated ? (connectedAddress || SERVER_ADDRESS) : connectedAddress;
+        console.log('displayAddress:', displayAddress);
         
         if (displayAddress) {
+            console.log('Showing authenticated UI');
             // Show dropdown menu with address
             walletDropdown.style.display = 'inline-block';
             connectWalletBtnNotAuth.style.display = 'none';
             connectAddressShort.textContent = displayAddress.slice(0,6) + '...' + displayAddress.slice(-4);
         } else {
+            console.log('Showing connect button');
             // Show simple connect button
             walletDropdown.style.display = 'none';
             connectWalletBtnNotAuth.style.display = 'inline-flex';
@@ -366,9 +371,12 @@
         const storedConnected = localStorage.getItem('walletConnected');
         const storedAddress = localStorage.getItem('walletAddress');
         
+        console.log('Restoring wallet state:', { storedConnected, storedAddress, hasAuthToken: !!authToken });
+        
         if (storedConnected === 'true' && storedAddress) {
             isWalletConnected = true;
             connectedAddress = storedAddress;
+            console.log('Wallet connected, address:', connectedAddress);
         }
         
         // Check if we have a token to validate
@@ -377,6 +385,7 @@
             if (valid) {
                 // Token is valid - mark as authenticated
                 serverAuthenticated = true;
+                console.log('Token valid, serverAuthenticated:', serverAuthenticated);
                 // Use server address if wallet not connected in this session
                 if (!connectedAddress && SERVER_ADDRESS) {
                     connectedAddress = SERVER_ADDRESS;
@@ -386,8 +395,11 @@
                 // Token invalid or expired - clear localStorage
                 clearAuthData();
                 serverAuthenticated = false;
+                console.log('Token invalid, cleared');
             }
         }
+        
+        console.log('Final state:', { isWalletConnected, connectedAddress, serverAuthenticated });
     }
 
     async function authenticateWithBackend(address, provider) {
