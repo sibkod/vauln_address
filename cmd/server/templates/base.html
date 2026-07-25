@@ -24,8 +24,8 @@
         
         /* Dropdown menu */
         .wallet-dropdown { position: relative; display: inline-block; }
-        .wallet-dropdown-content { display: none; position: absolute; right: 0; top: 100%; background: rgba(18, 24, 36, 0.98); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; min-width: 180px; box-shadow: 0 8px 30px rgba(0,0,0,0.5); overflow: hidden; z-index: 100; margin-top: 8px; }
-        .wallet-dropdown-content.show { display: block; }
+        .wallet-dropdown-content { display: none; position: absolute; right: 0; top: 100%; background: rgba(18, 24, 36, 0.98) !important; border: 1px solid rgba(255,255,255,0.1) !important; border-radius: 12px !important; min-width: 180px; box-shadow: 0 8px 30px rgba(0,0,0,0.5); overflow: hidden; z-index: 1000 !important; margin-top: 8px; }
+        .wallet-dropdown-content.show { display: block !important; }
         .wallet-dropdown-item { padding: 12px 16px; color: #c8d2e8; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 10px; transition: 0.15s; text-decoration: none; }
         .wallet-dropdown-item:hover { background: rgba(59, 130, 246, 0.15); color: #fff; }
         .wallet-dropdown-item.danger { color: #ff6b6b; }
@@ -287,20 +287,34 @@
     // Wallet dropdown menu functions
     window.toggleWalletMenu = function(e) {
         if (e) e.stopPropagation();
-        console.log('toggleWalletMenu called, menu shown:', walletDropdownMenu.classList.contains('show'));
-        walletDropdownMenu.classList.toggle('show');
+        const isShown = walletDropdownMenu.style.display === 'block';
+        console.log('toggleWalletMenu called, current display:', walletDropdownMenu.style.display);
+        
+        if (isShown) {
+            walletDropdownMenu.style.display = 'none';
+        } else {
+            walletDropdownMenu.style.display = 'block';
+            walletDropdownMenu.style.position = 'absolute';
+            walletDropdownMenu.style.right = '0';
+            walletDropdownMenu.style.top = '100%';
+            walletDropdownMenu.style.background = 'rgba(18, 24, 36, 0.98)';
+            walletDropdownMenu.style.border = '1px solid rgba(255,255,255,0.1)';
+            walletDropdownMenu.style.borderRadius = '12px';
+            walletDropdownMenu.style.minWidth = '180px';
+            walletDropdownMenu.style.zIndex = '1000';
+        }
     };
     
     window.handleLogout = function(e) {
         if (e) e.stopPropagation();
-        walletDropdownMenu.classList.remove('show');
+        walletDropdownMenu.style.display = 'none';
         logout();
     };
     
     // Close dropdown when clicking outside
     document.addEventListener('click', function(e) {
         if (walletDropdown && walletDropdownMenu && !walletDropdown.contains(e.target)) {
-            walletDropdownMenu.classList.remove('show');
+            walletDropdownMenu.style.display = 'none';
         }
     });
     
