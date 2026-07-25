@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, inject, onMounted } from 'vue'
 
 const chain = ref('evm')
 const address = ref('')
@@ -8,6 +8,9 @@ const result = ref<any>(null)
 const chains = ref<any[]>([])
 const recentChecks = ref<any[]>([])
 const alertId = ref(0)
+
+// Get wallet auth from App.vue
+const wallet = inject<any>('wallet')
 
 const chainIcons: Record<string, string> = { evm: '🟣', btc: '🟠', solana: '🟢', sui: '🔵', tron: '🔴' }
 const chainPlaceholders: Record<string, string> = {
@@ -51,16 +54,42 @@ async function check() {
   loading.value = true
   result.value = null
   
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (wallet?.authToken?.value) {
+    headers['Authorization'] = `Bearer ${wallet.authToken.value}`
+  }
+  
   try {
     const res = await fetch('/api/check', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ address: address.value.trim(), chain: chain.value })
     })
+    
+    if (res.status === 429) {
+      const data = await res.json()
+      result.value = { status: 'error', message: `⏳ Rate limit: ${data.details || 'Try again later'}` }
+      loading.value = false
+      return
+    }
+    
     const data = await res.json()
+    
+    if (data.error) {
+      result.value = { status: 'error', message: data.error + (data.details ? ` (${data.details})` : '') }
+      loading.value = false
+      return
+    }
+    
     result.value = data
     
-    // Add to recent checks
+    // Update balance if returned
+    if (data.balance_left !== undefined && wallet) {
+      wallet.userBalance.value = data.balance_left
+      localStorage.setItem('userBalance', String(data.balance_left))
+    }
+    
+    // Add to recent checks only AFTER successful API response
     recentChecks.value.unshift({
       id: alertId.value++,
       address: `${address.value.slice(0,6)}…${address.value.slice(-4)}`,
@@ -83,8 +112,9 @@ function useExample(ex: { chain: string, addr: string }) {
 
 function setResultText() {
   if (!result.value) return ''
+  if (result.value.message) return result.value.message
   if (result.value.error) return result.value.error
-  if (result.value.status === 'hacked') return '🚨 COMPROMISED — DO NOT use this wallet.'
+  if (result.value.status === 'hacked' || result.value.status === 'compromised') return '🚨 COMPROMISED — DO NOT use this wallet.'
   if (result.value.status === 'vulnerable') return '⚠️ VULNERABLE — data available, not yet exploited.'
   if (result.value.status === 'not_found' || result.value.status === 'safe') return '✅ Safe. Not found in database.'
   return `Status: ${result.value.status}`
@@ -147,12 +177,12 @@ function getResultClass() {
   </div>
 
   <!-- Result -->
-  <div class="result-box" :class="getResultClass()">
+  <div class="result-box" :class="result && result.message ? '' : getResultClass()">
     <div class="result-text">{{ setResultText() || 'Enter address and click Check' }}</div>
-    <div class="result-sub" v-if="result && !result.error && result.status !== 'not_found'">
+    <div class="result-sub" v-if="result && !result.message && !result.error && result.status !== 'not_found'">
       Found in database · {{ chain.toUpperCase() }}
     </div>
-    <div class="result-chain" v-if="result && !result.error">🔗 {{ chain.toUpperCase() }}</div>
+    <div class="result-chain" v-if="result && !result.message && !result.error">🔗 {{ chain.toUpperCase() }}</div>
   </div>
 
   <!-- Recent Checks -->
