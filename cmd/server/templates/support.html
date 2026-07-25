@@ -270,7 +270,6 @@ async function buyPackage() {
         const blockhash = blockhashData.result.value.blockhash;
         
         // Create transaction using solanaWeb3 (compatible with all wallets)
-        const connection = new solanaWeb3.Connection('https://api.devnet.solana.com');
         const fromPubkey = new solanaWeb3.PublicKey(address);
         const toPubkey = new solanaWeb3.PublicKey(orderData.payment_address);
         
@@ -279,7 +278,7 @@ async function buyPackage() {
             solanaWeb3.SystemProgram.transfer({
                 fromPubkey: fromPubkey,
                 toPubkey: toPubkey,
-                lamports: lamports,
+                lamports: lamports
             })
         );
         transaction.recentBlockhash = blockhash;
