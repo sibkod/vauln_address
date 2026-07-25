@@ -443,3 +443,226 @@ func (h *Handler) GetSupportedChains(c *gin.Context) {
 		},
 	})
 }
+
+// ==================== API Key Management ====================
+
+// CreateAPIKey creates a new API key for the authenticated user
+func (h *Handler) CreateAPIKey(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
+			Error: "authentication required",
+			Code:  "UNAUTHORIZED",
+		})
+		return
+	}
+
+	var req models.CreateAPIKeyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error: "invalid request body",
+			Code:  "INVALID_REQUEST",
+		})
+		return
+	}
+
+	apiKey, err := h.authService.GenerateAPIKey(userID.(int64), req.Name, req.ExpiresIn)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "failed to create API key",
+			Code:    "SERVER_ERROR",
+			Details: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message": "API key created successfully. Store this key securely - it will not be shown again.",
+		"api_key": apiKey,
+	})
+}
+
+// ListAPIKeys returns all API keys for the authenticated user
+func (h *Handler) ListAPIKeys(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
+			Error: "authentication required",
+			Code:  "UNAUTHORIZED",
+		})
+		return
+	}
+
+	keys, err := h.authService.GetUserAPIKeys(userID.(int64))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "failed to get API keys",
+			Code:    "SERVER_ERROR",
+			Details: err.Error(),
+		})
+		return
+	}
+
+	if keys == nil {
+		keys = []models.APIKey{}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"keys":  keys,
+		"count": len(keys),
+	})
+}
+
+// RevokeAPIKey revokes an API key
+func (h *Handler) RevokeAPIKeyHandler(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
+			Error: "authentication required",
+			Code:  "UNAUTHORIZED",
+		})
+		return
+	}
+
+	keyIDStr := c.Param("id")
+	var keyID int64
+	if _, err := fmt.Sscanf(keyIDStr, "%d", &keyID); err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error: "invalid key ID",
+			Code:  "INVALID_REQUEST",
+		})
+		return
+	}
+
+	if err := h.authService.RevokeAPIKey(keyID, userID.(int64)); err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "failed to revoke API key",
+			Code:    "SERVER_ERROR",
+			Details: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "API key revoked successfully",
+	})
+}
+
+// DeleteAPIKey permanently deletes an API key
+func (h *Handler) DeleteAPIKeyHandler(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
+			Error: "authentication required",
+			Code:  "UNAUTHORIZED",
+		})
+		return
+	}
+
+	keyIDStr := c.Param("id")
+	var keyID int64
+	if _, err := fmt.Sscanf(keyIDStr, "%d", &keyID); err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error: "invalid key ID",
+			Code:  "INVALID_REQUEST",
+		})
+		return
+	}
+
+	if err := h.authService.DeleteAPIKey(keyID, userID.(int64)); err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "failed to delete API key",
+			Code:    "SERVER_ERROR",
+			Details: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "API key deleted successfully",
+	})
+}
+
+// GetRenewalNonce generates a nonce for API key renewal via Web3 signature
+func (h *Handler) GetRenewalNonce(c *gin.Context) {
+	address := strings.TrimSpace(c.Query("address"))
+	chain := strings.ToLower(strings.TrimSpace(c.Query("chain")))
+	keyIDStr := c.Query("key_id")
+
+	if address == "" || chain == "" {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error: "address, chain, and key_id are required",
+			Code:  "INVALID_REQUEST",
+		})
+		return
+	}
+
+	var keyID int64
+	if _, err := fmt.Sscanf(keyIDStr, "%d", &keyID); err != nil || keyID <= 0 {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error: "valid key_id is required",
+			Code:  "INVALID_REQUEST",
+		})
+		return
+	}
+
+	if !models.IsValidChain(chain) {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error: "unsupported chain",
+			Code:  "INVALID_CHAIN",
+		})
+		return
+	}
+
+	nonce, err := h.authService.GenerateRenewalNonce(address, chain)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error: "failed to generate nonce",
+			Code:  "SERVER_ERROR",
+		})
+		return
+	}
+
+	// Build the renewal message
+	message := h.authService.BuildRenewalMessage(nonce, keyID)
+
+	c.JSON(http.StatusOK, models.NonceResponse{
+		Nonce:   nonce,
+		Message: message,
+	})
+}
+
+// RenewAPIKey renews an API key by verifying Web3 signature
+func (h *Handler) RenewAPIKeyHandler(c *gin.Context) {
+	var req models.RenewAPIKeyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error: "invalid request body",
+			Code:  "INVALID_REQUEST",
+		})
+		return
+	}
+
+	if !models.IsValidChain(req.Chain) {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error: "unsupported chain",
+			Code:  "INVALID_CHAIN",
+		})
+		return
+	}
+
+	newKey, err := h.authService.RenewAPIKey(req.Address, req.Chain, req.Signature, req.Message, req.KeyID)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
+			Error:   "renewal failed",
+			Code:    "RENEWAL_FAILED",
+			Details: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "API key renewed successfully. Store this new key securely - it will not be shown again.",
+		"api_key": newKey,
+	})
+}
