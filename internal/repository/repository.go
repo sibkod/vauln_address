@@ -590,6 +590,42 @@ func (r *Repository) CancelOrder(ctx context.Context, orderUUID string) error {
 	return err
 }
 
+// GetOrderByTxHash finds an order by its transaction hash
+func (r *Repository) GetOrderByTxHash(ctx context.Context, txHash string) (*models.Order, error) {
+	var order models.Order
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id, user_id, order_uuid, status, checks_count, total_usd, currency, token_amount, payment_address, tx_hash, created_at, updated_at
+		FROM orders WHERE tx_hash = ? LIMIT 1`,
+		txHash,
+	).Scan(&order.ID, &order.UserID, &order.UUID, &order.Status, &order.ChecksCount, &order.TotalUSD, &order.Currency, &order.TokenAmount, &order.PaymentAddress, &order.TxHash, &order.CreatedAt, &order.UpdatedAt)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &order, nil
+}
+
+// GetPendingOrderByUser finds a pending order for a user
+func (r *Repository) GetPendingOrderByUser(ctx context.Context, userID int64) (*models.Order, error) {
+	var order models.Order
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id, user_id, order_uuid, status, checks_count, total_usd, currency, token_amount, payment_address, tx_hash, created_at, updated_at
+		FROM orders WHERE user_id = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1`,
+		userID,
+	).Scan(&order.ID, &order.UserID, &order.UUID, &order.Status, &order.ChecksCount, &order.TotalUSD, &order.Currency, &order.TokenAmount, &order.PaymentAddress, &order.TxHash, &order.CreatedAt, &order.UpdatedAt)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &order, nil
+}
+
 // ==================== Wallet Methods ====================
 
 func (r *Repository) GetWallet(ctx context.Context, address string, chain string) (*models.Wallet, error) {

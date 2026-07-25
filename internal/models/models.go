@@ -133,17 +133,18 @@ const (
 )
 
 type Order struct {
-	ID              int64     `json:"id"`
-	UserID          int64     `json:"user_id"`
-	OrderUUID       string    `json:"order_uuid"`
-	ChecksCount     int       `json:"checks_count"`
-	TotalUSD        float64   `json:"total_usd"`
-	Currency        string    `json:"currency"`
-	TokenAmount     float64   `json:"token_amount"`
-	PaymentAddress  string    `json:"payment_address"`
-	Status          string    `json:"status"`
-	TxHash          string    `json:"tx_hash,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
+	ID              int64      `json:"id"`
+	UserID          int64      `json:"user_id"`
+	OrderUUID       string     `json:"order_uuid"`
+	ChecksCount     int        `json:"checks_count"`
+	TotalUSD        float64    `json:"total_usd"`
+	Currency        string     `json:"currency"`
+	TokenAmount     float64    `json:"token_amount"`
+	PaymentAddress  string     `json:"payment_address"`
+	Status          string     `json:"status"`
+	TxHash          string     `json:"tx_hash,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 	CompletedAt     *time.Time `json:"completed_at,omitempty"`
 }
 

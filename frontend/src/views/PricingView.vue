@@ -1,14 +1,11 @@
 <script setup lang="ts">
 import { ref, inject, computed } from 'vue'
+import QRCode from 'qrcode'
 
 // Network config - MUST match App.vue
 const IS_MAINNET = false
 const SOLANA_NETWORK = IS_MAINNET ? 'mainnet-beta' : 'devnet'
-
-// USDC addresses
-const USDC_DEVNET = '4zMMC9srt5Ri5X14zfNUkFN5MkBYaAMDzAPBG7aajJJ'
-const USDC_MAINNET = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDj1'
-const USDC_ADDRESS = IS_MAINNET ? USDC_MAINNET : USDC_DEVNET
+const RPC_URL = IS_MAINNET ? 'https://api.mainnet-beta.solana.com' : 'https://api.devnet.solana.com'
 
 // Merchant wallet for payments
 const MERCHANT_WALLET_DEVNET = '7bMD8B3a3yDj7JMBQZYse7x4FqNKLNmEACSUitKxVNXJ'
@@ -18,18 +15,22 @@ const MERCHANT_WALLET = IS_MAINNET ? MERCHANT_WALLET_MAINNET : MERCHANT_WALLET_D
 const globalWallet = inject<any>('wallet')
 
 const packages = [
-  { id: 'starter', name: 'Starter', checks: 50, priceSOL: 0.01, priceUSDC: 10, popular: false },
-  { id: 'pro', name: 'Pro', checks: 200, priceSOL: 0.03, priceUSDC: 35, popular: true },
-  { id: 'enterprise', name: 'Enterprise', checks: 1000, priceSOL: 0.1, priceUSDC: 100, popular: false },
+  { id: 'starter', name: 'Starter', checks: 50, priceSOL: 0.01, popular: false },
+  { id: 'pro', name: 'Pro', checks: 200, priceSOL: 0.03, popular: true },
+  { id: 'enterprise', name: 'Enterprise', checks: 1000, priceSOL: 0.1, popular: false },
 ]
 
 const selectedPackage = ref<typeof packages[0] | null>(null)
-const paymentMethod = ref<'SOL' | 'USDC'>('SOL')
 const processing = ref(false)
 const error = ref('')
 const success = ref('')
+const txSignature = ref('')
+const qrDataUrl = ref('')
+const pollInterval = ref<number | null>(null)
+
 const walletAddress = computed(() => globalWallet?.walletAddress?.value || '')
 const isConnected = computed(() => globalWallet?.connected?.value || false)
+const walletChain = computed(() => globalWallet?.walletChain?.value || '')
 
 function selectPackage(pkg: typeof packages[0]) {
   if (!isConnected.value) {
@@ -39,11 +40,160 @@ function selectPackage(pkg: typeof packages[0]) {
   selectedPackage.value = pkg
   error.value = ''
   success.value = ''
+  txSignature.value = ''
+  qrDataUrl.value = ''
 }
 
-async function openWallet() {
-  // This would trigger wallet connection - simplified for now
-  window.open('/pricing', '_self')
+// Pay directly with Solana wallet
+async function payWithSolana() {
+  if (!selectedPackage.value) return
+  
+  // Check if user is on Solana chain
+  if (walletChain.value !== 'solana') {
+    error.value = 'Please connect a Solana wallet (Phantom, Solflare) to pay with SOL'
+    return
+  }
+  
+  const phantom = (window as any).solana
+  if (!phantom?.isConnected || !phantom?.publicKey) {
+    error.value = 'Solana wallet not connected'
+    return
+  }
+  
+  processing.value = true
+  error.value = ''
+  success.value = ''
+  
+  try {
+    const sender = phantom.publicKey.toString()
+    const recipient = MERCHANT_WALLET
+    const lamports = Math.round(selectedPackage.value.priceSOL * 1e9) // SOL to lamports
+    
+    // Get recent blockhash
+    const blockhashRes = await fetch(RPC_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'getLatestBlockhash'
+      })
+    })
+    const blockhashData = await blockhashRes.json()
+    const { blockhash } = blockhashData.result
+    
+    // Create transfer instruction
+    const transferInstruction = {
+      programId: '11111111111111111111111111111111',
+      keys: [
+        { pubkey: sender, isSigner: true, isWritable: true },
+        { pubkey: recipient, isSigner: false, isWritable: true },
+        { pubkey: '11111111111111111111111111111111', isSigner: false, isWritable: false }
+      ],
+      data: {
+        type: 'buffer',
+        data: [
+          2, 0, 0, 0, 0, 0, 0, 0, // instruction index 2 = transfer
+          lamports % 256, (lamports >> 8) % 256, (lamports >> 16) % 256, (lamports >> 24) % 256,
+          (lamports >> 32) % 256, (lamports >> 40) % 256, (lamports >> 48) % 256, (lamports >> 56) % 256
+        ]
+      }
+    }
+    
+    // Create transaction message
+    const message = {
+      recentBlockhash: blockhash,
+      feePayer: sender,
+      instructions: [transferInstruction]
+    }
+    
+    // For Phantom, we need to use the signAndSendTransaction method
+    const { signature } = await phantom.signAndSendTransaction({
+      message: { ...message, instructions: [transferInstruction] }
+    })
+    
+    txSignature.value = signature
+    success.value = `Transaction sent! Signature: ${signature.slice(0, 8)}...`
+    
+    // Poll for confirmation
+    startPolling(signature)
+    
+  } catch (err: any) {
+    console.error('Payment error:', err)
+    error.value = err.message || 'Payment failed'
+    if (err.message?.includes('User rejected')) {
+      error.value = 'Transaction cancelled'
+    }
+  }
+  
+  processing.value = false
+}
+
+function startPolling(signature: string) {
+  // Poll backend every 3 seconds
+  pollInterval.value = window.setInterval(async () => {
+    try {
+      const res = await fetch(`/api/payment/status/${signature}`, {
+        method: 'POST'
+      })
+      const data = await res.json()
+      
+      if (data.status === 'confirmed') {
+        stopPolling()
+        success.value = `✅ Payment confirmed! ${data.balance || selectedPackage.value?.checks} checks added.`
+        
+        if (globalWallet) {
+          globalWallet.userBalance.value = data.balance || 0
+          localStorage.setItem('userBalance', String(data.balance || 0))
+        }
+        
+        setTimeout(() => {
+          selectedPackage.value = null
+          success.value = ''
+        }, 3000)
+      } else if (data.status === 'failed') {
+        stopPolling()
+        error.value = 'Transaction failed on blockchain'
+      }
+    } catch (err) {
+      console.error('Poll error:', err)
+    }
+  }, 3000)
+}
+
+function stopPolling() {
+  if (pollInterval.value) {
+    clearInterval(pollInterval.value)
+    pollInterval.value = null
+  }
+}
+
+function cancelPayment() {
+  stopPolling()
+  selectedPackage.value = null
+  error.value = ''
+  success.value = ''
+  txSignature.value = ''
+  qrDataUrl.value = ''
+}
+
+// Legacy: Generate QR for mobile wallets
+async function generateQR() {
+  if (!selectedPackage.value) return
+  
+  const reference = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+    .map(b => b.toString(16).padStart(2, '0')).join('')
+  
+  const solanaPayUrl = `solana:${MERCHANT_WALLET}?amount=${selectedPackage.value.priceSOL}&reference=${reference}&label=WalletChecker&message=Payment`
+  
+  try {
+    qrDataUrl.value = await QRCode.toDataURL(solanaPayUrl, {
+      width: 200,
+      margin: 2
+    })
+  } catch (err) {
+    console.error('QR error:', err)
+  }
 }
 </script>
 
@@ -85,63 +235,51 @@ async function openWallet() {
     </div>
   </div>
 
-  <!-- Payment Section -->
+  <!-- Payment Section - Direct Payment -->
   <div v-if="selectedPackage" class="payment-section">
-    <h2>Pay with {{ selectedPackage.name }}</h2>
+    <h2>{{ selectedPackage.name }} - {{ selectedPackage.checks }} checks</h2>
     
-    <div class="payment-methods">
-      <button 
-        class="method-btn"
-        :class="{ active: paymentMethod === 'SOL' }"
-        @click="paymentMethod = 'SOL'"
-      >
-        <span class="method-icon">◎</span>
-        <span>Pay with SOL</span>
-      </button>
-      <button 
-        class="method-btn"
-        :class="{ active: paymentMethod === 'USDC' }"
-        @click="paymentMethod = 'USDC'"
-      >
-        <span class="method-icon">💲</span>
-        <span>Pay with USDC</span>
-      </button>
-    </div>
-
     <div class="payment-summary">
       <div class="summary-row">
-        <span>Package</span>
-        <span>{{ selectedPackage.name }} ({{ selectedPackage.checks }} checks)</span>
-      </div>
-      <div class="summary-row">
-        <span>Amount</span>
-        <span>{{ paymentMethod === 'SOL' ? selectedPackage.priceSOL + ' SOL' : selectedPackage.priceUSDC + ' USDC' }}</span>
+        <span>Price</span>
+        <span class="amount-highlight">{{ selectedPackage.priceSOL }} SOL</span>
       </div>
       <div class="summary-row">
         <span>Network</span>
-        <span>{{ SOLANA_NETWORK }}</span>
+        <span>{{ IS_MAINNET ? 'Mainnet' : 'Devnet' }}</span>
       </div>
+      <div class="summary-row">
+        <span>Recipient</span>
+        <span class="address-small">{{ MERCHANT_WALLET.slice(0, 8) }}...{{ MERCHANT_WALLET.slice(-4) }}</span>
+      </div>
+    </div>
+
+    <!-- Direct Pay Button (for Solana wallets) -->
+    <button 
+      v-if="walletChain === 'solana'"
+      class="pay-btn"
+      @click="payWithSolana"
+      :disabled="processing"
+    >
+      {{ processing ? '⏳ Processing...' : '💰 Pay with Solana Wallet' }}
+    </button>
+    
+    <!-- Show wallet info -->
+    <div v-if="walletChain === 'solana'" class="wallet-info-box">
+      <span>👻 Connected: {{ walletAddress.slice(0, 6) }}...{{ walletAddress.slice(-4) }}</span>
     </div>
 
     <div v-if="error" class="error-msg">{{ error }}</div>
     <div v-if="success" class="success-msg">{{ success }}</div>
 
-    <div class="connect-wallet-prompt" v-if="!isConnected">
-      <p>Connect your wallet to complete purchase</p>
-      <button class="pay-btn" @click="$router.push('/')">
-        Go to Home to Connect
-      </button>
+    <div v-if="txSignature" class="tx-info">
+      <span>TX: {{ txSignature.slice(0, 8) }}...{{ txSignature.slice(-4) }}</span>
+      <a :href="`https://explorer.solana.com/tx/${txSignature}?cluster=${SOLANA_NETWORK}`" target="_blank" class="view-link">
+        View on Explorer →
+      </a>
     </div>
-    <div v-else>
-      <p class="wallet-info">Connected: {{ walletAddress }}</p>
-      <button 
-        class="pay-btn"
-        disabled
-        title="Payment will be available after wallet integration"
-      >
-        Payment Coming Soon
-      </button>
-    </div>
+
+    <button class="cancel-btn" @click="cancelPayment">Cancel</button>
   </div>
 
   <!-- Features -->
@@ -406,6 +544,105 @@ async function openWallet() {
   color: #4bc9a0;
   margin-bottom: 0.5rem;
   word-break: break-all;
+}
+
+/* Payment Section */
+.payment-section {
+  background: #151a24;
+  border: 1px solid #252d3d;
+  border-radius: 16px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.payment-section h2 {
+  text-align: center;
+  margin-bottom: 1.2rem;
+  font-size: 1.3rem;
+  color: #e7ecf5;
+}
+.payment-summary {
+  background: #0c0f14;
+  border-radius: 10px;
+  padding: 1rem;
+  margin-bottom: 1.2rem;
+}
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid #1a2030;
+}
+.summary-row:last-child { border-bottom: none; }
+.summary-row span:first-child { color: #6b7a9e; font-size: 0.85rem; }
+.amount-highlight { color: #4bc9a0; font-weight: 600; font-size: 1.1rem; }
+.address-small { font-size: 0.8rem; font-family: monospace; color: #98a8ce; }
+
+/* Pay Button */
+.pay-btn {
+  width: 100%;
+  padding: 1rem;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  border: none;
+  border-radius: 10px;
+  color: white;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.pay-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px #667eea40;
+}
+.pay-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Wallet Info Box */
+.wallet-info-box {
+  text-align: center;
+  margin: 0.8rem 0;
+  padding: 0.5rem;
+  background: #1a2a1a;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: #4bc9a0;
+}
+
+/* TX Info */
+.tx-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 1rem;
+  padding: 0.8rem;
+  background: #151a24;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  color: #98a8ce;
+}
+.view-link {
+  color: #667eea;
+  text-decoration: none;
+}
+.view-link:hover { text-decoration: underline; }
+
+/* Cancel Button */
+.cancel-btn {
+  width: 100%;
+  padding: 0.7rem;
+  background: transparent;
+  border: 1px solid #2a3548;
+  border-radius: 8px;
+  color: #6b7a9e;
+  font-size: 0.85rem;
+  cursor: pointer;
+  margin-top: 0.8rem;
+}
+.cancel-btn:hover {
+  border-color: #ff6b6b40;
+  color: #ff6b6b;
 }
 
 .features-section {
