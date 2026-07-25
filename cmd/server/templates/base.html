@@ -49,7 +49,9 @@
         <a href="/" class="nav-link {{if eq .ActivePage "home"}}active{{end}}">Home</a>
         <a href="/roadmap" class="nav-link {{if eq .ActivePage "roadmap"}}active{{end}}">🗺️ Roadmap</a>
         <a href="/about" class="nav-link {{if eq .ActivePage "about"}}active{{end}}">About</a>
+        {{if .IsAuthenticated}}
         <a href="/api-docs" class="nav-link {{if eq .ActivePage "api"}}active{{end}}">🔌 API</a>
+        {{end}}
         <a href="/support" class="nav-link {{if eq .ActivePage "support"}}active{{end}}">💎 Buy</a>
     </div>
     <div class="nav-right">
@@ -74,6 +76,8 @@
 <script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
 <script>
 (function() {
+    const SERVER_AUTH = {{if .IsAuthenticated}}true{{else}}false{{end}};
+    const SERVER_ADDRESS = "{{.UserAddress}}";
     const FREE_CHECK_LIMIT = {{.FreeCheckLimit}};
     const freeLimitDisplay = document.getElementById('freeLimitDisplay');
     if (freeLimitDisplay) freeLimitDisplay.textContent = FREE_CHECK_LIMIT;
@@ -83,6 +87,8 @@
     let freeCheckUsed = localStorage.getItem('freeCheckUsed') === 'true';
     let web3 = null;
     let authToken = localStorage.getItem('authToken');
+    let serverAuthenticated = SERVER_AUTH;
+    let userBalance = {{.UserBalance}};
 
     const connectBtn = document.getElementById('connectWalletBtn');
     const connectDot = document.getElementById('connectDot');
@@ -100,7 +106,7 @@
     }
 
     function updateConnectUI() {
-        if (isWalletConnected && connectedAddress) {
+        if (serverAuthenticated && connectedAddress) {
             connectDot.className = 'dot active';
             connectLabel.textContent = '';
             connectAddressShort.textContent = connectedAddress.slice(0,6) + '...' + connectedAddress.slice(-4);
@@ -114,39 +120,83 @@
     }
 
     function updateCounter() {
-        if (isWalletConnected && authToken) {
-            checkCounter.textContent = '∞ / ∞';
+        if (serverAuthenticated) {
+            checkCounter.textContent = userBalance + ' credits';
         } else if (isWalletConnected) {
-            checkCounter.textContent = '∞ / ∞ (no token)';
+            checkCounter.textContent = '∞ / ∞ (not authed)';
         } else {
             const remaining = freeCheckUsed ? 0 : FREE_CHECK_LIMIT;
             checkCounter.textContent = remaining + ' / ' + FREE_CHECK_LIMIT;
         }
     }
 
+    // Validate session with backend
+    async function validateSession() {
+        if (!authToken) {
+            return false;
+        }
+        
+        try {
+            const res = await fetch('/api/user/profile', {
+                headers: { 'Authorization': 'Bearer ' + authToken }
+            });
+            
+            if (res.ok) {
+                const data = await res.json();
+                userBalance = data.balance || 0;
+                return true;
+            } else {
+                // Token invalid or expired - clear localStorage
+                clearAuthData();
+                return false;
+            }
+        } catch (error) {
+            console.error('Session validation failed:', error);
+            return false;
+        }
+    }
+
+    function clearAuthData() {
+        localStorage.removeItem('authToken');
+        authToken = null;
+        serverAuthenticated = false;
+        userBalance = 0;
+    }
+
     window.logout = async function() {
+        clearAuthData();
         localStorage.removeItem('walletConnected');
         localStorage.removeItem('walletAddress');
         localStorage.removeItem('freeCheckUsed');
-        localStorage.removeItem('authToken');
-        authToken = null;
         isWalletConnected = false;
         connectedAddress = '';
         freeCheckUsed = false;
-        updateConnectUI();
-        updateCounter();
+        
+        // Reload page to reflect server-side auth state
+        window.location.reload();
         showToast('👋 Wallet disconnected');
     };
 
     // Restore wallet state from localStorage
-    function restoreWalletState() {
+    async function restoreWalletState() {
         const storedConnected = localStorage.getItem('walletConnected');
         const storedAddress = localStorage.getItem('walletAddress');
-        authToken = localStorage.getItem('authToken');
         
         if (storedConnected === 'true' && storedAddress) {
             isWalletConnected = true;
             connectedAddress = storedAddress;
+        }
+        
+        // If server says we're authenticated, sync with localStorage
+        if (SERVER_AUTH && authToken) {
+            const valid = await validateSession();
+            if (!valid) {
+                // Server says not authenticated, but we have token - clear it
+                clearAuthData();
+            }
+        } else if (authToken && !SERVER_AUTH) {
+            // We have token but server says not authenticated - clear it
+            clearAuthData();
         }
     }
 
@@ -183,6 +233,8 @@
             if (loginData.token) {
                 authToken = loginData.token;
                 localStorage.setItem('authToken', authToken);
+                serverAuthenticated = true;
+                userBalance = loginData.balance || 0;
                 return true;
             } else {
                 showToast('❌ Auth failed: ' + (loginData.error || 'Unknown error'));
@@ -217,7 +269,7 @@
                 // Authenticate with backend
                 const authSuccess = await authenticateWithBackend(connectedAddress);
                 if (authSuccess) {
-                    showToast('✅ Authenticated! Unlimited checks.');
+                    showToast('✅ Authenticated! ' + userBalance + ' credits.');
                     updateCounter();
                     document.dispatchEvent(new CustomEvent('walletAuthenticated'));
                 } else {
@@ -254,9 +306,10 @@
     connectBtn.addEventListener('click', connectWallet);
 
     // Initialize
-    restoreWalletState();
-    updateConnectUI();
-    updateCounter();
+    restoreWalletState().then(() => {
+        updateConnectUI();
+        updateCounter();
+    });
 
     // Re-export for pages
     window.showToast = showToast;
@@ -270,7 +323,8 @@
     };
     window.getFreeCheckUsed = function() { return freeCheckUsed; };
     window.getAuthToken = function() { return authToken; };
-    window.isAuthenticated = function() { return !!authToken; };
+    window.isAuthenticated = function() { return serverAuthenticated; };
+    window.getUserBalance = function() { return userBalance; };
 })();
 </script>
 </body>
