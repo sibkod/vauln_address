@@ -388,28 +388,6 @@ func (r *Repository) GetUserByWallet(ctx context.Context, address, chain string)
 	var user models.User
 	var lastLoginAt sql.NullTime
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, wallet_address, chain, nonce, balance, created_at, updated_at, last_login_at 
-		FROM users WHERE wallet_address = ? AND chain = ?`,
-		address, chain,
-	).Scan(&user.ID, &user.WalletAddress, &user.Chain, &user.Nonce, &user.Balance,
-		&user.CreatedAt, &user.UpdatedAt, &lastLoginAt)
-
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	if lastLoginAt.Valid {
-		user.LastLoginAt = &lastLoginAt.Time
-	}
-	return &user, nil
-}
-
-func (r *Repository) GetUserByWallet(ctx context.Context, address, chain string) (*models.User, error) {
-	var user models.User
-	var lastLoginAt sql.NullTime
-	err := r.db.QueryRowContext(ctx,
 		`SELECT wallet_address, chain, nonce, balance, created_at, updated_at, last_login_at 
 		FROM users WHERE wallet_address = ? AND chain = ?`,
 		address, chain,
