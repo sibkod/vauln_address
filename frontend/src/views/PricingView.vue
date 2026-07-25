@@ -14,6 +14,26 @@ const IS_MAINNET = false
 const SOLANA_NETWORK = IS_MAINNET ? 'mainnet-beta' : 'devnet'
 const RPC_URL = IS_MAINNET ? 'https://api.mainnet-beta.solana.com' : 'https://api.devnet.solana.com'
 
+// Price config - MUST match backend (PricePerCheckUSD = $0.10, SOL~$20)
+const PRICE_PER_CHECK_USD = 0.10
+const SOL_PRICE_USD = 20.0
+
+// Calculate price in SOL from checks count
+function calcPriceSOL(checks: number): number {
+  let priceUSD = checks * PRICE_PER_CHECK_USD
+  if (checks >= 1000) priceUSD *= 0.5 // 50% discount
+  else if (checks >= 500) priceUSD *= 0.6 // 40% discount
+  return Math.round((priceUSD / SOL_PRICE_USD) * 10000) / 10000 // Round to 4 decimals
+}
+
+// Calculate price in USD (for USDC)
+function calcPriceUSD(checks: number): number {
+  let priceUSD = checks * PRICE_PER_CHECK_USD
+  if (checks >= 1000) priceUSD *= 0.5 // 50% discount
+  else if (checks >= 500) priceUSD *= 0.6 // 40% discount
+  return priceUSD
+}
+
 // Merchant wallet for payments
 const MERCHANT_WALLET_DEVNET = '7bMD8B3a3yDj7JMBQZYse7x4FqNKLNmEACSUitKxVNXJ'
 const MERCHANT_WALLET_MAINNET = 'MERCHANT_MAINNET_WALLET'
@@ -25,9 +45,9 @@ const globalWallet = inject<any>('wallet')
 const connection = new Connection(RPC_URL, 'confirmed')
 
 const packages = [
-  { id: 'starter', name: 'Starter', checks: 50, priceSOL: 0.01, popular: false },
-  { id: 'pro', name: 'Pro', checks: 200, priceSOL: 0.03, popular: true },
-  { id: 'enterprise', name: 'Enterprise', checks: 1000, priceSOL: 0.1, popular: false },
+  { id: 'starter', name: 'Starter', checks: 50, priceSOL: calcPriceSOL(50), priceUSDC: calcPriceUSD(50), popular: false },
+  { id: 'pro', name: 'Pro', checks: 200, priceSOL: calcPriceSOL(200), priceUSDC: calcPriceUSD(200), popular: true },
+  { id: 'enterprise', name: 'Enterprise', checks: 1000, priceSOL: calcPriceSOL(1000), priceUSDC: calcPriceUSD(1000), popular: false },
 ]
 
 const selectedPackage = ref<typeof packages[0] | null>(null)
