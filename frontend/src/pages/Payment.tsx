@@ -79,67 +79,84 @@ export default function Payment() {
   }
 
   const packages = [
-    { value: '10', label: '10 checks - $1.00', sol: '0.05' },
-    { value: '50', label: '50 checks - $5.00', sol: '0.25' },
-    { value: '100', label: '100 checks - $10.00', sol: '0.5' },
-    { value: '500', label: '500 checks - $50.00', sol: '2.5' },
-    { value: '1000', label: '1000 checks - $100.00', sol: '5' },
+    { value: '10', label: '10 checks', price: '$1.00', sol: '0.05' },
+    { value: '50', label: '50 checks', price: '$5.00', sol: '0.25' },
+    { value: '100', label: '100 checks', price: '$10.00', sol: '0.5', popular: true },
+    { value: '500', label: '500 checks', price: '$50.00', sol: '2.5' },
+    { value: '1000', label: '1000 checks', price: '$100.00', sol: '5' },
   ]
 
   return (
-    <>
-      <h1>// PAYMENT</h1>
-      <p className="text-dim mb-3">Buy checks to verify unlimited wallets.</p>
+    <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
+      <div className="hero" style={{ paddingBottom: '2rem' }}>
+        <h1>Buy <span className="hero-gradient">Checks</span></h1>
+        <p>Purchase wallet checks to verify unlimited addresses</p>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '3rem' }}>
+        {packages.map((p) => (
+          <div 
+            key={p.value} 
+            className={`card ${p.popular ? 'popular' : ''}`}
+            style={{ textAlign: 'center', cursor: 'pointer' }}
+            onClick={() => setPkg(p.value)}
+          >
+            {p.popular && <div style={{ fontSize: '0.6875rem', color: 'var(--accent)', marginBottom: '0.5rem', fontWeight: 600 }}>POPULAR</div>}
+            <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{p.label}</div>
+            <div style={{ color: 'var(--text-secondary)', marginTop: '0.5rem' }}>{p.price}</div>
+            <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>~{p.sol} SOL</div>
+          </div>
+        ))}
+      </div>
 
       <div className="grid grid-2">
         <div>
           <div className="card">
-            <div className="card-header">CONNECTED WALLET</div>
+            <div className="card-header">Your Wallet</div>
             {!connected ? (
               <button className="btn" onClick={() => setVisible(true)} style={{ width: '100%' }}>
-                CONNECT WALLET
+                Connect Wallet
               </button>
             ) : (
               <>
                 <div className="info-row">
-                  <span className="text-dim">Address</span>
-                  <span style={{ fontSize: '0.85rem' }}>
+                  <span className="label">Address</span>
+                  <span className="value" style={{ fontSize: '0.8125rem' }}>
                     {publicKey?.toString().slice(0, 8)}...{publicKey?.toString().slice(-8)}
                   </span>
                 </div>
                 <div className="info-row">
-                  <span className="text-dim">Balance</span>
-                  <span>{walletBalance || 'Loading...'}</span>
+                  <span className="label">Balance</span>
+                  <span className="value">{walletBalance || 'Loading...'}</span>
                 </div>
               </>
             )}
           </div>
 
-          <div className="card">
-            <div className="card-header">SELECT PACKAGE</div>
-            <select value={pkg} onChange={(e) => setPkg(e.target.value)} className="mb-2">
-              {packages.map((p) => (
-                <option key={p.value} value={p.value}>
-                  {p.label} (~{p.sol} SOL)
-                </option>
-              ))}
-            </select>
+          <div className="card" style={{ marginTop: '1.5rem' }}>
+            <div className="card-header">Selected: {packages.find(p => p.value === pkg)?.label}</div>
+            <div style={{ marginBottom: '1rem' }}>
+              <div className="info-row">
+                <span className="label">Amount</span>
+                <span className="value">{packages.find(p => p.value === pkg)?.sol} SOL</span>
+              </div>
+            </div>
             <button
-              className="btn"
+              className="btn btn-lg"
               onClick={handlePayment}
               disabled={!connected || !!status.includes('Sign')}
               style={{ width: '100%' }}
             >
-              {!connected ? 'CONNECT TO BUY' : status || 'PAY WITH SOL'}
+              {!connected ? 'Connect to Buy' : status || 'Pay with SOL'}
             </button>
             {txSig && (
               <a
                 href={`${EXPLORER}tx/${txSig}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                style={{ color: 'var(--fg)', marginTop: '1rem', display: 'block' }}
+                style={{ marginTop: '1rem', display: 'block', textAlign: 'center' }}
               >
-                View transaction
+                View transaction →
               </a>
             )}
           </div>
@@ -147,43 +164,39 @@ export default function Payment() {
 
         <div>
           <div className="card">
-            <div className="card-header">MERCHANT ADDRESS</div>
-            <div style={{ background: '#111', padding: '1rem', marginBottom: '1rem', fontSize: '0.85rem', wordBreak: 'break-all' }}>
+            <div className="card-header">Merchant Address</div>
+            <div style={{ 
+              background: 'var(--bg-primary)', 
+              padding: '1rem', 
+              borderRadius: '8px', 
+              marginBottom: '1rem', 
+              fontSize: '0.8125rem', 
+              wordBreak: 'break-all',
+              fontFamily: 'monospace'
+            }}>
               {MERCHANT_ADDRESS}
             </div>
             <div className="info-row">
-              <span className="text-dim">Network</span>
-              <span>{USE_DEVNET ? 'DEVNET' : 'MAINNET'}</span>
+              <span className="label">Network</span>
+              <span className="value">{USE_DEVNET ? 'Devnet' : 'Mainnet'}</span>
             </div>
             <div className="info-row">
-              <span className="text-dim">Balance</span>
-              <span>{merchantBalance}</span>
+              <span className="label">Balance</span>
+              <span className="value">{merchantBalance}</span>
             </div>
           </div>
 
-          <div className="card">
-            <div className="card-header">HOW IT WORKS</div>
-            <ol style={{ color: 'var(--fg-dim)', paddingLeft: '1.5rem', fontSize: '0.85rem' }}>
+          <div className="card" style={{ marginTop: '1.5rem' }}>
+            <div className="card-header">How It Works</div>
+            <ol style={{ paddingLeft: '1.25rem', margin: 0, color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
               <li style={{ marginBottom: '0.5rem' }}>Connect your Solana wallet</li>
               <li style={{ marginBottom: '0.5rem' }}>Select number of checks</li>
               <li style={{ marginBottom: '0.5rem' }}>Send SOL to merchant address</li>
-              <li>Checks added to your balance</li>
+              <li>Checks added to your account</li>
             </ol>
           </div>
         </div>
       </div>
-
-      <style>{`
-        .info-row {
-          display: flex;
-          justify-content: space-between;
-          padding: 0.5rem 0;
-          border-bottom: 1px solid #111;
-        }
-        .info-row:last-child {
-          border-bottom: none;
-        }
-      `}</style>
-    </>
+    </div>
   )
 }
