@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, inject, onMounted } from 'vue'
 
 const chain = ref('evm')
 const address = ref('')
@@ -8,6 +8,9 @@ const result = ref<any>(null)
 const chains = ref<any[]>([])
 const recentChecks = ref<any[]>([])
 const alertId = ref(0)
+
+// Get wallet auth from App.vue
+const wallet = inject<any>('wallet')
 
 const chainIcons: Record<string, string> = { evm: '🟣', btc: '🟠', solana: '🟢', sui: '🔵', tron: '🔴' }
 const chainPlaceholders: Record<string, string> = {
@@ -51,10 +54,15 @@ async function check() {
   loading.value = true
   result.value = null
   
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (wallet?.authToken?.value) {
+    headers['Authorization'] = `Bearer ${wallet.authToken.value}`
+  }
+  
   try {
     const res = await fetch('/api/check', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ address: address.value.trim(), chain: chain.value })
     })
     
@@ -74,6 +82,12 @@ async function check() {
     }
     
     result.value = data
+    
+    // Update balance if returned
+    if (data.balance_left !== undefined && wallet) {
+      wallet.userBalance.value = data.balance_left
+      localStorage.setItem('userBalance', String(data.balance_left))
+    }
     
     // Add to recent checks only AFTER successful API response
     recentChecks.value.unshift({
