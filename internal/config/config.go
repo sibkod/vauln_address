@@ -31,12 +31,28 @@ type Config struct {
 	RateLimitHours    int
 	FreeCheckLimit    int
 	SolanaPaymentAddr string
+	SolanaRPCURL      string
+	SolanaUseDevnet   bool
 }
 
 func Load() *Config {
 	godotenv.Load()
 
 	dbType := DBType(getEnv("DB_TYPE", "postgres"))
+	
+	// Solana configuration - easy 1-line switch between devnet and mainnet
+	// Set SOLANA_USE_DEVNET=false for mainnet
+	solanaUseDevnet := getEnv("SOLANA_USE_DEVNET", "true") == "true"
+	
+	// Default RPC URLs
+	solanaRPCURL := getEnv("SOLANA_RPC_URL", "")
+	if solanaRPCURL == "" {
+		if solanaUseDevnet {
+			solanaRPCURL = "https://api.devnet.solana.com"
+		} else {
+			solanaRPCURL = "https://api.mainnet-beta.solana.com"
+		}
+	}
 
 	return &Config{
 		DBType:            dbType,
@@ -53,6 +69,8 @@ func Load() *Config {
 		RateLimitHours:    getEnvInt("RATE_LIMIT_WINDOW_HOURS", 24),
 		FreeCheckLimit:    getEnvInt("FREE_CHECK_LIMIT", 1),
 		SolanaPaymentAddr: getEnv("SOLANA_PAYMENT_ADDR", ""),
+		SolanaRPCURL:      solanaRPCURL,
+		SolanaUseDevnet:   solanaUseDevnet,
 	}
 }
 
