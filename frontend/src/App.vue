@@ -2,9 +2,17 @@
 import { ref, onMounted, onUnmounted, provide } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
 
-// Network config - change IS_MAINNET to switch networks
-const IS_MAINNET = false
-const SOLANA_NETWORK = IS_MAINNET ? 'mainnet-beta' : 'devnet'
+// Network config from environment variables
+const IS_MAINNET = import.meta.env.VITE_SOLANA_CLUSTER !== 'devnet'
+const SOLANA_NETWORK = import.meta.env.VITE_SOLANA_CLUSTER || 'devnet'
+
+// API base URL - uses subdomain based on environment
+const API_BASE = import.meta.env.VITE_API_URL || ''
+
+// Helper function for API calls
+function apiUrl(path: string): string {
+  return API_BASE + path
+}
 
 const darkMode = ref(true)
 const connected = ref(false)
@@ -45,6 +53,7 @@ const walletOptions = [
 provide('wallet', { connected, walletAddress, walletChain, userBalance, authToken, refreshBalance, fetchPurchaseHistory, fetchMe })
 provide('network', { isMainnet: IS_MAINNET, solanaNetwork: SOLANA_NETWORK })
 provide('rateLimitInfo', rateLimitInfo)
+provide('apiBase', API_BASE)
 
 // Fetch comprehensive user info from /api/me endpoint
 async function fetchMe() {
@@ -53,7 +62,7 @@ async function fetchMe() {
     if (authToken.value) {
       headers['Authorization'] = `Bearer ${authToken.value}`
     }
-    const res = await fetch('/api/me', { headers })
+    const res = await fetch(apiUrl('/api/me'), { headers })
     
     if (res.ok) {
       const data = await res.json()
@@ -124,7 +133,7 @@ async function refreshBalance() {
     if (authToken.value) {
       headers['Authorization'] = `Bearer ${authToken.value}`
     }
-    const res = await fetch('/api/user/balance', { headers })
+    const res = await fetch(apiUrl('/api/user/balance', { headers })
     if (res.ok) {
       const data = await res.json()
       userBalance.value = data.balance
@@ -142,7 +151,7 @@ async function refreshBalance() {
 async function fetchPurchaseHistory(limit = 5) {
   if (!authToken.value) return []
   try {
-    const res = await fetch(`/api/user/purchases?limit=${limit}`, {
+    const res = await fetch(apiUrl(`/api/user/purchases?limit=${limit}`, {
       headers: { 'Authorization': `Bearer ${authToken.value}` }
     })
     if (res.ok) {
@@ -185,7 +194,7 @@ onMounted(async () => {
   
   // Check backend availability
   try {
-    const res = await fetch('/api/chains', { 
+    const res = await fetch(apiUrl('/api/chains', { 
       signal: AbortSignal.timeout(5000)
     })
     if (res.ok) {
@@ -364,7 +373,7 @@ function hexToBase64(hex: string): string {
 
 async function authenticateSolana(provider: any, address: string) {
   try {
-    const nonceRes = await fetch(`/api/auth/nonce?address=${address}&chain=solana`)
+    const nonceRes = await fetch(apiUrl(`/api/auth/nonce?address=${address}&chain=solana`)
     const nonceData = await nonceRes.json()
     
     if (!nonceData.nonce) {
@@ -401,7 +410,7 @@ async function authenticateSolana(provider: any, address: string) {
     const signature = uint8ArrayToBase64(signedMessage)
     console.log('Signature (base64):', signature.substring(0, 20) + '...')
     
-    const authRes = await fetch('/api/auth/login', {
+    const authRes = await fetch(apiUrl('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ address, chain: 'solana', Signature: signature, Message: message })
@@ -439,7 +448,7 @@ async function authenticateSolana(provider: any, address: string) {
 
 async function authenticateEVM(provider: any, address: string) {
   try {
-    const nonceRes = await fetch(`/api/auth/nonce?address=${address}&chain=evm`)
+    const nonceRes = await fetch(apiUrl(`/api/auth/nonce?address=${address}&chain=evm`)
     const nonceData = await nonceRes.json()
     
     if (!nonceData.nonce) {
@@ -458,7 +467,7 @@ async function authenticateEVM(provider: any, address: string) {
     
     const signatureBase64 = hexToBase64(signature)
     
-    const authRes = await fetch('/api/auth/login', {
+    const authRes = await fetch(apiUrl('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ address, chain: 'evm', Signature: signatureBase64, Message: message })

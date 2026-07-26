@@ -16,10 +16,15 @@ interface Order {
   completed_at: string | null
 }
 
+const apiBase = inject<string>('apiBase', '')
 const wallet = inject<any>('wallet')
 const orders = ref<Order[]>([])
 const loading = ref(true)
 const error = ref('')
+
+function apiUrl(path: string): string {
+  return apiBase + path
+}
 
 // Pagination
 const currentPage = ref(1)
@@ -38,7 +43,7 @@ async function fetchPurchases(page: number = 1) {
   error.value = ''
 
   try {
-    const res = await fetch(`/api/user/purchases?page=${page}&per_page=${perPage.value}`, {
+    const res = await fetch(apiUrl(`/api/user/purchases?page=${page}&per_page=${perPage.value}`), {
       headers: { 'Authorization': `Bearer ${wallet.authToken.value}` }
     })
     
