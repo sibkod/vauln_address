@@ -59,7 +59,7 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 		// Add rate limit headers for all responses
 		rl.setRateLimitHeaders(c, rateLimit, isAuthenticated && walletAddress != nil && chainStr != "")
 
-		// Check IP limit using FreeCheckLimit
+					// Check IP limit using FreeCheckLimit
 		if rateLimit.Count >= rl.cfg.FreeCheckLimit {
 			// IP limit exhausted
 			// For authenticated users: try to use their balance as fallback
@@ -78,11 +78,14 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 					return
 				}
 
-				// No balance either
-				c.JSON(http.StatusPaymentRequired, models.ErrorResponse{
-					Error:   "no checks remaining",
-					Code:    "BALANCE_EXHAUSTED",
-					Details: "IP limit exhausted. Please purchase more checks.",
+				// No balance either - show same message as anonymous
+				windowEnd := rateLimit.WindowStart.Add(time.Duration(rl.cfg.RateLimitHours) * time.Hour)
+				resetIn := time.Until(windowEnd)
+
+				c.JSON(http.StatusTooManyRequests, models.ErrorResponse{
+					Error:   "rate limit exceeded",
+					Code:    "RATE_LIMIT_EXCEEDED",
+					Details: formatRateLimitDetails(rateLimit.Count, rl.cfg.FreeCheckLimit, resetIn),
 				})
 				c.Abort()
 				return
