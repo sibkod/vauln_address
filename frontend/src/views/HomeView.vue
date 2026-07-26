@@ -146,7 +146,9 @@ async function check() {
     }
     
     if (res.status === 429) {
-      result.value = { status: 'error', message: '⏳ Too many requests. Try again later.' }
+      const data = await res.json()
+      // Show details from response
+      result.value = { status: 'error', message: data.details || data.error || 'No checks remaining' }
       loading.value = false
       return
     }
