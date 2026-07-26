@@ -853,17 +853,17 @@ func (r *Repository) ResetRateLimit(ctx context.Context, ip string, windowStart 
 	if r.dbType == config.DBTypeSQLite {
 		_, err = r.db.ExecContext(ctx,
 			`INSERT INTO rate_limits (ip_address, request_count, window_start) 
-			VALUES (?, 1, ?) 
+			VALUES (?, 0, ?) 
 			ON CONFLICT(ip_address) 
-			DO UPDATE SET request_count = 1, window_start = ?`,
+			DO UPDATE SET request_count = 0, window_start = ?`,
 			ip, windowStart, windowStart,
 		)
 	} else {
 		_, err = r.db.ExecContext(ctx,
 			`INSERT INTO rate_limits (ip_address, request_count, window_start) 
-			VALUES (?, 1, ?) 
+			VALUES (?, 0, ?) 
 			ON CONFLICT (ip_address) 
-			DO UPDATE SET request_count = 1, window_start = ?`,
+			DO UPDATE SET request_count = 0, window_start = ?`,
 			ip, windowStart, windowStart,
 		)
 	}
