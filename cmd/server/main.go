@@ -67,6 +67,7 @@ func main() {
 	api.GET("/chains", h.GetSupportedChains)
 	api.GET("/recent", h.GetRecentChecks)
 	api.GET("/pricing", h.GetPricing)
+	api.GET("/packages", h.GetPackages) // Returns pre-defined pricing packages
 	api.GET("/auth/nonce", h.GetNonce)
 	api.POST("/auth/login", h.Authenticate)
 	api.GET("/user/profile", middleware.RequireAuth(), h.GetUserProfile)

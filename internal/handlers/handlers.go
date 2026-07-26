@@ -174,6 +174,55 @@ func (h *Handler) GetPricing(c *gin.Context) {
 	})
 }
 
+// GetPackages returns pre-defined pricing packages
+func (h *Handler) GetPackages(c *gin.Context) {
+	packages := []gin.H{
+		{
+			"id":                  "starter",
+			"name":                "Starter",
+			"checks":              50,
+			"price_usd":          5.0,  // 50 * 0.10
+			"price_sol":           0.01,
+			"discount_percent":     0,
+			"discount_label":      "",
+			"popular":             false,
+		},
+		{
+			"id":                  "pro",
+			"name":                "Pro",
+			"checks":              200,
+			"price_usd":          20.0, // 200 * 0.10
+			"price_sol":           0.01,
+			"discount_percent":     0,
+			"discount_label":      "",
+			"popular":             true,
+		},
+		{
+			"id":                  "enterprise",
+			"name":                "Enterprise",
+			"checks":              1000,
+			"price_usd":          50.0, // 1000 * 0.10 * 0.5 (50% off)
+			"price_sol":           0.01,
+			"discount_percent":     50,
+			"discount_label":      "50% OFF",
+			"popular":             false,
+		},
+	}
+
+	// Add payment address info
+	paymentAddress := h.serverCfg.SolanaPaymentAddr
+	if paymentAddress == "" {
+		paymentAddress = "CW58CLARKr9mL4d7oRDj6FKv3cM2xT6vH3kQVZqW4xXy" // Demo address
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"packages":         packages,
+		"payment_address":  paymentAddress,
+		"price_per_check":  models.PricePerCheckUSD,
+		"network":          "devnet", // or mainnet based on config
+	})
+}
+
 // CreateOrder creates a new payment order
 func (h *Handler) CreateOrder(c *gin.Context) {
 	walletAddress, exists := c.Get("userAddress")

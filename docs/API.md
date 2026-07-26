@@ -92,6 +92,55 @@ Returns pricing for different payment methods. Default is 10 checks if not speci
 
 ---
 
+### Get Pricing Packages
+
+**GET** `/api/packages`
+
+Returns pre-defined pricing packages for display on the frontend. Prices are calculated server-side.
+
+**Response:**
+```json
+{
+  "packages": [
+    {
+      "id": "starter",
+      "name": "Starter",
+      "checks": 50,
+      "price_usd": 5.0,
+      "price_sol": 0.01,
+      "discount_percent": 0,
+      "discount_label": "",
+      "popular": false
+    },
+    {
+      "id": "pro",
+      "name": "Pro",
+      "checks": 200,
+      "price_usd": 20.0,
+      "price_sol": 0.01,
+      "discount_percent": 0,
+      "discount_label": "",
+      "popular": true
+    },
+    {
+      "id": "enterprise",
+      "name": "Enterprise",
+      "checks": 1000,
+      "price_usd": 50.0,
+      "price_sol": 0.01,
+      "discount_percent": 50,
+      "discount_label": "50% OFF",
+      "popular": false
+    }
+  ],
+  "payment_address": "7bMD8B3a3yDj7JMBQZYse7x4FqNKLNmEACSUitKxVNXJ",
+  "price_per_check": 0.10,
+  "network": "devnet"
+}
+```
+
+---
+
 ### Get Recent Checks
 
 **GET** `/api/recent`
