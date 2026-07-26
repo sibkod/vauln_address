@@ -1,3 +1,65 @@
+<script setup lang="ts">
+import { ref, onMounted, computed } from 'vue'
+
+interface RoadmapItem {
+  text: string
+  done?: boolean
+  status?: string
+}
+
+interface Phase {
+  id: number
+  title: string
+  description: string
+  status: string
+  quarter: string
+  progress?: number
+  items: RoadmapItem[]
+  technical?: string[]
+}
+
+interface RoadmapData {
+  phases: Phase[]
+}
+
+const roadmap = ref<RoadmapData | null>(null)
+const loading = ref(true)
+
+onMounted(async () => {
+  try {
+    const res = await fetch('/data/roadmap.json')
+    roadmap.value = await res.json()
+  } catch (err) {
+    console.error('Failed to load roadmap:', err)
+  } finally {
+    loading.value = false
+  }
+})
+
+function getStatusClass(status: string): string {
+  switch (status) {
+    case 'completed': return 'completed'
+    case 'in_progress': return 'in-progress'
+    case 'planned': return 'planned'
+    default: return 'future'
+  }
+}
+
+function getItemIcon(item: RoadmapItem): string {
+  if (item.done === true) return '✓'
+  if (item.status === 'in_progress') return '⏳'
+  if (item.status === 'planned') return '○'
+  return '☆'
+}
+
+function getItemClass(item: RoadmapItem): string {
+  if (item.done === true) return 'done'
+  if (item.status === 'in_progress') return 'in-progress'
+  if (item.status === 'planned') return 'planned'
+  return 'future'
+}
+</script>
+
 <template>
   <div class="roadmap-container">
     <div class="roadmap-header">
@@ -5,134 +67,46 @@
       <p class="roadmap-sub">Building comprehensive blockchain security intelligence</p>
     </div>
     
-    <div class="roadmap-timeline">
-      <!-- Phase 1: Completed -->
-      <div class="roadmap-phase completed">
-        <div class="phase-marker">
-          <span class="phase-icon">✓</span>
-          <span class="phase-number">Phase 1</span>
-        </div>
-        <div class="phase-content">
-          <h3>Foundation & Core Features</h3>
-          <p class="phase-description">Basic wallet vulnerability checking with rate limiting and authentication</p>
-          <ul>
-            <li>✓ Multi-chain support: EVM, BTC, Solana, Sui, Tron</li>
-            <li>✓ Rate limiting with IP-based free checks</li>
-            <li>✓ Phantom wallet integration (Solana)</li>
-            <li>✓ User authentication via Web3 signatures</li>
-            <li>✓ Purchased check balance system</li>
-            <li>✓ Rate limit headers (X-RateLimit-*)</li>
-            <li>✓ /api/me endpoint for user info polling</li>
-            <li>✓ Purchase history with pagination</li>
-            <li>✓ Admin API for wallet database management</li>
-          </ul>
-          <span class="phase-date">Completed · Q1 2026</span>
-        </div>
-      </div>
+    <div v-if="loading" class="loading">
+      <div class="spinner"></div>
+    </div>
 
-      <!-- Phase 2: In Progress -->
-      <div class="roadmap-phase in-progress">
+    <div v-else-if="roadmap" class="roadmap-timeline">
+      <div 
+        v-for="phase in roadmap.phases" 
+        :key="phase.id"
+        :class="['roadmap-phase', getStatusClass(phase.status)]"
+      >
         <div class="phase-marker">
-          <span class="phase-icon">⟳</span>
-          <span class="phase-number">Phase 2</span>
+          <span class="phase-icon">
+            {{ phase.status === 'completed' ? '✓' : phase.status === 'in_progress' ? '⟳' : phase.id }}
+          </span>
+          <span class="phase-number">Phase {{ phase.id }}</span>
         </div>
         <div class="phase-content">
-          <h3>Extended Wallet Support</h3>
-          <p class="phase-description">Adding more wallet options and improving user experience</p>
+          <h3>{{ phase.title }}</h3>
+          <p class="phase-description">{{ phase.description }}</p>
           <ul>
-            <li class="in-progress-item">⏳ Integrate MetaMask wallet (EVM chains)</li>
-            <li class="in-progress-item">⏳ Integrate WalletConnect for mobile wallets</li>
-            <li class="in-progress-item">⏳ Integrate Backpack wallet (Solana)</li>
-            <li class="in-progress-item">⏳ Integrate Coinbase Wallet</li>
-            <li class="planned">○ Multi-wallet session management</li>
-            <li class="planned">○ Unified balance across connected wallets</li>
+            <li 
+              v-for="(item, idx) in phase.items" 
+              :key="idx"
+              :class="getItemClass(item)"
+            >
+              {{ getItemIcon(item) }} {{ item.text }}
+            </li>
           </ul>
-          <span class="phase-date">In progress · Q2 2026</span>
-          <div class="progress-bar"><div class="progress-fill" style="width:25%;"></div></div>
-        </div>
-      </div>
-
-      <!-- Phase 3: Planned -->
-      <div class="roadmap-phase planned">
-        <div class="phase-marker">
-          <span class="phase-icon">◈</span>
-          <span class="phase-number">Phase 3</span>
-        </div>
-        <div class="phase-content">
-          <h3>Hacker Address Tracking</h3>
-          <p class="phase-description">Identifying and tracking hacker wallets to trace stolen funds</p>
-          <ul>
-            <li class="planned">○ Hacker wallet database with attribution</li>
-            <li class="planned">○ Track fund flows from compromised wallets</li>
-            <li class="planned">○ Cross-chain transaction analysis</li>
-            <li class="planned">○ Visualize fund movement chains</li>
-            <li class="planned">○ Link multiple hacker addresses (clustering)</li>
-            <li class="planned">○ Real-time alerts for new hacker activity</li>
-            <li class="planned">○ Integration with law enforcement databases</li>
-          </ul>
-          <div class="sub-details">
+          <div v-if="phase.technical" class="sub-details">
             <h4>Technical Implementation:</h4>
             <ul>
-              <li>Graph-based transaction analysis</li>
-              <li>Pattern recognition for mixer/tumbler usage</li>
-              <li>CEX deposit address identification</li>
-              <li>Automatic wallet labeling via on-chain heuristics</li>
+              <li v-for="(tech, idx) in phase.technical" :key="idx">→ {{ tech }}</li>
             </ul>
           </div>
-          <span class="phase-date">Planned · Q3 2026</span>
-        </div>
-      </div>
-
-      <!-- Phase 4: Future -->
-      <div class="roadmap-phase future">
-        <div class="phase-marker">
-          <span class="phase-icon">◇</span>
-          <span class="phase-number">Phase 4</span>
-        </div>
-        <div class="phase-content">
-          <h3>Malicious Contract Detection</h3>
-          <p class="phase-description">Identifying honeypots, drainers, and malicious smart contracts</p>
-          <ul>
-            <li class="future">☆ Automated honeypot contract detection</li>
-            <li class="future">☆ Drainer-as-a-Service (DaaS) identification</li>
-            <li class="future">☆ Flash loan attack pattern recognition</li>
-            <li class="future">☆ Front-run bot detection</li>
-            <li class="future">☆ Rug-pull indicator system</li>
-            <li class="future">☆ Contract owner privilege analysis</li>
-            <li class="future">☆ Token approval scanner</li>
-          </ul>
-          <div class="sub-details">
-            <h4>Analysis Methods:</h4>
-            <ul>
-              <li>Static analysis of contract bytecode</li>
-              <li>Simulation of contract interactions</li>
-              <li>Ownership and proxy pattern detection</li>
-              <li>Transaction sequence analysis</li>
-              <li>Community-reported threat intelligence</li>
-            </ul>
+          <span class="phase-date">
+            {{ phase.status === 'completed' ? 'Completed' : phase.status === 'in_progress' ? 'In progress' : 'Planned' }} · {{ phase.quarter }}
+          </span>
+          <div v-if="phase.status === 'in_progress' && phase.progress" class="progress-bar">
+            <div class="progress-fill" :style="{ width: phase.progress + '%' }"></div>
           </div>
-          <span class="phase-date">Future · Q4 2026</span>
-        </div>
-      </div>
-
-      <!-- Phase 5: Vision -->
-      <div class="roadmap-phase future vision">
-        <div class="phase-marker">
-          <span class="phase-icon">◉</span>
-          <span class="phase-number">Phase 5</span>
-        </div>
-        <div class="phase-content">
-          <h3>AI-Powered Security</h3>
-          <p class="phase-description">Advanced threat detection using machine learning</p>
-          <ul>
-            <li class="future">☆ ML-based risk scoring for any address</li>
-            <li class="future">☆ Behavioral analysis of wallet activity</li>
-            <li class="future">☆ Predictive breach detection</li>
-            <li class="future">☆ Natural language threat reports</li>
-            <li class="future">☆ Anomaly detection in fund movements</li>
-            <li class="future">☆ Automated security audits</li>
-          </ul>
-          <span class="phase-date">Future · 2027</span>
         </div>
       </div>
     </div>
@@ -142,7 +116,7 @@
       <p>Help us build a safer Web3 by reporting new threats and vulnerabilities.</p>
       <div class="contribute-cta">
         <RouterLink to="/contact" class="btn-primary">Report a Threat</RouterLink>
-        <RouterLink to="/about" class="btn-secondary">Learn More</RouterLink>
+        <RouterLink to="/support" class="btn-secondary">Support Us</RouterLink>
       </div>
     </div>
   </div>
@@ -172,6 +146,25 @@
 .roadmap-sub {
   color: #6b7a9e;
   font-size: 1.1rem;
+}
+
+.loading {
+  text-align: center;
+  padding: 3rem;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #2a3548;
+  border-top-color: #667eea;
+  border-radius: 50%;
+  margin: 0 auto;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .roadmap-timeline {
@@ -291,17 +284,17 @@
 }
 
 .phase-content li::before {
-  content: '•';
   position: absolute;
   left: 0;
+  width: 1rem;
+}
+
+.done::before {
+  content: '✓';
   color: #4bc9a0;
 }
 
-.completed li::before {
-  color: #4bc9a0;
-}
-
-.in-progress-item::before {
+.in-progress::before {
   content: '⏳';
   color: #667eea;
 }
@@ -360,8 +353,11 @@
 }
 
 .sub-details li::before {
-  content: '→';
-  color: #4a5568;
+  content: none;
+}
+
+.sub-details li {
+  padding-left: 1rem;
 }
 
 .contribute-section {

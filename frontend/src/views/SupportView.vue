@@ -1,57 +1,234 @@
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+
+interface Wallet {
+  name: string
+  symbol: string
+  icon: string
+  address: string
+  color: string
+}
+
+interface DonationsData {
+  title: string
+  subtitle: string
+  wallets: Wallet[]
+}
+
+const donations = ref<DonationsData | null>(null)
+const loading = ref(true)
+const copiedWallet = ref('')
+
+onMounted(async () => {
+  try {
+    const res = await fetch('/data/donations.json')
+    donations.value = await res.json()
+  } catch (err) {
+    console.error('Failed to load donations:', err)
+  } finally {
+    loading.value = false
+  }
+})
+
+function copyAddress(address: string) {
+  navigator.clipboard.writeText(address)
+  copiedWallet.value = address
+  setTimeout(() => {
+    copiedWallet.value = ''
+  }, 2000)
+}
+</script>
+
 <template>
-  <div class="content-card">
-    <div style="font-size:3.5rem; margin-bottom:0.3rem;">◆</div>
-    <h2>Support</h2>
-    <div style="display:inline-block; background:#3b5fcf20; color:#7b9aff; padding:0.15rem 1.2rem; border-radius:40px; font-size:0.8rem; font-weight:600; border:1px solid #3b5fcf30; margin-bottom:1rem;">
-      $WCHK · Sui
+  <div class="support-container">
+    <div class="support-header">
+      <h1>Support Us</h1>
+      <p v-if="donations" class="subtitle">{{ donations.subtitle }}</p>
     </div>
-    <p><strong>$WCHK</strong> powers the Wallet Checker ecosystem. Use it to purchase checks, unlock premium features, and support development.</p>
-    
-    <div style="background:rgba(16,22,34,0.4); border-radius:1rem; padding:1.2rem; margin:1.5rem 0; border:1px solid rgba(255,255,255,0.02);">
-      <div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:1px solid rgba(255,255,255,0.03); color:#b0bedc; font-size:0.8rem;">
-        <span style="color:#6a7ba0;">Token</span>
-        <span style="color:#dfe7f8; font-weight:450; font-family:monospace;">Wallet Checker</span>
-      </div>
-      <div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:1px solid rgba(255,255,255,0.03); color:#b0bedc; font-size:0.8rem;">
-        <span style="color:#6a7ba0;">Symbol</span>
-        <span style="color:#dfe7f8; font-weight:450; font-family:monospace;">$WCHK</span>
-      </div>
-      <div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:1px solid rgba(255,255,255,0.03); color:#b0bedc; font-size:0.8rem;">
-        <span style="color:#6a7ba0;">Network</span>
-        <span style="color:#dfe7f8; font-weight:450; font-family:monospace;">Sui Mainnet</span>
-      </div>
-      <div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:1px solid rgba(255,255,255,0.03); color:#b0bedc; font-size:0.8rem;">
-        <span style="color:#6a7ba0;">Total Supply</span>
-        <span style="color:#dfe7f8; font-weight:450; font-family:monospace;">100,000,000</span>
-      </div>
-      <div style="display:flex; justify-content:space-between; padding:0.4rem 0; color:#b0bedc; font-size:0.8rem;">
-        <span style="color:#6a7ba0;">Contract</span>
-        <span style="color:#dfe7f8; font-weight:450; font-family:monospace; font-size:0.7rem;">0x8f7a…3c9d</span>
-      </div>
+
+    <div v-if="loading" class="loading">
+      <div class="spinner"></div>
     </div>
-    
-    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:0.6rem; margin:1.5rem 0;">
-      <div style="background:rgba(16,22,34,0.4); padding:0.7rem; border-radius:0.8rem; border:1px solid rgba(255,255,255,0.02); text-align:center;">
-        <span style="font-size:1.4rem; display:block; margin-bottom:0.2rem;">✓</span>
-        <span style="color:#98a8ce; font-size:0.7rem;">10 checks / token</span>
-      </div>
-      <div style="background:rgba(16,22,34,0.4); padding:0.7rem; border-radius:0.8rem; border:1px solid rgba(255,255,255,0.02); text-align:center;">
-        <span style="font-size:1.4rem; display:block; margin-bottom:0.2rem;">⚡</span>
-        <span style="color:#98a8ce; font-size:0.7rem;">Priority support</span>
-      </div>
-      <div style="background:rgba(16,22,34,0.4); padding:0.7rem; border-radius:0.8rem; border:1px solid rgba(255,255,255,0.02); text-align:center;">
-        <span style="font-size:1.4rem; display:block; margin-bottom:0.2rem;">📊</span>
-        <span style="color:#98a8ce; font-size:0.7rem;">Advanced analytics</span>
-      </div>
-      <div style="background:rgba(16,22,34,0.4); padding:0.7rem; border-radius:0.8rem; border:1px solid rgba(255,255,255,0.02); text-align:center;">
-        <span style="font-size:1.4rem; display:block; margin-bottom:0.2rem;">🛡</span>
-        <span style="color:#98a8ce; font-size:0.7rem;">Early access</span>
+
+    <div v-else-if="donations" class="donations-section">
+      <div class="wallets-grid">
+        <div 
+          v-for="wallet in donations.wallets" 
+          :key="wallet.symbol"
+          class="wallet-card"
+        >
+          <div class="wallet-header">
+            <span class="wallet-icon" :style="{ background: wallet.color + '20', color: wallet.color }">
+              {{ wallet.icon }}
+            </span>
+            <div class="wallet-info">
+              <h3>{{ wallet.name }}</h3>
+              <span class="wallet-symbol">{{ wallet.symbol }}</span>
+            </div>
+          </div>
+          
+          <div class="wallet-address" @click="copyAddress(wallet.address)">
+            <code>{{ wallet.address }}</code>
+            <button class="copy-btn">
+              {{ copiedWallet === wallet.address ? '✓' : '📋' }}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
-    
-    <button style="background:#3b5fcf; border:none; color:white; font-weight:550; padding:0.8rem 2.5rem; border-radius:60px; font-size:0.95rem; cursor:pointer; transition:0.15s; box-shadow:0 4px 20px #3b5fcf40; margin-top:0.5rem;">
-      Get $WCHK
-    </button>
-    <p style="margin-top:1rem; font-size:0.7rem; color:#58688e;">DEX & CEX listings coming soon.</p>
+
+    <div class="support-note">
+      <p>💡 All donations are greatly appreciated and help us maintain and improve Wallet Checker.</p>
+    </div>
   </div>
 </template>
+
+<style scoped>
+.support-container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+.support-header {
+  text-align: center;
+  margin-bottom: 3rem;
+}
+
+.support-header h1 {
+  font-size: 2.5rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 0.5rem;
+}
+
+.subtitle {
+  color: #6b7a9e;
+  font-size: 1rem;
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.loading {
+  text-align: center;
+  padding: 3rem;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #2a3548;
+  border-top-color: #667eea;
+  border-radius: 50%;
+  margin: 0 auto;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.donations-section {
+  margin-bottom: 2rem;
+}
+
+.wallets-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.wallet-card {
+  background: #1a1f2e;
+  border: 1px solid #2a3548;
+  border-radius: 12px;
+  padding: 1.25rem;
+  transition: all 0.2s ease;
+}
+
+.wallet-card:hover {
+  border-color: #3a4560;
+}
+
+.wallet-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.wallet-icon {
+  font-size: 1.8rem;
+  width: 50px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+}
+
+.wallet-info h3 {
+  color: #e7ecf5;
+  font-size: 1.1rem;
+  margin: 0 0 0.2rem 0;
+}
+
+.wallet-symbol {
+  color: #6b7a9e;
+  font-size: 0.85rem;
+}
+
+.wallet-address {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #151a24;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.wallet-address:hover {
+  background: #1a2030;
+}
+
+.wallet-address code {
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 0.75rem;
+  color: #98a8ce;
+  word-break: break-all;
+}
+
+.copy-btn {
+  flex-shrink: 0;
+  margin-left: 0.5rem;
+  background: none;
+  border: none;
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0.25rem;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.copy-btn:hover {
+  opacity: 1;
+}
+
+.support-note {
+  margin-top: 2rem;
+  padding: 1rem;
+  background: #151a24;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.support-note p {
+  color: #6b7a9e;
+  font-size: 0.85rem;
+  margin: 0;
+}
+</style>
