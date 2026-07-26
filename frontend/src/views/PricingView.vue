@@ -27,7 +27,7 @@ interface PackagesResponse {
 }
 
 // Network config - from backend
-const RPC_URL = 'https://api.devnet.solana.com' // Default, will be updated from backend
+const RPC_URL = 'https://api.devnet.solana.com'
 
 const globalWallet = inject<any>('wallet')
 
@@ -41,9 +41,11 @@ const loadingPackages = ref(true)
 const packagesError = ref('')
 
 const selectedPackage = ref<Package | null>(null)
-const processing = ref(false)
-const error = ref('')
-const success = ref('')
+
+// Payment modal state
+const showPaymentModal = ref(false)
+const paymentStatus = ref<'waiting' | 'processing' | 'success' | 'error'>('waiting')
+const paymentMessage = ref('')
 const txSignature = ref('')
 const pollInterval = ref<number | null>(null)
 
@@ -72,13 +74,10 @@ async function fetchPackages() {
 
 function selectPackage(pkg: Package) {
   if (!isConnected.value) {
-    error.value = 'Please connect your wallet first'
     return
   }
   selectedPackage.value = pkg
-  error.value = ''
-  success.value = ''
-  txSignature.value = ''
+  payWithSolana()
 }
 
 onMounted(() => {
@@ -89,43 +88,39 @@ onMounted(() => {
 async function payWithSolana() {
   if (!selectedPackage.value) return
   
-  // Check if Phantom/Solflare is installed
+  // Check if Phantom is installed
   const phantom = (window as any).solana
   if (!phantom) {
-    error.value = 'Please install Phantom wallet: https://phantom.app/'
+    paymentStatus.value = 'error'
+    paymentMessage.value = 'Please install Phantom wallet: https://phantom.app/'
     return
   }
   
   // Check if user is on Solana chain
   if (walletChain.value !== 'solana') {
-    error.value = 'Please connect a Solana wallet to pay with SOL'
+    paymentStatus.value = 'error'
+    paymentMessage.value = 'Please connect a Solana wallet to pay with SOL'
     return
   }
   
-  // Check if wallet is connected (can be done silently)
-  if (!phantom.isConnected) {
-    try {
-      await phantom.connect()
-    } catch (e) {
-      error.value = 'Please connect your Solana wallet'
-      return
-    }
-  }
-  
-  processing.value = true
-  error.value = ''
-  success.value = ''
+  // Open payment modal
+  showPaymentModal.value = true
+  paymentStatus.value = 'waiting'
+  paymentMessage.value = `Send ${selectedPackage.value.price_sol} SOL to complete your purchase`
+  txSignature.value = ''
   
   try {
     const authToken = localStorage.getItem('authToken')
     if (!authToken) {
-      error.value = 'Please log in first'
-      processing.value = false
+      paymentStatus.value = 'error'
+      paymentMessage.value = 'Please log in first'
       return
     }
     
-    // Create order first (requires auth) - endpoint is /orders
-    // Backend requires: checks, chain, wallet_address
+    paymentStatus.value = 'processing'
+    paymentMessage.value = 'Creating order...'
+    
+    // Create order first (requires auth)
     const orderRes = await fetch('/api/orders', {
       method: 'POST',
       headers: {
@@ -153,18 +148,15 @@ async function payWithSolana() {
       throw new Error(orderData.error || 'Failed to create order')
     }
     
-    console.log('Order created:', orderData)
+    paymentMessage.value = 'Waiting for payment...'
     
     const senderPublicKey = phantom.publicKey
     const recipientPublicKey = new PublicKey(orderData.payment_address || paymentAddress.value)
-    // Use amount from backend order response
     const solAmount = parseFloat(orderData.amount) || selectedPackage.value.price_sol
     const lamports = Math.round(solAmount * LAMPORTS_PER_SOL)
     
-    // Create a proper Transaction object
+    // Create transaction
     const transaction = new Transaction()
-    
-    // Add transfer instruction using SystemProgram
     transaction.add(
       SystemProgram.transfer({
         fromPubkey: senderPublicKey,
@@ -173,40 +165,32 @@ async function payWithSolana() {
       })
     )
     
-    // Get recent blockhash
     transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash
     transaction.feePayer = senderPublicKey
     
-    console.log('Sending transaction:', {
-      from: senderPublicKey.toString(),
-      to: recipientPublicKey.toString(),
-      amount: solAmount + ' SOL',
-      lamports: lamports
-    })
-    
     // Sign and send using Phantom
+    paymentMessage.value = 'Sign the transaction in your wallet...'
     const { signature } = await phantom.signAndSendTransaction(transaction)
     
     console.log('Transaction signature:', signature)
     txSignature.value = signature
-    success.value = `Transaction sent! Signature: ${signature.slice(0, 8)}...`
+    paymentMessage.value = 'Transaction sent! Waiting for confirmation...'
     
     // Poll for confirmation
     startPolling(signature)
     
   } catch (err: any) {
     console.error('Payment error:', err)
-    error.value = err.message || 'Payment failed'
-    if (err.message?.includes('User rejected') || err.message?.includes('rejected')) {
-      error.value = 'Transaction cancelled'
+    paymentStatus.value = 'error'
+    if (err.message?.includes('User rejected') || err.message?.includes('rejected') || err.message?.includes('cancelled')) {
+      paymentMessage.value = 'Transaction cancelled'
+    } else {
+      paymentMessage.value = err.message || 'Payment failed'
     }
   }
-  
-  processing.value = false
 }
 
 function startPolling(signature: string) {
-  // Poll backend every 3 seconds
   const authToken = localStorage.getItem('authToken')
   pollInterval.value = window.setInterval(async () => {
     try {
@@ -220,24 +204,20 @@ function startPolling(signature: string) {
       
       if (data.status === 'confirmed') {
         stopPolling()
-        success.value = `✅ Payment confirmed! ${data.balance || selectedPackage.value?.checks} checks added.`
+        paymentStatus.value = 'success'
+        paymentMessage.value = `🎉 Success! ${selectedPackage.value?.checks} checks added to your balance.`
         
         if (globalWallet) {
           globalWallet.userBalance.value = data.balance || 0
           localStorage.setItem('userBalance', String(data.balance || 0))
-          // Refresh user data from /api/me
           if (globalWallet.fetchMe) {
             globalWallet.fetchMe()
           }
         }
-        
-        setTimeout(() => {
-          selectedPackage.value = null
-          success.value = ''
-        }, 3000)
       } else if (data.status === 'failed') {
         stopPolling()
-        error.value = 'Transaction failed on blockchain'
+        paymentStatus.value = 'error'
+        paymentMessage.value = 'Transaction failed on blockchain'
       }
     } catch (err) {
       console.error('Poll error:', err)
@@ -252,11 +232,12 @@ function stopPolling() {
   }
 }
 
-function cancelPayment() {
+function closePaymentModal() {
   stopPolling()
+  showPaymentModal.value = false
   selectedPackage.value = null
-  error.value = ''
-  success.value = ''
+  paymentStatus.value = 'waiting'
+  paymentMessage.value = ''
   txSignature.value = ''
 }
 </script>
@@ -289,7 +270,7 @@ function cancelPayment() {
         v-for="pkg in packages" 
         :key="pkg.id"
         class="package-card"
-        :class="{ popular: pkg.popular, selected: selectedPackage?.id === pkg.id }"
+        :class="{ popular: pkg.popular }"
         @click="selectPackage(pkg)"
       >
         <div v-if="pkg.popular" class="popular-badge">Most Popular</div>
@@ -304,88 +285,92 @@ function cancelPayment() {
       </div>
     </div>
 
-  <!-- Payment Section - Direct Payment -->
-  <div v-if="selectedPackage" class="payment-section">
-    <h2>{{ selectedPackage.name }} - {{ selectedPackage.checks }} checks</h2>
-    
-    <div class="payment-summary">
-      <div class="summary-row">
-        <span>Price</span>
-        <span class="amount-highlight">{{ selectedPackage.price_sol }} SOL</span>
-      </div>
-      <div class="summary-row">
-        <span>Network</span>
-        <span>Devnet</span>
-      </div>
-      <div class="summary-row">
-        <span>Recipient</span>
-        <span class="address-small">{{ paymentAddress.slice(0, 8) }}...{{ paymentAddress.slice(-4) }}</span>
+    <!-- Features -->
+    <div class="features-section">
+      <h2>What's Included</h2>
+      <div class="features-grid">
+        <div class="feature">
+          <span class="feat-icon">🔍</span>
+          <div>
+            <div class="feat-title">Multi-chain Coverage</div>
+            <div class="feat-desc">EVM, Bitcoin, Solana, Sui, Tron</div>
+          </div>
+        </div>
+        <div class="feature">
+          <span class="feat-icon">⚡</span>
+          <div>
+            <div class="feat-title">Instant Results</div>
+            <div class="feat-desc">Real-time database lookup</div>
+          </div>
+        </div>
+        <div class="feature">
+          <span class="feat-icon">🛡️</span>
+          <div>
+            <div class="feat-title">Private & Secure</div>
+            <div class="feat-desc">No data collection</div>
+          </div>
+        </div>
+        <div class="feature">
+          <span class="feat-icon">💎</span>
+          <div>
+            <div class="feat-title">Fresh Database</div>
+            <div class="feat-desc">Daily updated threat intel</div>
+          </div>
+        </div>
       </div>
     </div>
-
-    <!-- Direct Pay Button (for Solana wallets) -->
-    <button 
-      v-if="walletChain === 'solana'"
-      class="pay-btn"
-      @click="payWithSolana"
-      :disabled="processing"
-    >
-      {{ processing ? '⏳ Processing...' : '💰 Pay with Solana Wallet' }}
-    </button>
-    
-    <!-- Show wallet info -->
-    <div v-if="walletChain === 'solana'" class="wallet-info-box">
-      <span>👻 Connected: {{ walletAddress.slice(0, 6) }}...{{ walletAddress.slice(-4) }}</span>
-    </div>
-
-    <div v-if="error" class="error-msg">{{ error }}</div>
-    <div v-if="success" class="success-msg">{{ success }}</div>
-
-    <div v-if="txSignature" class="tx-info">
-      <span>TX: {{ txSignature.slice(0, 8) }}...{{ txSignature.slice(-4) }}</span>
-      <a :href="`https://explorer.solana.com/tx/${txSignature}?cluster=devnet`" target="_blank" class="view-link">
-        View on Explorer →
-      </a>
-    </div>
-
-    <button class="cancel-btn" @click="cancelPayment">Cancel</button>
-  </div>
   </template>
 
-  <!-- Features -->
-  <div class="features-section">
-    <h2>What's Included</h2>
-    <div class="features-grid">
-      <div class="feature">
-        <span class="feat-icon">🔍</span>
-        <div>
-          <div class="feat-title">Multi-chain Coverage</div>
-          <div class="feat-desc">EVM, Bitcoin, Solana, Sui, Tron</div>
+  <!-- Payment Modal -->
+  <Teleport to="body">
+    <div v-if="showPaymentModal" class="payment-modal-overlay" @click.self="closePaymentModal">
+      <div class="payment-modal">
+        <button class="modal-close" @click="closePaymentModal">×</button>
+        
+        <div class="modal-icon">
+          <template v-if="paymentStatus === 'success'">🎉</template>
+          <template v-else-if="paymentStatus === 'error'">❌</template>
+          <template v-else>⏳</template>
         </div>
-      </div>
-      <div class="feature">
-        <span class="feat-icon">⚡</span>
-        <div>
-          <div class="feat-title">Instant Results</div>
-          <div class="feat-desc">Real-time database lookup</div>
+        
+        <h2 class="modal-title">
+          <template v-if="paymentStatus === 'success'">Payment Complete!</template>
+          <template v-else-if="paymentStatus === 'error'">Payment Failed</template>
+          <template v-else>Processing Payment</template>
+        </h2>
+        
+        <div class="modal-message">{{ paymentMessage }}</div>
+        
+        <div v-if="selectedPackage && paymentStatus !== 'error' && paymentStatus !== 'success'" class="modal-details">
+          <div class="detail-row">
+            <span>Package</span>
+            <span>{{ selectedPackage.name }}</span>
+          </div>
+          <div class="detail-row">
+            <span>Checks</span>
+            <span>{{ selectedPackage.checks }}</span>
+          </div>
+          <div class="detail-row">
+            <span>Amount</span>
+            <span>{{ selectedPackage.price_sol }} SOL</span>
+          </div>
         </div>
-      </div>
-      <div class="feature">
-        <span class="feat-icon">🛡️</span>
-        <div>
-          <div class="feat-title">Private & Secure</div>
-          <div class="feat-desc">No data collection</div>
+        
+        <div v-if="txSignature && paymentStatus !== 'error'" class="modal-tx">
+          <span>TX:</span>
+          <a :href="`https://explorer.solana.com/tx/${txSignature}?cluster=devnet`" target="_blank">
+            {{ txSignature.slice(0, 8) }}...{{ txSignature.slice(-8) }}
+          </a>
         </div>
-      </div>
-      <div class="feature">
-        <span class="feat-icon">💎</span>
-        <div>
-          <div class="feat-title">Fresh Database</div>
-          <div class="feat-desc">Daily updated threat intel</div>
-        </div>
+        
+        <button class="modal-btn" @click="closePaymentModal">
+          <template v-if="paymentStatus === 'success'">Done</template>
+          <template v-else-if="paymentStatus === 'error'">Close</template>
+          <template v-else>Cancel</template>
+        </button>
       </div>
     </div>
-  </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -404,34 +389,6 @@ function cancelPayment() {
 .pricing-header .sub {
   color: #6b7a9e;
   font-size: 0.95rem;
-}
-
-.network-info {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.8rem;
-  margin-bottom: 1.5rem;
-}
-.network-badge {
-  padding: 0.3rem 0.8rem;
-  border-radius: 20px;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-.network-badge.devnet {
-  background: #1a2a1a;
-  color: #4bc9a0;
-  border: 1px solid #4bc9a040;
-}
-.network-badge.mainnet {
-  background: #2a1a1a;
-  color: #ff6b6b;
-  border: 1px solid #ff6b6b40;
-}
-.network-hint {
-  font-size: 0.75rem;
-  color: #5a6a8e;
 }
 
 .packages-grid {
@@ -456,10 +413,6 @@ function cancelPayment() {
 .package-card.popular {
   border-color: #667eea;
   background: linear-gradient(180deg, #1a1f2e 0%, #151a24 100%);
-}
-.package-card.selected {
-  border-color: #4bc9a0;
-  box-shadow: 0 0 20px #4bc9a020;
 }
 .popular-badge {
   position: absolute;
@@ -747,5 +700,128 @@ function cancelPayment() {
 .feat-desc {
   font-size: 0.75rem;
   color: #6b7a9e;
+}
+
+/* Payment Modal Styles */
+.payment-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.payment-modal {
+  background: #1a1f2e;
+  border: 1px solid #2a3548;
+  border-radius: 20px;
+  padding: 2rem;
+  width: 90%;
+  max-width: 400px;
+  text-align: center;
+  position: relative;
+}
+
+.modal-close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: none;
+  border: none;
+  color: #6b7a9e;
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+.modal-close:hover {
+  color: #e7ecf5;
+}
+
+.modal-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+}
+
+.modal-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #e7ecf5;
+  margin-bottom: 1rem;
+}
+
+.modal-message {
+  color: #98a8ce;
+  font-size: 0.95rem;
+  margin-bottom: 1.5rem;
+  line-height: 1.5;
+}
+
+.modal-details {
+  background: #151a24;
+  border-radius: 12px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #2a3548;
+}
+
+.detail-row:last-child {
+  border-bottom: none;
+}
+
+.detail-row span:first-child {
+  color: #6b7a9e;
+  font-size: 0.85rem;
+}
+
+.detail-row span:last-child {
+  color: #e7ecf5;
+  font-weight: 500;
+}
+
+.modal-tx {
+  background: #151a24;
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin-bottom: 1.5rem;
+  font-size: 0.85rem;
+}
+
+.modal-tx a {
+  color: #667eea;
+  text-decoration: none;
+  font-family: monospace;
+}
+
+.modal-tx a:hover {
+  text-decoration: underline;
+}
+
+.modal-btn {
+  width: 100%;
+  padding: 1rem;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  border: none;
+  border-radius: 10px;
+  color: white;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.modal-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px #667eea40;
 }
 </style>

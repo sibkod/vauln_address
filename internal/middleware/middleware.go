@@ -66,15 +66,16 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 			if isAuthenticated && walletAddress != nil && chainStr != "" {
 				balance, err := rl.repo.GetUserBalance(ctx, walletAddress.(string), chainStr)
 				if err == nil && balance > 0 {
-					// Use user's balance instead of IP limit
-					if err := rl.repo.DeductUserBalance(ctx, walletAddress.(string), chainStr, 1); err == nil {
-						c.Set("remainingBalance", balance-1)
-						c.Set("usingBalance", true)
-						c.Header("X-RateLimit-Source", "balance")
-						c.Header("X-Balance-Available", strconv.Itoa(balance-1))
-						c.Next()
-						return
-					}
+					// Set flag for handler to deduct balance after successful check
+					c.Set("pendingBalanceDeduction", true)
+					c.Set("pendingDeductionAddress", walletAddress.(string))
+					c.Set("pendingDeductionChain", chainStr)
+					c.Set("pendingDeductionBalance", balance)
+					c.Set("usingBalance", true)
+					c.Header("X-RateLimit-Source", "balance")
+					c.Header("X-Balance-Available", strconv.Itoa(balance))
+					c.Next()
+					return
 				}
 
 				// No balance either
@@ -106,20 +107,21 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 			return
 		}
 
-		// For authenticated users, also deduct from balance
+		// For authenticated users with balance, set flag for handler to deduct after successful check
 		if isAuthenticated && walletAddress != nil && chainStr != "" {
 			balance, err := rl.repo.GetUserBalance(ctx, walletAddress.(string), chainStr)
 			if err == nil && balance > 0 {
-				if err := rl.repo.DeductUserBalance(ctx, walletAddress.(string), chainStr, 1); err == nil {
-					c.Set("remainingBalance", balance-1)
-					c.Set("usingBalance", true)
-					c.Header("X-RateLimit-Source", "balance")
-					c.Header("X-Balance-Available", strconv.Itoa(balance-1))
-				}
+				c.Set("pendingBalanceDeduction", true)
+				c.Set("pendingDeductionAddress", walletAddress.(string))
+				c.Set("pendingDeductionChain", chainStr)
+				c.Set("pendingDeductionBalance", balance)
+				c.Set("usingBalance", true)
+				c.Header("X-RateLimit-Source", "balance")
+				c.Header("X-Balance-Available", strconv.Itoa(balance))
 			}
 		}
 
-		// Update remaining header after decrement
+		// Update remaining header after increment
 		remaining := max(0, rl.cfg.RateLimitRequests-rateLimit.Count-1)
 		c.Header("X-RateLimit-Remaining", strconv.Itoa(remaining))
 		c.Next()

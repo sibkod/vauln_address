@@ -36,18 +36,9 @@ const recentPurchases = ref<any[]>([])
 // Polling interval ID
 let mePollInterval: number | null = null
 
+// Only Phantom wallet for now
 const walletOptions = [
-  // Browser Extensions
   { id: 'phantom', name: 'Phantom', icon: '👻', url: 'https://phantom.app/', type: 'extension', chain: 'solana' },
-  { id: 'solflare', name: 'Solflare', icon: '☀️', url: 'https://solflare.com/', type: 'extension', chain: 'solana' },
-  { id: 'metamask', name: 'MetaMask', icon: '🦊', url: 'https://metamask.io/', type: 'extension', chain: 'evm' },
-  { id: 'slope', name: 'Slope', icon: '🛡️', url: 'https://slope.finance/', type: 'extension', chain: 'solana' },
-  { id: 'glow', name: 'Glow', icon: '✨', url: 'https://glow.app/', type: 'extension', chain: 'solana' },
-  { id: 'coinbase', name: 'Coinbase Wallet', icon: '💰', url: 'https://www.coinbase.com/wallet', type: 'extension', chain: 'evm' },
-  // Mobile & Hardware
-  { id: 'walletconnect', name: 'WalletConnect', icon: '🔗', url: 'https://walletconnect.com/', type: 'mobile' },
-  { id: 'exodus', name: 'Exodus', icon: '🚀', url: 'https://exodus.com/', type: 'mobile' },
-  { id: 'ledger', name: 'Ledger Live', icon: '📱', url: 'https://www.ledger.com/ledger-live', type: 'hardware' },
 ]
 
 // Provide auth state to all components

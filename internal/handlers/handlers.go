@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -607,7 +608,7 @@ func (h *Handler) GetBalance(c *gin.Context) {
 	})
 }
 
-// GetPurchaseHistory returns the user's order history
+// GetPurchaseHistory returns the user's order history with pagination
 func (h *Handler) GetPurchaseHistory(c *gin.Context) {
 	walletAddress, exists := c.Get("userAddress")
 	if !exists {
@@ -618,16 +619,23 @@ func (h *Handler) GetPurchaseHistory(c *gin.Context) {
 		return
 	}
 
-	limitStr := c.DefaultQuery("limit", "50")
-	var limit int
-	if _, err := fmt.Sscanf(limitStr, "%d", &limit); err != nil || limit < 1 {
-		limit = 50
+	pageStr := c.DefaultQuery("page", "1")
+	perPageStr := c.DefaultQuery("per_page", "10")
+	
+	var page, perPage int
+	if _, err := fmt.Sscanf(pageStr, "%d", &page); err != nil || page < 1 {
+		page = 1
 	}
-	if limit > 100 {
-		limit = 100
+	if _, err := fmt.Sscanf(perPageStr, "%d", &perPage); err != nil || perPage < 1 {
+		perPage = 10
+	}
+	if perPage > 50 {
+		perPage = 50
 	}
 
-	orders, err := h.repo.GetOrdersByWallet(c.Request.Context(), walletAddress.(string), limit)
+	offset := (page - 1) * perPage
+
+	orders, total, err := h.repo.GetOrdersByWalletPaginated(c.Request.Context(), walletAddress.(string), perPage, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error: "failed to get orders",
@@ -640,9 +648,14 @@ func (h *Handler) GetPurchaseHistory(c *gin.Context) {
 		orders = []models.Order{}
 	}
 
+	totalPages := (total + perPage - 1) / perPage
+
 	c.JSON(http.StatusOK, gin.H{
-		"orders": orders,
-		"count":  len(orders),
+		"orders":      orders,
+		"total":       total,
+		"page":        page,
+		"per_page":    perPage,
+		"total_pages": totalPages,
 	})
 }
 
@@ -680,11 +693,23 @@ func (h *Handler) CheckWallet(c *gin.Context) {
 		return
 	}
 
-	// Get remaining balance from middleware (if authenticated, balance was deducted)
-	// If not authenticated, balance is -1 (unlimited IP-based)
+	// All validations passed - now deduct balance if pending
+	// Get pending balance info from middleware
 	balanceLeft := -1
-	if remaining, exists := c.Get("remainingBalance"); exists {
-		balanceLeft = remaining.(int)
+	if pendingDeduction, exists := c.Get("pendingBalanceDeduction"); exists && pendingDeduction.(bool) {
+		deductionAddrVal, _ := c.Get("pendingDeductionAddress")
+		deductionChainVal, _ := c.Get("pendingDeductionChain")
+		deductionAddr, _ := deductionAddrVal.(string)
+		deductionChain, _ := deductionChainVal.(string)
+		
+		if deductionAddr != "" && deductionChain != "" {
+			if err := h.repo.DeductUserBalance(c.Request.Context(), deductionAddr, deductionChain, 1); err == nil {
+				if prevBalance, exists := c.Get("pendingDeductionBalance"); exists {
+					balanceLeft = prevBalance.(int) - 1
+				}
+				c.Header("X-Balance-Available", strconv.Itoa(maxInt(0, balanceLeft)))
+			}
+		}
 	}
 
 	wallet, err := h.repo.GetWallet(c.Request.Context(), req.Address, req.Chain)
@@ -720,6 +745,13 @@ func (h *Handler) CheckWallet(c *gin.Context) {
 	}()
 
 	c.JSON(http.StatusOK, response)
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func (h *Handler) GetRecentChecks(c *gin.Context) {
