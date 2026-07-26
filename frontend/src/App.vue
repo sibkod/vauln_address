@@ -55,22 +55,21 @@ async function fetchMe() {
     }
     const res = await fetch('/api/me', { headers })
     
-    // Parse rate limit headers from response
-    const limitHeader = res.headers.get('X-RateLimit-Limit')
-    const remainingHeader = res.headers.get('X-RateLimit-Remaining')
-    const usedHeader = res.headers.get('X-RateLimit-Used')
-    const resetHeader = res.headers.get('X-RateLimit-Reset')
-    const sourceHeader = res.headers.get('X-RateLimit-Source')
-    const balanceHeader = res.headers.get('X-Balance-Available')
-    
-    if (limitHeader) rateLimitInfo.value.limit = parseInt(limitHeader)
-    if (remainingHeader) rateLimitInfo.value.remaining = parseInt(remainingHeader)
-    if (usedHeader) rateLimitInfo.value.used = parseInt(usedHeader)
-    if (resetHeader) rateLimitInfo.value.reset = parseInt(resetHeader)
-    if (sourceHeader) rateLimitInfo.value.source = sourceHeader as 'ip' | 'balance'
-    
     if (res.ok) {
       const data = await res.json()
+      
+      // Parse rate limit info from response body (more reliable)
+      if (data.rate_limit_limit !== undefined) rateLimitInfo.value.limit = data.rate_limit_limit
+      if (data.rate_limit_remaining !== undefined) rateLimitInfo.value.remaining = data.rate_limit_remaining
+      if (data.rate_limit_used !== undefined) rateLimitInfo.value.used = data.rate_limit_used
+      if (data.reset_at !== undefined) rateLimitInfo.value.reset = data.reset_at
+      if (data.rate_limit_source) rateLimitInfo.value.source = data.rate_limit_source as 'ip' | 'balance'
+      
+      // Also try headers as fallback
+      if (!data.reset_at) {
+        const resetHeader = res.headers.get('X-RateLimit-Reset')
+        if (resetHeader) rateLimitInfo.value.reset = parseInt(resetHeader)
+      }
       
       // Update balance
       if (data.balance !== undefined) {
