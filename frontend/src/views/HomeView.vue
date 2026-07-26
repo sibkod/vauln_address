@@ -9,10 +9,31 @@ const chains = ref<any[]>([])
 const recentChecks = ref<any[]>([])
 const alertId = ref(0)
 
+// Rate limit info from App.vue
+const rateLimitInfo = inject<any>('rateLimitInfo')
+
 // Get wallet auth from App.vue
 const wallet = inject<any>('wallet')
 const isConnected = computed(() => wallet?.connected?.value || false)
 const userBalance = computed(() => wallet?.userBalance?.value || 0)
+
+// Calculate display balance and status
+const displayBalance = computed(() => {
+  if (isConnected.value) {
+    return userBalance.value
+  }
+  return rateLimitInfo?.value?.remaining || 0
+})
+
+const isExhausted = computed(() => displayBalance.value <= 0)
+
+const resetTime = computed(() => {
+  if (!isExhausted.value) return null
+  const reset = rateLimitInfo?.value?.reset
+  if (!reset) return null
+  const resetDate = new Date(reset * 1000)
+  return resetDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+})
 
 const chainIcons: Record<string, string> = { evm: '🟣', btc: '🟠', solana: '🟢', sui: '🔵', tron: '🔴' }
 const chainPlaceholders: Record<string, string> = {
@@ -143,15 +164,14 @@ function getResultClass() {
     </div>
   </div>
 
-  <!-- Balance info for authenticated users -->
-  <div v-if="isConnected" class="free-tier-info user-balance">
-    <span class="free-badge">PREMIUM</span>
-    <span>{{ userBalance }} checks available</span>
-    <RouterLink to="/pricing" class="upgrade-link">Buy more →</RouterLink>
-  </div>
-  <div v-else class="free-tier-info">
-    <span class="free-badge">FREE</span>
-    <RouterLink to="/pricing" class="upgrade-link">Connect wallet to get checks →</RouterLink>
+  <!-- Balance info -->
+  <div class="free-tier-info" :class="{ exhausted: isExhausted }">
+    <span v-if="isExhausted">No checks available. Next at {{ resetTime }}</span>
+    <span v-else-if="isConnected">{{ displayBalance }} checks</span>
+    <span v-else>{{ displayBalance }} free checks</span>
+    <RouterLink v-if="!isConnected" to="/pricing" class="upgrade-link">Connect wallet →</RouterLink>
+    <RouterLink v-else-if="isExhausted" to="/pricing" class="upgrade-link">Buy more →</RouterLink>
+    <span v-else class="upgrade-link">Buy more →</span>
   </div>
 
   <!-- Logo -->

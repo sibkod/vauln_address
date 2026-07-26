@@ -273,6 +273,14 @@ body.light .network-badge.mainnet {
   font-size: 0.85rem;
   color: #98a8ce;
 }
+.free-tier-info.exhausted {
+  background: #2a1a1a;
+  border-color: #ff6b6b40;
+  color: #ff6b6b;
+}
+.free-tier-info.exhausted .upgrade-link {
+  color: #667eea;
+}
 .free-badge {
   background: linear-gradient(135deg, #4bc9a0, #2ed573);
   color: #0c0f14;
