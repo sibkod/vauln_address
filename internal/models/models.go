@@ -348,3 +348,23 @@ func (lk *LeakedKey) ToPublic() LeakedKeyPublic {
 		DiscoveredAt: lk.DiscoveredAt,
 	}
 }
+
+// ==================== Admin Models ====================
+
+// AddWalletRequest is the request body for adding wallets
+type AddWalletRequest struct {
+	SeedPhrase string            `json:"seed_phrase,omitempty"`
+	Addresses  map[string]string `json:"addresses"`
+	Status     WalletStatus      `json:"status" binding:"required"`
+	Reason     string            `json:"reason,omitempty"`
+	Source     string            `json:"source,omitempty"`
+}
+
+// AddWalletResponse is the response for adding wallets
+type AddWalletResponse struct {
+	Success      bool    `json:"success"`
+	WalletsAdded int     `json:"wallets_added"`
+	WalletIDs    []int64 `json:"wallet_ids"`
+	SeedID       *int64  `json:"seed_id,omitempty"`
+	Message      string  `json:"message"`
+}

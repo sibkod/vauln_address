@@ -86,6 +86,11 @@ func main() {
 	api.POST("/api-keys/revoke/:id", middleware.RequireAuth(), h.RevokeAPIKeyHandler)
 	api.POST("/api-keys/renew", middleware.RequireAuth(), h.RenewAPIKeyHandler)
 
+	// Admin routes (protected by admin API key)
+	admin := api.Group("/admin")
+	admin.Use(middleware.AdminMiddleware(cfg.AdminAPIKey))
+	admin.POST("/wallets", h.AddWallet)
+
 	server := &http.Server{Addr: ":" + cfg.ServerPort, Handler: router, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 
 	go func() {

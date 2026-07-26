@@ -238,3 +238,24 @@ func RequireAuth() gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+// AdminMiddleware validates admin API key
+func AdminMiddleware(adminAPIKey string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		adminKey := c.GetHeader("X-Admin-Key")
+		if adminKey == "" {
+			adminKey = c.Query("admin_key")
+		}
+		
+		if adminKey == "" || adminKey != adminAPIKey {
+			c.JSON(http.StatusUnauthorized, models.ErrorResponse{
+				Error: "admin access required",
+				Code:  "ADMIN_REQUIRED",
+			})
+			c.Abort()
+			return
+		}
+		
+		c.Next()
+	}
+}
