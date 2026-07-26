@@ -93,6 +93,15 @@ async function payWithSolana() {
   if (!phantom) {
     paymentStatus.value = 'error'
     paymentMessage.value = 'Please install Phantom wallet: https://phantom.app/'
+    showPaymentModal.value = true
+    return
+  }
+  
+  // Check if Phantom is connected
+  if (!phantom.isConnected || !phantom.publicKey) {
+    paymentStatus.value = 'error'
+    paymentMessage.value = 'Please connect your Phantom wallet first'
+    showPaymentModal.value = true
     return
   }
   
@@ -100,6 +109,7 @@ async function payWithSolana() {
   if (walletChain.value !== 'solana') {
     paymentStatus.value = 'error'
     paymentMessage.value = 'Please connect a Solana wallet to pay with SOL'
+    showPaymentModal.value = true
     return
   }
   
@@ -120,6 +130,8 @@ async function payWithSolana() {
     paymentStatus.value = 'processing'
     paymentMessage.value = 'Creating order...'
     
+    const walletAddr = phantom.publicKey.toString()
+    
     // Create order first (requires auth)
     const orderRes = await fetch('/api/orders', {
       method: 'POST',
@@ -130,7 +142,7 @@ async function payWithSolana() {
       body: JSON.stringify({
         checks: selectedPackage.value.checks,
         chain: 'solana',
-        wallet_address: phantom.publicKey.toString()
+        wallet_address: walletAddr
       })
     })
     
