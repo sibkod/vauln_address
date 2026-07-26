@@ -376,17 +376,87 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 
 func (r *Repository) runMigrations(ctx context.Context) error {
 	// Migration: add updated_at to orders if not exists
-	// For MySQL/MariaDB
-	_, err := r.db.ExecContext(ctx, "ALTER TABLE orders ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP")
-	if err != nil && !strings.Contains(err.Error(), "Duplicate column") {
-		log.Printf("Migration note: %v (this is ok if column already exists)", err)
+	switch r.dbType {
+	case config.DBTypeMySQL:
+		_, err := r.db.ExecContext(ctx, "ALTER TABLE orders ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP")
+		if err != nil && !strings.Contains(err.Error(), "Duplicate column") {
+			log.Printf("Migration note (orders.updated_at): %v", err)
+		}
+	case config.DBTypeSQLite:
+		_, err := r.db.ExecContext(ctx, "ALTER TABLE orders ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP")
+		if err != nil && !strings.Contains(err.Error(), "no such column") && !strings.Contains(err.Error(), "duplicate column") {
+			log.Printf("Migration note (orders.updated_at): %v", err)
+		}
+	default: // PostgreSQL
+		_, err := r.db.ExecContext(ctx, "ALTER TABLE orders ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()")
+		if err != nil && !strings.Contains(err.Error(), "Duplicate column") {
+			log.Printf("Migration note (orders.updated_at): %v", err)
+		}
 	}
-	// For SQLite
-	_, err = r.db.ExecContext(ctx, "ALTER TABLE orders ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP")
-	if err != nil && !strings.Contains(err.Error(), "no such column") && !strings.Contains(err.Error(), "duplicate column") {
-		log.Printf("Migration note: %v (this is ok if column already exists)", err)
-	}
+
+	// Migration 004: Create seeds table and add columns to wallets
+	migration004(ctx)
+
 	return nil
+}
+
+func (r *Repository) migration004(ctx context.Context) {
+	// Create seeds table
+	var createSeedsSQL string
+	switch r.dbType {
+	case config.DBTypeMySQL:
+		createSeedsSQL = `CREATE TABLE IF NOT EXISTS seeds (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			seed_phrase TEXT NOT NULL,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`
+	case config.DBTypeSQLite:
+		createSeedsSQL = `CREATE TABLE IF NOT EXISTS seeds (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			seed_phrase TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`
+	default: // PostgreSQL
+		createSeedsSQL = `CREATE TABLE IF NOT EXISTS seeds (
+			id BIGSERIAL PRIMARY KEY,
+			seed_phrase TEXT NOT NULL,
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+		)`
+	}
+	_, err := r.db.ExecContext(ctx, createSeedsSQL)
+	if err != nil && !strings.Contains(err.Error(), "already exists") {
+		log.Printf("Migration note (seeds table): %v", err)
+	}
+
+	// Add columns to wallets table
+	var addColumnSQLs []string
+	switch r.dbType {
+	case config.DBTypeMySQL:
+		addColumnSQLs = []string{
+			"ALTER TABLE wallets ADD COLUMN seed_id BIGINT DEFAULT 0",
+			"ALTER TABLE wallets ADD COLUMN reason VARCHAR(100)",
+			"ALTER TABLE wallets ADD COLUMN source VARCHAR(100)",
+		}
+	case config.DBTypeSQLite:
+		addColumnSQLs = []string{
+			"ALTER TABLE wallets ADD COLUMN seed_id INTEGER DEFAULT 0",
+			"ALTER TABLE wallets ADD COLUMN reason TEXT",
+			"ALTER TABLE wallets ADD COLUMN source TEXT",
+		}
+	default: // PostgreSQL
+		addColumnSQLs = []string{
+			"ALTER TABLE wallets ADD COLUMN seed_id BIGINT DEFAULT 0",
+			"ALTER TABLE wallets ADD COLUMN reason VARCHAR(100)",
+			"ALTER TABLE wallets ADD COLUMN source VARCHAR(100)",
+		}
+	}
+
+	for _, sql := range addColumnSQLs {
+		_, err := r.db.ExecContext(ctx, sql)
+		if err != nil && !strings.Contains(err.Error(), "Duplicate column") && !strings.Contains(err.Error(), "no such column") {
+			log.Printf("Migration note (wallets column): %v", err)
+		}
+	}
 }
 
 // ==================== User Methods ====================
