@@ -226,7 +226,7 @@ func (rl *RateLimiter) checkAndResetWindow(ctx context.Context, ip string) {
 }
 
 func formatRateLimitDetails(used, limit int, resetIn time.Duration) string {
-	return fmt.Sprintf("used %d of %d requests. Reset in %s", used, limit, formatDuration(resetIn))
+	return fmt.Sprintf("checks exhausted. Reset in %s", formatDuration(resetIn))
 }
 
 func formatDuration(d time.Duration) string {
