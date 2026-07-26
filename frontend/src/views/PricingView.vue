@@ -347,9 +347,9 @@ function closePaymentModal() {
 
   <!-- Payment Modal -->
   <Teleport to="body">
-    <div v-if="showPaymentModal" class="payment-modal-overlay" @click.self="closePaymentModal">
+    <div v-if="showPaymentModal" class="payment-modal-overlay" :class="{ 'no-close': paymentStatus === 'waiting' || paymentStatus === 'processing' }" @click.self="closeIfAllowed">
       <div class="payment-modal">
-        <button class="modal-close" @click="closePaymentModal">×</button>
+        <button v-if="paymentStatus === 'success' || paymentStatus === 'error'" class="modal-close" @click="closePaymentModal">×</button>
         
         <div class="modal-icon">
           <template v-if="paymentStatus === 'success'">🎉</template>
@@ -387,15 +387,24 @@ function closePaymentModal() {
           </a>
         </div>
         
-        <button class="modal-btn" @click="closePaymentModal">
+        <button v-if="paymentStatus === 'success' || paymentStatus === 'error'" class="modal-btn" @click="closePaymentModal">
           <template v-if="paymentStatus === 'success'">Done</template>
-          <template v-else-if="paymentStatus === 'error'">Close</template>
-          <template v-else>Cancel</template>
+          <template v-else>Close</template>
         </button>
       </div>
     </div>
   </Teleport>
 </template>
+
+<script setup lang="ts">
+// Add helper function for conditional close
+function closeIfAllowed() {
+  // Only allow close by clicking overlay on success or error
+  if (paymentStatus.value !== 'waiting' && paymentStatus.value !== 'processing') {
+    closePaymentModal()
+  }
+}
+</script>
 
 <style scoped>
 .pricing-header {
@@ -738,6 +747,10 @@ function closePaymentModal() {
   align-items: center;
   justify-content: center;
   z-index: 1000;
+}
+
+.payment-modal-overlay.no-close {
+  cursor: not-allowed;
 }
 
 .payment-modal {
