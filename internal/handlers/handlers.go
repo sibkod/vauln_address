@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -680,11 +681,23 @@ func (h *Handler) CheckWallet(c *gin.Context) {
 		return
 	}
 
-	// Get remaining balance from middleware (if authenticated, balance was deducted)
-	// If not authenticated, balance is -1 (unlimited IP-based)
+	// All validations passed - now deduct balance if pending
+	// Get pending balance info from middleware
 	balanceLeft := -1
-	if remaining, exists := c.Get("remainingBalance"); exists {
-		balanceLeft = remaining.(int)
+	if pendingDeduction, exists := c.Get("pendingBalanceDeduction"); exists && pendingDeduction.(bool) {
+		deductionAddrVal, _ := c.Get("pendingDeductionAddress")
+		deductionChainVal, _ := c.Get("pendingDeductionChain")
+		deductionAddr, _ := deductionAddrVal.(string)
+		deductionChain, _ := deductionChainVal.(string)
+		
+		if deductionAddr != "" && deductionChain != "" {
+			if err := h.repo.DeductUserBalance(c.Request.Context(), deductionAddr, deductionChain, 1); err == nil {
+				if prevBalance, exists := c.Get("pendingDeductionBalance"); exists {
+					balanceLeft = prevBalance.(int) - 1
+				}
+				c.Header("X-Balance-Available", strconv.Itoa(maxInt(0, balanceLeft)))
+			}
+		}
 	}
 
 	wallet, err := h.repo.GetWallet(c.Request.Context(), req.Address, req.Chain)
@@ -720,6 +733,13 @@ func (h *Handler) CheckWallet(c *gin.Context) {
 	}()
 
 	c.JSON(http.StatusOK, response)
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func (h *Handler) GetRecentChecks(c *gin.Context) {
