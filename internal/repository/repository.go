@@ -148,12 +148,14 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 
 		CREATE TABLE IF NOT EXISTS check_history (
 			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			wallet_address VARCHAR(100) DEFAULT '',
 			address VARCHAR(100) NOT NULL,
 			chain VARCHAR(20) NOT NULL,
 			status VARCHAR(20),
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		);
 		CREATE INDEX idx_check_history_created ON check_history(created_at);
+		CREATE INDEX idx_check_history_wallet ON check_history(wallet_address);
 
 		CREATE TABLE IF NOT EXISTS api_keys (
 			id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -241,12 +243,14 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 
 		CREATE TABLE IF NOT EXISTS check_history (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			wallet_address TEXT DEFAULT '',
 			address TEXT NOT NULL,
 			chain TEXT NOT NULL,
 			status TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
 		CREATE INDEX IF NOT EXISTS idx_check_history_created ON check_history(created_at);
+		CREATE INDEX IF NOT EXISTS idx_check_history_wallet ON check_history(wallet_address);
 
 		CREATE TABLE IF NOT EXISTS api_keys (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -334,12 +338,14 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 
 		CREATE TABLE IF NOT EXISTS check_history (
 			id BIGSERIAL PRIMARY KEY,
+			wallet_address VARCHAR(100) DEFAULT '',
 			address VARCHAR(100) NOT NULL,
 			chain VARCHAR(20) NOT NULL,
 			status VARCHAR(20),
 			created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 		);
 		CREATE INDEX IF NOT EXISTS idx_check_history_created ON check_history(created_at);
+		CREATE INDEX IF NOT EXISTS idx_check_history_wallet ON check_history(wallet_address);
 
 		CREATE TABLE IF NOT EXISTS api_keys (
 			id BIGSERIAL PRIMARY KEY,
@@ -863,10 +869,10 @@ func (r *Repository) ResetRateLimit(ctx context.Context, ip string, windowStart 
 	return err
 }
 
-func (r *Repository) RecordCheck(ctx context.Context, address, chain, status string) error {
+func (r *Repository) RecordCheck(ctx context.Context, walletAddress, address, chain, status string) error {
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO check_history (address, chain, status) VALUES (?, ?, ?)`,
-		address, chain, status,
+		`INSERT INTO check_history (wallet_address, address, chain, status) VALUES (?, ?, ?, ?)`,
+		walletAddress, address, chain, status,
 	)
 	return err
 }
@@ -893,6 +899,41 @@ func (r *Repository) GetCheckHistory(ctx context.Context, limit int) ([]models.R
 		checks = append(checks, check)
 	}
 	return checks, rows.Err()
+}
+
+// GetCheckHistoryByWallet returns check history for a specific wallet address with pagination
+func (r *Repository) GetCheckHistoryByWallet(ctx context.Context, walletAddress string, limit, offset int) ([]models.RecentCheck, int, error) {
+	// Count total for this wallet
+	var total int
+	countQuery := `SELECT COUNT(*) FROM check_history WHERE wallet_address = ?`
+	err := r.db.QueryRowContext(ctx, countQuery, walletAddress).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Get paginated results
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, address, chain, COALESCE(status, 'safe'), created_at 
+		FROM check_history 
+		WHERE wallet_address = ?
+		ORDER BY created_at DESC 
+		LIMIT ? OFFSET ?`,
+		walletAddress, limit, offset,
+	)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var checks []models.RecentCheck
+	for rows.Next() {
+		var check models.RecentCheck
+		if err := rows.Scan(&check.ID, &check.Address, &check.Chain, &check.Status, &check.CheckedAt); err != nil {
+			return nil, 0, err
+		}
+		checks = append(checks, check)
+	}
+	return checks, total, rows.Err()
 }
 
 // ==================== API Key Methods ====================
