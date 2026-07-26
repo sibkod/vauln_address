@@ -44,6 +44,7 @@ const walletOptions = [
 // Provide auth state to all components
 provide('wallet', { connected, walletAddress, walletChain, userBalance, authToken, refreshBalance, fetchPurchaseHistory, fetchMe })
 provide('network', { isMainnet: IS_MAINNET, solanaNetwork: SOLANA_NETWORK })
+provide('rateLimitInfo', rateLimitInfo)
 
 // Fetch comprehensive user info from /api/me endpoint
 async function fetchMe() {
