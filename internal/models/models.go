@@ -300,53 +300,6 @@ func GetPricing(checksCount int, pricePerCheck float64) []PaymentMethod {
 	}
 }
 
-// ==================== Leaked Keys ====================
-
-type KeyType string
-
-const (
-	KeyTypeSeed        KeyType = "seed"
-	KeyTypePrivateKey  KeyType = "private_key"
-)
-
-type LeakedKey struct {
-	ID           int64     `json:"id"`
-	WalletID    int64     `json:"wallet_id"`      // 0 = no seed/key found
-	Address     string    `json:"address"`
-	Chain       string    `json:"chain"`
-	KeyType     KeyType   `json:"key_type"`      // 'seed' or 'private_key'
-	KeyValue    string    `json:"-"`             // Never exposed
-	Source      string    `json:"source,omitempty"`
-	DiscoveredAt time.Time `json:"discovered_at,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-}
-
-// LeakedKeyPublic is the public-facing version (without sensitive data)
-type LeakedKeyPublic struct {
-	ID           int64     `json:"id"`
-	WalletID    int64     `json:"wallet_id"`      // 0 = flagged by other triggers
-	Address     string    `json:"address"`
-	Chain       string    `json:"chain"`
-	KeyType     KeyType   `json:"key_type"`
-	Source      string    `json:"source,omitempty"`
-	HasKey      bool      `json:"has_key"`        // True if seed/private key was found
-	DiscoveredAt time.Time `json:"discovered_at,omitempty"`
-}
-
-// ToPublic converts LeakedKey to public version (hides sensitive data)
-func (lk *LeakedKey) ToPublic() LeakedKeyPublic {
-	return LeakedKeyPublic{
-		ID:           lk.ID,
-		WalletID:    lk.WalletID,
-		Address:     lk.Address,
-		Chain:       lk.Chain,
-		KeyType:     lk.KeyType,
-		Source:      lk.Source,
-		HasKey:      lk.WalletID > 0, // Has key only if wallet_id > 0
-		DiscoveredAt: lk.DiscoveredAt,
-	}
-}
-
 // ==================== Admin Models ====================
 
 // AddWalletRequest is the request body for adding wallets

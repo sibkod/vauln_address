@@ -59,8 +59,8 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 		// Add rate limit headers for all responses
 		rl.setRateLimitHeaders(c, rateLimit, isAuthenticated && walletAddress != nil && chainStr != "")
 
-		// Check IP limit
-		if rateLimit.Count >= rl.cfg.RateLimitRequests {
+		// Check IP limit using FreeCheckLimit
+		if rateLimit.Count >= rl.cfg.FreeCheckLimit {
 			// IP limit exhausted
 			// For authenticated users: try to use their balance as fallback
 			if isAuthenticated && walletAddress != nil && chainStr != "" {
@@ -95,7 +95,7 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 			c.JSON(http.StatusTooManyRequests, models.ErrorResponse{
 				Error:   "rate limit exceeded",
 				Code:    "RATE_LIMIT_EXCEEDED",
-				Details: formatRateLimitDetails(rateLimit.Count, rl.cfg.RateLimitRequests, resetIn),
+				Details: formatRateLimitDetails(rateLimit.Count, rl.cfg.FreeCheckLimit, resetIn),
 			})
 			c.Abort()
 			return
@@ -122,7 +122,7 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 		}
 
 		// Update remaining header after increment
-		remaining := max(0, rl.cfg.RateLimitRequests-rateLimit.Count-1)
+		remaining := max(0, rl.cfg.FreeCheckLimit-rateLimit.Count-1)
 		c.Header("X-RateLimit-Remaining", strconv.Itoa(remaining))
 		c.Next()
 	}
@@ -130,7 +130,7 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 
 // setRateLimitHeaders sets common rate limit headers
 func (rl *RateLimiter) setRateLimitHeaders(c *gin.Context, rateLimit *models.RateLimit, isUserAuthenticated bool) {
-	limit := rl.cfg.RateLimitRequests
+	limit := rl.cfg.FreeCheckLimit
 	used := rateLimit.Count
 	remaining := max(0, limit-used)
 	windowEnd := rateLimit.WindowStart.Add(time.Duration(rl.cfg.RateLimitHours) * time.Hour)
