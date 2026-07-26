@@ -420,7 +420,7 @@ func (r *Repository) migration004(ctx context.Context) {
 		createSeedsSQL = `CREATE TABLE IF NOT EXISTS seeds (
 			id BIGSERIAL PRIMARY KEY,
 			seed_phrase TEXT NOT NULL,
-			created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 		)`
 	}
 	_, err := r.db.ExecContext(ctx, createSeedsSQL)
