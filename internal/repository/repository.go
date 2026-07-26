@@ -19,8 +19,9 @@ import (
 )
 
 type Repository struct {
-	db     *sql.DB
-	dbType config.DBType
+	db             *sql.DB
+	dbType         config.DBType
+	freeCheckLimit int
 }
 
 func New(cfg *config.Config) (*Repository, error) {
@@ -64,7 +65,7 @@ func New(cfg *config.Config) (*Repository, error) {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	return &Repository{db: db, dbType: cfg.DBType}, nil
+	return &Repository{db: db, dbType: cfg.DBType, freeCheckLimit: cfg.FreeCheckLimit}, nil
 }
 
 func (r *Repository) Close() {
@@ -424,18 +425,18 @@ func (r *Repository) GetOrCreateUser(address, chain string) (*models.User, error
 		return user, nil
 	}
 
-	// Create new user with 10 free checks
+	// Create new user with free check limit from config
 	if r.dbType == config.DBTypeSQLite {
 		_, err = r.db.ExecContext(ctx,
 			`INSERT INTO users (wallet_address, chain, balance, is_premium) 
-			VALUES (?, ?, 10, 0)`,
-			address, chain,
+			VALUES (?, ?, ?, 0)`,
+			address, chain, r.freeCheckLimit,
 		)
 	} else {
 		_, err = r.db.ExecContext(ctx,
 			`INSERT INTO users (wallet_address, chain, balance, is_premium) 
-			VALUES (?, ?, 10, FALSE)`,
-			address, chain,
+			VALUES (?, ?, ?, FALSE)`,
+			address, chain, r.freeCheckLimit,
 		)
 	}
 	if err != nil {
@@ -453,18 +454,18 @@ func (r *Repository) UpsertUserNonce(address, chain, nonce string) error {
 	if r.dbType == config.DBTypeSQLite {
 		_, err = r.db.ExecContext(ctx,
 			`INSERT INTO users (wallet_address, chain, nonce, balance) 
-			VALUES (?, ?, ?, 10) 
+			VALUES (?, ?, ?, ?) 
 			ON CONFLICT(wallet_address, chain) 
 			DO UPDATE SET nonce = ?`,
-			address, chain, nonce, nonce,
+			address, chain, nonce, r.freeCheckLimit, nonce,
 		)
 	} else {
 		_, err = r.db.ExecContext(ctx,
 			`INSERT INTO users (wallet_address, chain, nonce, balance) 
-			VALUES (?, ?, ?, 10) 
+			VALUES (?, ?, ?, ?) 
 			ON CONFLICT (wallet_address, chain) 
 			DO UPDATE SET nonce = ?`,
-			address, chain, nonce, nonce,
+			address, chain, nonce, r.freeCheckLimit, nonce,
 		)
 	}
 	return err

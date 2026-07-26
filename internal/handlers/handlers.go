@@ -594,13 +594,13 @@ func (h *Handler) GetMe(c *gin.Context) {
 	chain, _ := c.Get("userChain")
 	chainStr, _ := chain.(string)
 
-	// Get rate limit info
+	// Get rate limit info using FreeCheckLimit (per IP free check limit)
 	ip := c.ClientIP()
 	rateLimit, _ := h.repo.GetRateLimit(c.Request.Context(), ip)
-	rateLimitRemaining := h.serverCfg.RateLimitRequests
+	rateLimitRemaining := h.serverCfg.FreeCheckLimit
 	rateLimitUsed := 0
 	if rateLimit != nil {
-		rateLimitRemaining = h.serverCfg.RateLimitRequests - rateLimit.Count
+		rateLimitRemaining = h.serverCfg.FreeCheckLimit - rateLimit.Count
 		if rateLimitRemaining < 0 {
 			rateLimitRemaining = 0
 		}
@@ -619,7 +619,7 @@ func (h *Handler) GetMe(c *gin.Context) {
 				"purchased_balance":      0,
 				"rate_limit_remaining":   rateLimitRemaining,
 				"rate_limit_used":        rateLimitUsed,
-				"rate_limit_limit":       h.serverCfg.RateLimitRequests,
+				"rate_limit_limit":       h.serverCfg.FreeCheckLimit,
 				"is_premium":             false,
 				"is_authenticated":       true,
 			})
@@ -630,7 +630,7 @@ func (h *Handler) GetMe(c *gin.Context) {
 		isPremium := purchasedBalance > 0
 
 		// Add rate limit headers
-		c.Header("X-RateLimit-Limit", fmt.Sprintf("%d", h.serverCfg.RateLimitRequests))
+		c.Header("X-RateLimit-Limit", fmt.Sprintf("%d", h.serverCfg.FreeCheckLimit))
 		c.Header("X-RateLimit-Remaining", fmt.Sprintf("%d", rateLimitRemaining))
 		c.Header("X-RateLimit-Used", fmt.Sprintf("%d", rateLimitUsed))
 		c.Header("X-RateLimit-Source", "balance")
@@ -643,7 +643,7 @@ func (h *Handler) GetMe(c *gin.Context) {
 			"purchased_balance":      purchasedBalance,
 			"rate_limit_remaining":   rateLimitRemaining,
 			"rate_limit_used":        rateLimitUsed,
-			"rate_limit_limit":       h.serverCfg.RateLimitRequests,
+			"rate_limit_limit":       h.serverCfg.FreeCheckLimit,
 			"is_premium":             isPremium,
 			"is_authenticated":       true,
 			"created_at":             user.CreatedAt,
@@ -653,7 +653,7 @@ func (h *Handler) GetMe(c *gin.Context) {
 	}
 
 	// Anonymous user
-	c.Header("X-RateLimit-Limit", fmt.Sprintf("%d", h.serverCfg.RateLimitRequests))
+	c.Header("X-RateLimit-Limit", fmt.Sprintf("%d", h.serverCfg.FreeCheckLimit))
 	c.Header("X-RateLimit-Remaining", fmt.Sprintf("%d", rateLimitRemaining))
 	c.Header("X-RateLimit-Used", fmt.Sprintf("%d", rateLimitUsed))
 	c.Header("X-RateLimit-Source", "ip")
@@ -665,7 +665,7 @@ func (h *Handler) GetMe(c *gin.Context) {
 		"purchased_balance":      0,
 		"rate_limit_remaining":   rateLimitRemaining,
 		"rate_limit_used":        rateLimitUsed,
-		"rate_limit_limit":       h.serverCfg.RateLimitRequests,
+		"rate_limit_limit":       h.serverCfg.FreeCheckLimit,
 		"is_premium":             false,
 		"is_authenticated":       false,
 	})
@@ -678,12 +678,12 @@ func (h *Handler) GetBalance(c *gin.Context) {
 	chain, _ := c.Get("userChain")
 	chainStr, _ := chain.(string)
 
-	// Get rate limit remaining
+	// Get rate limit remaining using FreeCheckLimit (per IP free check limit)
 	ip := c.ClientIP()
 	rateLimit, _ := h.repo.GetRateLimit(c.Request.Context(), ip)
-	rateLimitRemaining := h.serverCfg.RateLimitRequests
+	rateLimitRemaining := h.serverCfg.FreeCheckLimit
 	if rateLimit != nil {
-		rateLimitRemaining = h.serverCfg.RateLimitRequests - rateLimit.Count
+		rateLimitRemaining = h.serverCfg.FreeCheckLimit - rateLimit.Count
 		if rateLimitRemaining < 0 {
 			rateLimitRemaining = 0
 		}
