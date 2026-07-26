@@ -1195,10 +1195,11 @@ func (r *Repository) CreateWalletWithSeed(ctx context.Context, address, chain st
 		hasSeed = true
 	}
 
+	now := time.Now()
 	result, err := r.db.ExecContext(ctx,
 		`INSERT INTO wallets (address, chain, status, has_pk, has_seed, seed_id, reason, source, created_at, updated_at) 
-		VALUES (?, ?, ?, false, ?, ?, ?, ?, NOW(), NOW())`,
-		address, chain, status, hasSeed, seedID, reason, source,
+		VALUES (?, ?, ?, false, ?, ?, ?, ?, ?, ?)`,
+		address, chain, status, hasSeed, seedID, reason, source, now, now,
 	)
 	if err != nil {
 		return 0, err
@@ -1208,10 +1209,11 @@ func (r *Repository) CreateWalletWithSeed(ctx context.Context, address, chain st
 
 // CreateWallet creates a wallet without seed reference
 func (r *Repository) CreateWallet(ctx context.Context, address, chain string, status models.WalletStatus, reason, source string) (int64, error) {
+	now := time.Now()
 	result, err := r.db.ExecContext(ctx,
 		`INSERT INTO wallets (address, chain, status, has_pk, has_seed, reason, source, created_at, updated_at) 
-		VALUES (?, ?, ?, false, false, ?, ?, NOW(), NOW())`,
-		address, chain, status, reason, source,
+		VALUES (?, ?, ?, false, false, ?, ?, ?, ?)`,
+		address, chain, status, reason, source, now, now,
 	)
 	if err != nil {
 		return 0, err
@@ -1221,9 +1223,10 @@ func (r *Repository) CreateWallet(ctx context.Context, address, chain string, st
 
 // UpdateWalletSeed updates a wallet's seed reference
 func (r *Repository) UpdateWalletSeed(ctx context.Context, walletID int64, seedID int64) error {
+	now := time.Now()
 	_, err := r.db.ExecContext(ctx,
-		`UPDATE wallets SET has_seed = true, seed_id = ?, updated_at = NOW() WHERE id = ?`,
-		seedID, walletID,
+		`UPDATE wallets SET has_seed = true, seed_id = ?, updated_at = ? WHERE id = ?`,
+		seedID, now, walletID,
 	)
 	return err
 }
