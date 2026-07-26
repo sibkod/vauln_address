@@ -1115,3 +1115,46 @@ func (r *Repository) UpdateWalletSeed(ctx context.Context, walletID int64, seedI
 	)
 	return err
 }
+
+// GetExpiredOrders returns pending orders older than the specified duration
+func (r *Repository) GetExpiredOrders(ctx context.Context, olderThan time.Duration) ([]models.Order, error) {
+	cutoff := time.Now().Add(-olderThan)
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT order_uuid, wallet_address, chain, status, checks_count, total_usd, currency, token_amount, payment_address, tx_hash, created_at, updated_at
+		FROM orders 
+		WHERE status = 'pending' AND created_at < ?
+		ORDER BY created_at ASC`,
+		cutoff,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var orders []models.Order
+	for rows.Next() {
+		var order models.Order
+		var txHashNull sql.NullString
+		if err := rows.Scan(&order.OrderUUID, &order.WalletAddress, &order.Chain, &order.Status, &order.ChecksCount, &order.TotalUSD, &order.Currency, &order.TokenAmount, &order.PaymentAddress, &txHashNull, &order.CreatedAt, &order.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if txHashNull.Valid {
+			order.TxHash = txHashNull.String
+		}
+		orders = append(orders, order)
+	}
+	return orders, rows.Err()
+}
+
+// ExpireOrders marks pending orders as expired if they're older than the duration
+func (r *Repository) ExpireOrders(ctx context.Context, olderThan time.Duration) (int64, error) {
+	cutoff := time.Now().Add(-olderThan)
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE orders SET status = 'expired' WHERE status = 'pending' AND created_at < ?`,
+		cutoff,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}

@@ -39,6 +39,11 @@ func main() {
 	priceService := services.NewPriceService(cfg)
 	defer priceService.Stop()
 
+	// Start order service for expiring old orders
+	orderService := services.NewOrderService(repo)
+	orderService.Start()
+	defer orderService.Stop()
+
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(gin.Recovery())
@@ -80,6 +85,7 @@ func main() {
 	api.GET("/me", middleware.AuthMiddleware(authService), h.GetMe)              // Comprehensive user info with balance and rate limits
 	api.GET("/user/purchases", middleware.RequireAuth(), h.GetPurchaseHistory)
 	api.POST("/orders", middleware.RequireAuth(), h.CreateOrder)
+	api.POST("/orders/:id/cancel", middleware.RequireAuth(), h.CancelOrder)
 	api.POST("/orders/:id/confirm", middleware.RequireAuth(), h.ConfirmOrder)
 	api.GET("/orders/verify", middleware.RequireAuth(), h.VerifyPayment)
 	api.POST("/payment/status/:signature", middleware.RequireAuth(), h.GetPaymentStatus)
