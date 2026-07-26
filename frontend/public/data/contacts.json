@@ -1,0 +1,40 @@
+{
+  "channels": [
+    {
+      "name": "Telegram",
+      "icon": "✈️",
+      "url": "https://t.me/pwnd",
+      "description": "Community chat"
+    },
+    {
+      "name": "Discord",
+      "icon": "🎮",
+      "url": "https://discord.gg/pwnd",
+      "description": "Discord server"
+    },
+    {
+      "name": "X (Twitter)",
+      "icon": "🐦",
+      "url": "https://x.com/pwnd",
+      "description": "Follow for updates"
+    },
+    {
+      "name": "Reddit",
+      "icon": "🤖",
+      "url": "https://reddit.com/r/pwnd",
+      "description": "Reddit community"
+    },
+    {
+      "name": "BitcoinTalk",
+      "icon": "📝",
+      "url": "https://bitcointalk.org/pwnd",
+      "description": "Forum discussions"
+    },
+    {
+      "name": "GitHub",
+      "icon": "💻",
+      "url": "https://github.com/pwnd",
+      "description": "Source code"
+    }
+  ]
+}

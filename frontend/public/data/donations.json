@@ -1,0 +1,41 @@
+{
+  "title": "Support Our Work",
+  "subtitle": "If pwnd helped you, consider donating to support development",
+  "wallets": [
+    {
+      "name": "Bitcoin",
+      "symbol": "BTC",
+      "icon": "₿",
+      "address": "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
+      "color": "#f7931a"
+    },
+    {
+      "name": "Ethereum",
+      "symbol": "ETH",
+      "icon": "Ξ",
+      "address": "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
+      "color": "#627eea"
+    },
+    {
+      "name": "Litecoin",
+      "symbol": "LTC",
+      "icon": "Ł",
+      "address": "LTC1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
+      "color": "#bfbbbb"
+    },
+    {
+      "name": "Solana",
+      "symbol": "SOL",
+      "icon": "◎",
+      "address": "7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV",
+      "color": "#9945ff"
+    },
+    {
+      "name": "USDC (Solana)",
+      "symbol": "USDC",
+      "icon": "$",
+      "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "color": "#2775ca"
+    }
+  ]
+}
