@@ -585,17 +585,10 @@ function getTotal() {
             <span class="balance-value">{{ userBalance }} checks</span>
           </div>
           
-          <!-- Recent purchases -->
-          <div v-if="recentPurchases.length > 0" class="menu-purchases">
-            <div class="purchases-title">Recent Purchases</div>
-            <div v-for="order in recentPurchases.slice(0, 3)" :key="order.order_uuid" class="purchase-item">
-              <span class="purchase-checks">{{ order.checks_count }} checks</span>
-              <span :class="'purchase-status ' + order.status">{{ order.status }}</span>
-            </div>
-            <RouterLink to="/purchases" class="view-all-link" @click="closeWalletMenu">
-              View all purchases →
-            </RouterLink>
-          </div>
+          <!-- Purchase history link -->
+          <RouterLink to="/purchases" class="menu-item" @click="closeWalletMenu">
+            📦 Purchase History
+          </RouterLink>
           
           <button class="menu-item logout" @click="disconnectWallet">
             🚪 Logout
@@ -775,6 +768,9 @@ function getTotal() {
   text-align: left;
   cursor: pointer;
   transition: all 0.2s;
+  text-decoration: none;
+  display: block;
+  box-sizing: border-box;
 }
 
 .menu-item:hover {
