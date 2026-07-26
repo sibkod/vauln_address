@@ -629,22 +629,6 @@ function getTotal() {
           </div>
         </div>
         
-        <div class="wallet-section">
-          <div class="wallet-section-title">🟣 Ethereum / EVM</div>
-          <div class="wallet-options">
-            <button 
-              v-for="wallet in walletOptions.filter(w => w.chain === 'evm')" 
-              :key="wallet.id"
-              class="wallet-option"
-              @click="connectWallet(wallet.id)"
-              :disabled="connecting"
-            >
-              <span class="wallet-icon">{{ wallet.icon }}</span>
-              <span class="wallet-name">{{ wallet.name }}</span>
-            </button>
-          </div>
-        </div>
-        
         <div v-if="connectError" class="wallet-error">{{ connectError }}</div>
       </div>
     </div>
@@ -666,7 +650,7 @@ function getTotal() {
       <span class="stat-item" style="font-weight:500;color:#98a8ce;">total <span class="num">{{ getTotal() }}</span></span>
     </div>
     <div class="footer-meta">
-      <span>© 2026 Wallet Checker</span>
+      <span>© 2026 <a href="https://pwnd.info" style="color:inherit;text-decoration:none;">pwnd.info</a></span>
       <span>Security intelligence for Web3</span>
       <span>v2.0</span>
     </div>

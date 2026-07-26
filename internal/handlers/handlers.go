@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -17,6 +19,7 @@ import (
 	"vauln-address/internal/config"
 	"vauln-address/internal/models"
 	"vauln-address/internal/repository"
+	"vauln-address/internal/services"
 	"vauln-address/internal/validators"
 )
 
@@ -26,16 +29,69 @@ func contains(s, substr string) bool {
 }
 
 type Handler struct {
-	repo        *repository.Repository
-	authService *auth.AuthService
-	serverCfg   *config.Config
+	repo         *repository.Repository
+	authService  *auth.AuthService
+	serverCfg    *config.Config
+	priceService *services.PriceService
+	packages     []gin.H
 }
 
-func New(repo *repository.Repository, serverCfg *config.Config) *Handler {
-	return &Handler{
-		repo:        repo,
-		authService: auth.NewAuthService(repo),
-		serverCfg:   serverCfg,
+func New(repo *repository.Repository, serverCfg *config.Config, priceService *services.PriceService) *Handler {
+	h := &Handler{
+		repo:         repo,
+		authService:  auth.NewAuthService(repo),
+		serverCfg:    serverCfg,
+		priceService: priceService,
+		packages:     loadPackages(),
+	}
+	return h
+}
+
+// loadPackages loads pricing packages from JSON file
+func loadPackages() []gin.H {
+	data, err := os.ReadFile("internal/data/pricing.json")
+	if err != nil {
+		log.Printf("Failed to load pricing.json: %v, using defaults", err)
+		return getDefaultPackages()
+	}
+
+	var pkgData struct {
+		Packages []struct {
+			ID              string  `json:"id"`
+			Name            string  `json:"name"`
+			Checks          int     `json:"checks"`
+			PriceUSD        float64 `json:"price_usd"`
+			DiscountPercent int     `json:"discount_percent"`
+			DiscountLabel   string  `json:"discount_label"`
+			Popular         bool    `json:"popular"`
+		} `json:"packages"`
+	}
+
+	if err := json.Unmarshal(data, &pkgData); err != nil {
+		log.Printf("Failed to parse pricing.json: %v, using defaults", err)
+		return getDefaultPackages()
+	}
+
+	packages := make([]gin.H, len(pkgData.Packages))
+	for i, p := range pkgData.Packages {
+		packages[i] = gin.H{
+			"id":                p.ID,
+			"name":              p.Name,
+			"checks":            p.Checks,
+			"price_usd":         p.PriceUSD,
+			"discount_percent":   p.DiscountPercent,
+			"discount_label":    p.DiscountLabel,
+			"popular":           p.Popular,
+		}
+	}
+	return packages
+}
+
+func getDefaultPackages() []gin.H {
+	return []gin.H{
+		{"id": "starter", "name": "Starter", "checks": 50, "price_usd": 5.0, "discount_percent": 0, "discount_label": "", "popular": false},
+		{"id": "pro", "name": "Pro", "checks": 200, "price_usd": 20.0, "discount_percent": 0, "discount_label": "", "popular": true},
+		{"id": "enterprise", "name": "Enterprise", "checks": 1000, "price_usd": 50.0, "discount_percent": 50, "discount_label": "50% OFF", "popular": false},
 	}
 }
 
@@ -175,39 +231,26 @@ func (h *Handler) GetPricing(c *gin.Context) {
 	})
 }
 
-// GetPackages returns pre-defined pricing packages
+// GetPackages returns pre-defined pricing packages with dynamic SOL prices
 func (h *Handler) GetPackages(c *gin.Context) {
-	packages := []gin.H{
-		{
-			"id":                  "starter",
-			"name":                "Starter",
-			"checks":              50,
-			"price_usd":          5.0,  // 50 * 0.10
-			"price_sol":           0.01,
-			"discount_percent":     0,
-			"discount_label":      "",
-			"popular":             false,
-		},
-		{
-			"id":                  "pro",
-			"name":                "Pro",
-			"checks":              200,
-			"price_usd":          20.0, // 200 * 0.10
-			"price_sol":           0.01,
-			"discount_percent":     0,
-			"discount_label":      "",
-			"popular":             true,
-		},
-		{
-			"id":                  "enterprise",
-			"name":                "Enterprise",
-			"checks":              1000,
-			"price_usd":          50.0, // 1000 * 0.10 * 0.5 (50% off)
-			"price_sol":           0.01,
-			"discount_percent":     50,
-			"discount_label":      "50% OFF",
-			"popular":             false,
-		},
+	solPrice := h.priceService.GetSolPrice()
+	
+	// Calculate SOL price for each package
+	packages := make([]gin.H, len(h.packages))
+	for i, pkg := range h.packages {
+		priceUSD := pkg["price_usd"].(float64)
+		priceSOL := math.Ceil(priceUSD/solPrice*10000) / 10000 // Round to 4 decimal places
+		
+		packages[i] = gin.H{
+			"id":                pkg["id"],
+			"name":              pkg["name"],
+			"checks":            pkg["checks"],
+			"price_usd":         priceUSD,
+			"price_sol":         priceSOL,
+			"discount_percent":  pkg["discount_percent"],
+			"discount_label":    pkg["discount_label"],
+			"popular":           pkg["popular"],
+		}
 	}
 
 	// Add payment address info
@@ -216,11 +259,18 @@ func (h *Handler) GetPackages(c *gin.Context) {
 		paymentAddress = "CW58CLARKr9mL4d7oRDj6FKv3cM2xT6vH3kQVZqW4xXy" // Demo address
 	}
 
+	network := "mainnet"
+	if h.serverCfg.SolanaUseDevnet {
+		network = "devnet"
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"packages":         packages,
+		"packages":          packages,
 		"payment_address":  paymentAddress,
-		"price_per_check":  models.PricePerCheckUSD,
-		"network":          "devnet", // or mainnet based on config
+		"sol_price_usd":     solPrice,
+		"price_per_check":   h.serverCfg.PricePerCheckUSD,
+		"network":           network,
+		"updated_at":        h.priceService.GetUpdatedAt().Unix(),
 	})
 }
 

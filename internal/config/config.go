@@ -34,6 +34,9 @@ type Config struct {
 	SolanaRPCURL      string
 	SolanaUseDevnet   bool
 	AdminAPIKey       string
+	// Price settings
+	SolanaPriceUSD    float64
+	PricePerCheckUSD  float64
 }
 
 func Load() *Config {
@@ -68,11 +71,13 @@ func Load() *Config {
 		ServerPort:        getEnv("SERVER_PORT", "8080"),
 		RateLimitRequests: getEnvInt("RATE_LIMIT_REQUESTS", 10),
 		RateLimitHours:    getEnvInt("RATE_LIMIT_WINDOW_HOURS", 24),
-		FreeCheckLimit:    getEnvInt("FREE_CHECK_LIMIT", 1),
+		FreeCheckLimit:    getEnvInt("FREE_CHECK_LIMIT", 3),
 		SolanaPaymentAddr: getEnv("SOLANA_PAYMENT_ADDR", ""),
 		SolanaRPCURL:      solanaRPCURL,
 		SolanaUseDevnet:   solanaUseDevnet,
 		AdminAPIKey:       getEnv("ADMIN_API_KEY", ""),
+		SolanaPriceUSD:    getEnvFloat("SOLANA_PRICE_USD", 150.0),
+		PricePerCheckUSD:  getEnvFloat("PRICE_PER_CHECK_USD", 0.10),
 	}
 }
 
@@ -87,6 +92,15 @@ func getEnvInt(key string, defaultValue int) int {
 	if value := os.Getenv(key); value != "" {
 		if intVal, err := strconv.Atoi(value); err == nil {
 			return intVal
+		}
+	}
+	return defaultValue
+}
+
+func getEnvFloat(key string, defaultValue float64) float64 {
+	if value := os.Getenv(key); value != "" {
+		if floatVal, err := strconv.ParseFloat(value, 64); err == nil {
+			return floatVal
 		}
 	}
 	return defaultValue

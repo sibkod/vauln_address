@@ -9,12 +9,6 @@ const chains = ref<any[]>([])
 const recentChecks = ref<any[]>([])
 const alertId = ref(0)
 
-// Free tier: 3 checks per day
-const FREE_CHECKS_PER_DAY = 3
-const todayKey = `freeChecks_${new Date().toISOString().split('T')[0]}`
-const freeChecksUsed = ref(parseInt(localStorage.getItem(todayKey) || '0'))
-const freeChecksRemaining = computed(() => Math.max(0, FREE_CHECKS_PER_DAY - freeChecksUsed.value))
-
 // Get wallet auth from App.vue
 const wallet = inject<any>('wallet')
 const isConnected = computed(() => wallet?.connected?.value || false)
@@ -30,7 +24,6 @@ const chainPlaceholders: Record<string, string> = {
 }
 
 onMounted(async () => {
-  // Fetch supported chains
   try {
     const res = await fetch('/api/chains')
     if (res.ok) {
@@ -39,7 +32,6 @@ onMounted(async () => {
     }
   } catch {}
 
-  // Fetch recent checks
   try {
     const res = await fetch('/api/recent')
     if (res.ok) {
@@ -52,11 +44,6 @@ onMounted(async () => {
     }
   } catch {}
 })
-
-function useFreeCheck() {
-  freeChecksUsed.value++
-  localStorage.setItem(todayKey, String(freeChecksUsed.value))
-}
 
 async function check() {
   if (!address.value.trim()) {
@@ -80,8 +67,7 @@ async function check() {
     })
     
     if (res.status === 429) {
-      const data = await res.json()
-      result.value = { status: 'error', message: `⏳ Rate limit: ${data.details || 'Try again later'}` }
+      result.value = { status: 'error', message: '⏳ Too many requests. Try again later.' }
       loading.value = false
       return
     }
@@ -103,18 +89,11 @@ async function check() {
     
     result.value = data
     
-    // Use free check if not authenticated
-    if (!isConnected.value) {
-      useFreeCheck()
-    }
-    
-    // Update balance if returned
     if (data.balance_left !== undefined && wallet) {
       wallet.userBalance.value = data.balance_left
       localStorage.setItem('userBalance', String(data.balance_left))
     }
     
-    // Add to recent checks only AFTER successful API response
     recentChecks.value.unshift({
       id: alertId.value++,
       address: `${address.value.slice(0,6)}…${address.value.slice(-4)}`,
@@ -127,12 +106,6 @@ async function check() {
     result.value = { status: 'error', message: 'Request failed. Is the backend running?' }
   }
   loading.value = false
-}
-
-function useExample(ex: { chain: string, addr: string }) {
-  address.value = ex.addr
-  chain.value = ex.chain
-  check()
 }
 
 function setResultText() {
@@ -170,24 +143,21 @@ function getResultClass() {
     </div>
   </div>
 
-  <!-- Free tier info for non-authenticated users -->
-  <div v-if="!isConnected" class="free-tier-info">
-    <span class="free-badge">FREE</span>
-    <span>{{ freeChecksRemaining }} of {{ FREE_CHECKS_PER_DAY }} checks remaining today</span>
-    <RouterLink to="/pricing" class="upgrade-link">Upgrade →</RouterLink>
-  </div>
-
   <!-- Balance info for authenticated users -->
-  <div v-else class="free-tier-info user-balance">
+  <div v-if="isConnected" class="free-tier-info user-balance">
     <span class="free-badge">PREMIUM</span>
     <span>{{ userBalance }} checks available</span>
     <RouterLink to="/pricing" class="upgrade-link">Buy more →</RouterLink>
+  </div>
+  <div v-else class="free-tier-info">
+    <span class="free-badge">FREE</span>
+    <RouterLink to="/pricing" class="upgrade-link">Connect wallet to get checks →</RouterLink>
   </div>
 
   <!-- Logo -->
   <div class="logo-area">
     <div class="badge">⚡ multi‑chain security</div>
-    <h1>Wallet Checker</h1>
+    <h1>pwnd</h1>
     <div class="sub">EVM · BTC · Solana · Sui · Tron</div>
   </div>
 
@@ -210,8 +180,8 @@ function getResultClass() {
       :placeholder="chainPlaceholders[chain]"
       @keydown.enter="check"
     />
-    <button class="check-btn" @click="check" :disabled="loading || (!isConnected && freeChecksRemaining <= 0)">
-      {{ loading ? 'Checking…' : (!isConnected && freeChecksRemaining <= 0) ? 'No free checks left' : 'Check' }}
+    <button class="check-btn" @click="check" :disabled="loading">
+      {{ loading ? 'Checking…' : 'Check' }}
     </button>
   </div>
 

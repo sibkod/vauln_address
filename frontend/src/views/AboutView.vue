@@ -1,7 +1,7 @@
 <template>
   <div class="content-card">
     <h2>About</h2>
-    <p><strong>Wallet Checker</strong> is a multi‑chain security tool that verifies whether a wallet address has been compromised across multiple blockchains. Our mission is to provide transparent, real‑time security intelligence for the Web3 ecosystem.</p>
+    <p><strong>pwnd</strong> is a multi‑chain security tool that verifies whether a wallet address has been compromised across multiple blockchains. Our mission is to provide transparent, real‑time security intelligence for the Web3 ecosystem.</p>
     <p>We aggregate data from public sources, community reports, and on‑chain analysis to maintain a comprehensive database of known compromised and vulnerable addresses. This tool is built for researchers, security teams, and everyday users who want to stay safe.</p>
     
     <h3 style="color:#dfe7f8; font-size:0.95rem; margin:1.2rem 0 0.5rem;">Supported Chains</h3>
