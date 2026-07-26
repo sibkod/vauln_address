@@ -42,17 +42,17 @@ func New(repo *repository.Repository, serverCfg *config.Config, priceService *se
 		authService:  auth.NewAuthService(repo),
 		serverCfg:    serverCfg,
 		priceService: priceService,
-		packages:     loadPackages(),
+		packages:     loadPackages(serverCfg),
 	}
 	return h
 }
 
 // loadPackages loads pricing packages from JSON file
-func loadPackages() []gin.H {
+func loadPackages(cfg *config.Config) []gin.H {
 	data, err := os.ReadFile("internal/data/pricing.json")
 	if err != nil {
 		log.Printf("Failed to load pricing.json: %v, using defaults", err)
-		return getDefaultPackages()
+		return getDefaultPackages(cfg)
 	}
 
 	var pkgData struct {
@@ -87,11 +87,13 @@ func loadPackages() []gin.H {
 	return packages
 }
 
-func getDefaultPackages() []gin.H {
+func getDefaultPackages(cfg *config.Config) []gin.H {
+	pricePerCheck := cfg.PricePerCheckUSD
+	
 	return []gin.H{
-		{"id": "starter", "name": "Starter", "checks": 50, "price_usd": 5.0, "discount_percent": 0, "discount_label": "", "popular": false},
-		{"id": "pro", "name": "Pro", "checks": 200, "price_usd": 20.0, "discount_percent": 0, "discount_label": "", "popular": true},
-		{"id": "enterprise", "name": "Enterprise", "checks": 1000, "price_usd": 50.0, "discount_percent": 50, "discount_label": "50% OFF", "popular": false},
+		{"id": "starter", "name": "Starter", "checks": 50, "price_usd": math.Round(float64(50)*pricePerCheck*100) / 100, "discount_percent": 0, "discount_label": "", "popular": false},
+		{"id": "pro", "name": "Pro", "checks": 200, "price_usd": math.Round(float64(200)*pricePerCheck*100) / 100, "discount_percent": 0, "discount_label": "", "popular": true},
+		{"id": "enterprise", "name": "Enterprise", "checks": 1000, "price_usd": math.Round(float64(1000)*pricePerCheck*0.5*100) / 100, "discount_percent": 50, "discount_label": "50% OFF", "popular": false},
 	}
 }
 
