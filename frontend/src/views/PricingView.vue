@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { ref, inject, computed } from 'vue'
-import QRCode from 'qrcode'
+import { ref, inject, computed, onMounted } from 'vue'
 import { 
   Connection, 
   Transaction, 
@@ -9,60 +8,69 @@ import {
   LAMPORTS_PER_SOL 
 } from '@solana/web3.js'
 
-// Network config - MUST match App.vue
-const IS_MAINNET = false
-const SOLANA_NETWORK = IS_MAINNET ? 'mainnet-beta' : 'devnet'
-const RPC_URL = IS_MAINNET ? 'https://api.mainnet-beta.solana.com' : 'https://api.devnet.solana.com'
-
-// Price config - MUST match backend (PricePerCheckUSD = $0.10)
-const PRICE_PER_CHECK_USD = 0.10
-
-// SOL price is now FIXED at 0.01 SOL for testing (backend returns this value)
-// Previously: priceUSD / SOL_PRICE_USD where SOL_PRICE_USD = 20.0
-const SOL_AMOUNT_TEST = 0.01
-
-// Calculate price in SOL - now uses fixed value from backend
-function calcPriceSOL(checks: number): number {
-  return SOL_AMOUNT_TEST
+interface Package {
+  id: string
+  name: string
+  checks: number
+  price_usd: number
+  price_sol: number
+  discount_percent: number
+  discount_label: string
+  popular: boolean
 }
 
-// Calculate price in USD (for USDC)
-function calcPriceUSD(checks: number): number {
-  let priceUSD = checks * PRICE_PER_CHECK_USD
-  if (checks >= 1000) priceUSD *= 0.5 // 50% discount
-  else if (checks >= 500) priceUSD *= 0.6 // 40% discount
-  return priceUSD
+interface PackagesResponse {
+  packages: Package[]
+  payment_address: string
+  price_per_check: number
+  network: string
 }
 
-// Merchant wallet for payments
-const MERCHANT_WALLET_DEVNET = '7bMD8B3a3yDj7JMBQZYse7x4FqNKLNmEACSUitKxVNXJ'
-const MERCHANT_WALLET_MAINNET = 'MERCHANT_MAINNET_WALLET'
-const MERCHANT_WALLET = IS_MAINNET ? MERCHANT_WALLET_MAINNET : MERCHANT_WALLET_DEVNET
+// Network config - from backend
+const RPC_URL = 'https://api.devnet.solana.com' // Default, will be updated from backend
 
 const globalWallet = inject<any>('wallet')
 
 // Create connection
 const connection = new Connection(RPC_URL, 'confirmed')
 
-const packages = [
-  { id: 'starter', name: 'Starter', checks: 50, priceSOL: calcPriceSOL(50), priceUSDC: calcPriceUSD(50), popular: false },
-  { id: 'pro', name: 'Pro', checks: 200, priceSOL: calcPriceSOL(200), priceUSDC: calcPriceUSD(200), popular: true },
-  { id: 'enterprise', name: 'Enterprise', checks: 1000, priceSOL: calcPriceSOL(1000), priceUSDC: calcPriceUSD(1000), popular: false },
-]
+// Packages loaded from backend
+const packages = ref<Package[]>([])
+const paymentAddress = ref('')
+const loadingPackages = ref(true)
+const packagesError = ref('')
 
-const selectedPackage = ref<typeof packages[0] | null>(null)
+const selectedPackage = ref<Package | null>(null)
 const processing = ref(false)
 const error = ref('')
 const success = ref('')
 const txSignature = ref('')
-const qrDataUrl = ref('')
 const pollInterval = ref<number | null>(null)
 
 const walletAddress = computed(() => globalWallet?.walletAddress?.value || '')
 const isConnected = computed(() => globalWallet?.connected?.value || false)
 const walletChain = computed(() => globalWallet?.walletChain?.value || '')
 
-function selectPackage(pkg: typeof packages[0]) {
+// Fetch packages from backend
+async function fetchPackages() {
+  loadingPackages.value = true
+  packagesError.value = ''
+  try {
+    const res = await fetch('/api/packages')
+    if (!res.ok) throw new Error('Failed to load packages')
+    
+    const data: PackagesResponse = await res.json()
+    packages.value = data.packages
+    paymentAddress.value = data.payment_address
+  } catch (err: any) {
+    packagesError.value = err.message || 'Failed to load pricing packages'
+    console.error('Failed to fetch packages:', err)
+  } finally {
+    loadingPackages.value = false
+  }
+}
+
+function selectPackage(pkg: Package) {
   if (!isConnected.value) {
     error.value = 'Please connect your wallet first'
     return
@@ -71,8 +79,11 @@ function selectPackage(pkg: typeof packages[0]) {
   error.value = ''
   success.value = ''
   txSignature.value = ''
-  qrDataUrl.value = ''
 }
+
+onMounted(() => {
+  fetchPackages()
+})
 
 // Pay directly with Solana wallet
 async function payWithSolana() {
@@ -145,9 +156,9 @@ async function payWithSolana() {
     console.log('Order created:', orderData)
     
     const senderPublicKey = phantom.publicKey
-    const recipientPublicKey = new PublicKey(orderData.payment_address || MERCHANT_WALLET)
-    // Use amount from backend order response (now FIXED at 0.01 SOL for testing)
-    const solAmount = parseFloat(orderData.amount) || SOL_AMOUNT_TEST
+    const recipientPublicKey = new PublicKey(orderData.payment_address || paymentAddress.value)
+    // Use amount from backend order response
+    const solAmount = parseFloat(orderData.amount) || selectedPackage.value.price_sol
     const lamports = Math.round(solAmount * LAMPORTS_PER_SOL)
     
     // Create a proper Transaction object
@@ -214,6 +225,10 @@ function startPolling(signature: string) {
         if (globalWallet) {
           globalWallet.userBalance.value = data.balance || 0
           localStorage.setItem('userBalance', String(data.balance || 0))
+          // Refresh user data from /api/me
+          if (globalWallet.fetchMe) {
+            globalWallet.fetchMe()
+          }
         }
         
         setTimeout(() => {
@@ -243,66 +258,51 @@ function cancelPayment() {
   error.value = ''
   success.value = ''
   txSignature.value = ''
-  qrDataUrl.value = ''
-}
-
-// Legacy: Generate QR for mobile wallets
-async function generateQR() {
-  if (!selectedPackage.value) return
-  
-  const reference = Array.from(crypto.getRandomValues(new Uint8Array(16)))
-    .map(b => b.toString(16).padStart(2, '0')).join('')
-  
-  const solanaPayUrl = `solana:${MERCHANT_WALLET}?amount=${selectedPackage.value.priceSOL}&reference=${reference}&label=WalletChecker&message=Payment`
-  
-  try {
-    qrDataUrl.value = await QRCode.toDataURL(solanaPayUrl, {
-      width: 200,
-      margin: 2
-    })
-  } catch (err) {
-    console.error('QR error:', err)
-  }
 }
 </script>
 
 <template>
-  <!-- Header -->
-  <div class="pricing-header">
-    <div class="badge">💎 Fair pricing</div>
-    <h1>Choose Your Plan</h1>
-    <div class="sub">Secure wallet checks with SOL or USDC</div>
+  <!-- Loading state -->
+  <div v-if="loadingPackages" class="loading-state">
+    <div class="spinner"></div>
+    <p>Loading pricing packages...</p>
   </div>
 
-  <!-- Network Badge -->
-  <div class="network-info">
-    <span class="network-badge" :class="IS_MAINNET ? 'mainnet' : 'devnet'">
-      {{ IS_MAINNET ? 'Mainnet' : 'Devnet' }} Mode
-    </span>
-    <span class="network-hint">
-      {{ IS_MAINNET ? 'Real transactions' : 'Test transactions only' }}
-    </span>
+  <!-- Error state -->
+  <div v-else-if="packagesError" class="error-state">
+    <p>{{ packagesError }}</p>
+    <button @click="fetchPackages" class="retry-btn">Retry</button>
   </div>
 
-  <!-- Packages -->
-  <div class="packages-grid">
-    <div 
-      v-for="pkg in packages" 
-      :key="pkg.id"
-      class="package-card"
-      :class="{ popular: pkg.popular, selected: selectedPackage?.id === pkg.id }"
-      @click="selectPackage(pkg)"
-    >
-      <div v-if="pkg.popular" class="popular-badge">Most Popular</div>
-      <div class="pkg-name">{{ pkg.name }}</div>
-      <div class="pkg-checks">{{ pkg.checks }} checks</div>
-      <div class="pkg-price">
-        <span class="price-sol">{{ pkg.priceSOL }} SOL</span>
-        <span class="price-usdc">or {{ pkg.priceUSDC }} USDC</span>
-      </div>
-      <div class="pkg-per-check">~${{ (pkg.priceUSDC / pkg.checks).toFixed(2) }} per check</div>
+  <!-- Main content -->
+  <template v-else>
+    <!-- Header -->
+    <div class="pricing-header">
+      <div class="badge">💎 Fair pricing</div>
+      <h1>Choose Your Plan</h1>
+      <div class="sub">Secure wallet checks with SOL</div>
     </div>
-  </div>
+
+    <!-- Packages -->
+    <div class="packages-grid">
+      <div 
+        v-for="pkg in packages" 
+        :key="pkg.id"
+        class="package-card"
+        :class="{ popular: pkg.popular, selected: selectedPackage?.id === pkg.id }"
+        @click="selectPackage(pkg)"
+      >
+        <div v-if="pkg.popular" class="popular-badge">Most Popular</div>
+        <div v-if="pkg.discount_label" class="discount-badge">{{ pkg.discount_label }}</div>
+        <div class="pkg-name">{{ pkg.name }}</div>
+        <div class="pkg-checks">{{ pkg.checks }} checks</div>
+        <div class="pkg-price">
+          <span class="price-sol">{{ pkg.price_sol }} SOL</span>
+          <span class="price-usdc">or ${{ pkg.price_usd.toFixed(2) }}</span>
+        </div>
+        <div class="pkg-per-check">~${{ (pkg.price_usd / pkg.checks).toFixed(2) }} per check</div>
+      </div>
+    </div>
 
   <!-- Payment Section - Direct Payment -->
   <div v-if="selectedPackage" class="payment-section">
@@ -311,15 +311,15 @@ async function generateQR() {
     <div class="payment-summary">
       <div class="summary-row">
         <span>Price</span>
-        <span class="amount-highlight">{{ selectedPackage.priceSOL }} SOL</span>
+        <span class="amount-highlight">{{ selectedPackage.price_sol }} SOL</span>
       </div>
       <div class="summary-row">
         <span>Network</span>
-        <span>{{ IS_MAINNET ? 'Mainnet' : 'Devnet' }}</span>
+        <span>Devnet</span>
       </div>
       <div class="summary-row">
         <span>Recipient</span>
-        <span class="address-small">{{ MERCHANT_WALLET.slice(0, 8) }}...{{ MERCHANT_WALLET.slice(-4) }}</span>
+        <span class="address-small">{{ paymentAddress.slice(0, 8) }}...{{ paymentAddress.slice(-4) }}</span>
       </div>
     </div>
 
@@ -343,13 +343,14 @@ async function generateQR() {
 
     <div v-if="txSignature" class="tx-info">
       <span>TX: {{ txSignature.slice(0, 8) }}...{{ txSignature.slice(-4) }}</span>
-      <a :href="`https://explorer.solana.com/tx/${txSignature}?cluster=${SOLANA_NETWORK}`" target="_blank" class="view-link">
+      <a :href="`https://explorer.solana.com/tx/${txSignature}?cluster=devnet`" target="_blank" class="view-link">
         View on Explorer →
       </a>
     </div>
 
     <button class="cancel-btn" @click="cancelPayment">Cancel</button>
   </div>
+  </template>
 
   <!-- Features -->
   <div class="features-section">

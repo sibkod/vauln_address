@@ -67,10 +67,12 @@ func main() {
 	api.GET("/chains", h.GetSupportedChains)
 	api.GET("/recent", h.GetRecentChecks)
 	api.GET("/pricing", h.GetPricing)
+	api.GET("/packages", h.GetPackages) // Returns pre-defined pricing packages
 	api.GET("/auth/nonce", h.GetNonce)
 	api.POST("/auth/login", h.Authenticate)
 	api.GET("/user/profile", middleware.RequireAuth(), h.GetUserProfile)
 	api.GET("/user/balance", middleware.AuthMiddleware(authService), h.GetBalance) // Returns purchased balance for auth users, rate limit for anonymous
+	api.GET("/me", middleware.AuthMiddleware(authService), h.GetMe)              // Comprehensive user info with balance and rate limits
 	api.GET("/user/purchases", middleware.RequireAuth(), h.GetPurchaseHistory)
 	api.POST("/orders", middleware.RequireAuth(), h.CreateOrder)
 	api.POST("/orders/:id/confirm", middleware.RequireAuth(), h.ConfirmOrder)

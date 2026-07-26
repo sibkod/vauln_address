@@ -2,7 +2,9 @@ package middleware
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -54,6 +56,9 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 			rateLimit = &models.RateLimit{Count: 0, WindowStart: time.Now()}
 		}
 
+		// Add rate limit headers for all responses
+		rl.setRateLimitHeaders(c, rateLimit, isAuthenticated && walletAddress != nil && chainStr != "")
+
 		// Check IP limit
 		if rateLimit.Count >= rl.cfg.RateLimitRequests {
 			// IP limit exhausted
@@ -66,6 +71,7 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 						c.Set("remainingBalance", balance-1)
 						c.Set("usingBalance", true)
 						c.Header("X-RateLimit-Source", "balance")
+						c.Header("X-Balance-Available", strconv.Itoa(balance-1))
 						c.Next()
 						return
 					}
@@ -108,13 +114,34 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 					c.Set("remainingBalance", balance-1)
 					c.Set("usingBalance", true)
 					c.Header("X-RateLimit-Source", "balance")
+					c.Header("X-Balance-Available", strconv.Itoa(balance-1))
 				}
 			}
 		}
 
-		c.Header("X-RateLimit-Limit", formatInt(rl.cfg.RateLimitRequests))
-		c.Header("X-RateLimit-Remaining", formatInt(max(0, rl.cfg.RateLimitRequests-rateLimit.Count-1)))
+		// Update remaining header after decrement
+		remaining := max(0, rl.cfg.RateLimitRequests-rateLimit.Count-1)
+		c.Header("X-RateLimit-Remaining", strconv.Itoa(remaining))
 		c.Next()
+	}
+}
+
+// setRateLimitHeaders sets common rate limit headers
+func (rl *RateLimiter) setRateLimitHeaders(c *gin.Context, rateLimit *models.RateLimit, isUserAuthenticated bool) {
+	limit := rl.cfg.RateLimitRequests
+	used := rateLimit.Count
+	remaining := max(0, limit-used)
+	windowEnd := rateLimit.WindowStart.Add(time.Duration(rl.cfg.RateLimitHours) * time.Hour)
+
+	c.Header("X-RateLimit-Limit", strconv.Itoa(limit))
+	c.Header("X-RateLimit-Remaining", strconv.Itoa(remaining))
+	c.Header("X-RateLimit-Used", strconv.Itoa(used))
+	c.Header("X-RateLimit-Reset", strconv.FormatInt(windowEnd.Unix(), 10))
+
+	if isUserAuthenticated {
+		c.Header("X-RateLimit-Source", "balance")
+	} else {
+		c.Header("X-RateLimit-Source", "ip")
 	}
 }
 
@@ -138,24 +165,16 @@ func (rl *RateLimiter) checkAndResetWindow(ctx context.Context, ip string) {
 }
 
 func formatRateLimitDetails(used, limit int, resetIn time.Duration) string {
-	return "used " + formatInt(used) + " of " + formatInt(limit) +
-		" requests. Reset in " + formatDuration(resetIn)
-}
-
-func formatInt(n int) string {
-	if n < 10 {
-		return string(rune('0' + n))
-	}
-	return string(rune('0' + n/10)) + string(rune('0'+n%10))
+	return fmt.Sprintf("used %d of %d requests. Reset in %s", used, limit, formatDuration(resetIn))
 }
 
 func formatDuration(d time.Duration) string {
 	hours := int(d.Hours())
 	minutes := int(d.Minutes()) % 60
 	if hours > 0 {
-		return formatInt(hours) + "h " + formatInt(minutes) + "m"
+		return fmt.Sprintf("%dh %dm", hours, minutes)
 	}
-	return formatInt(minutes) + " minutes"
+	return fmt.Sprintf("%d minutes", minutes)
 }
 
 func CORS() gin.HandlerFunc {

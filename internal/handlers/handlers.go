@@ -174,6 +174,55 @@ func (h *Handler) GetPricing(c *gin.Context) {
 	})
 }
 
+// GetPackages returns pre-defined pricing packages
+func (h *Handler) GetPackages(c *gin.Context) {
+	packages := []gin.H{
+		{
+			"id":                  "starter",
+			"name":                "Starter",
+			"checks":              50,
+			"price_usd":          5.0,  // 50 * 0.10
+			"price_sol":           0.01,
+			"discount_percent":     0,
+			"discount_label":      "",
+			"popular":             false,
+		},
+		{
+			"id":                  "pro",
+			"name":                "Pro",
+			"checks":              200,
+			"price_usd":          20.0, // 200 * 0.10
+			"price_sol":           0.01,
+			"discount_percent":     0,
+			"discount_label":      "",
+			"popular":             true,
+		},
+		{
+			"id":                  "enterprise",
+			"name":                "Enterprise",
+			"checks":              1000,
+			"price_usd":          50.0, // 1000 * 0.10 * 0.5 (50% off)
+			"price_sol":           0.01,
+			"discount_percent":     50,
+			"discount_label":      "50% OFF",
+			"popular":             false,
+		},
+	}
+
+	// Add payment address info
+	paymentAddress := h.serverCfg.SolanaPaymentAddr
+	if paymentAddress == "" {
+		paymentAddress = "CW58CLARKr9mL4d7oRDj6FKv3cM2xT6vH3kQVZqW4xXy" // Demo address
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"packages":         packages,
+		"payment_address":  paymentAddress,
+		"price_per_check":  models.PricePerCheckUSD,
+		"network":          "devnet", // or mainnet based on config
+	})
+}
+
 // CreateOrder creates a new payment order
 func (h *Handler) CreateOrder(c *gin.Context) {
 	walletAddress, exists := c.Get("userAddress")
@@ -413,6 +462,89 @@ func (h *Handler) VerifyPayment(c *gin.Context) {
 		"order_id":     orderUUID,
 		"checks_added": order.ChecksCount,
 		"status":       "completed",
+	})
+}
+
+// GetMe returns comprehensive user info including balance, rate limits, and user data
+func (h *Handler) GetMe(c *gin.Context) {
+	walletAddress, exists := c.Get("userAddress")
+	chain, _ := c.Get("userChain")
+	chainStr, _ := chain.(string)
+
+	// Get rate limit info
+	ip := c.ClientIP()
+	rateLimit, _ := h.repo.GetRateLimit(c.Request.Context(), ip)
+	rateLimitRemaining := h.serverCfg.RateLimitRequests
+	rateLimitUsed := 0
+	if rateLimit != nil {
+		rateLimitRemaining = h.serverCfg.RateLimitRequests - rateLimit.Count
+		if rateLimitRemaining < 0 {
+			rateLimitRemaining = 0
+		}
+		rateLimitUsed = rateLimit.Count
+	}
+
+	// Check if user is authenticated
+	if exists && walletAddress != nil && walletAddress.(string) != "" && chainStr != "" {
+		// Authenticated user
+		user, err := h.authService.GetUserByWallet(walletAddress.(string), chainStr)
+		if err != nil || user == nil {
+			c.JSON(http.StatusOK, gin.H{
+				"wallet_address":         walletAddress.(string),
+				"chain":                  chainStr,
+				"balance":                0,
+				"purchased_balance":      0,
+				"rate_limit_remaining":   rateLimitRemaining,
+				"rate_limit_used":        rateLimitUsed,
+				"rate_limit_limit":       h.serverCfg.RateLimitRequests,
+				"is_premium":             false,
+				"is_authenticated":       true,
+			})
+			return
+		}
+
+		purchasedBalance := user.Balance
+		isPremium := purchasedBalance > 0
+
+		// Add rate limit headers
+		c.Header("X-RateLimit-Limit", fmt.Sprintf("%d", h.serverCfg.RateLimitRequests))
+		c.Header("X-RateLimit-Remaining", fmt.Sprintf("%d", rateLimitRemaining))
+		c.Header("X-RateLimit-Used", fmt.Sprintf("%d", rateLimitUsed))
+		c.Header("X-RateLimit-Source", "balance")
+		c.Header("X-Balance-Available", fmt.Sprintf("%d", purchasedBalance))
+
+		c.JSON(http.StatusOK, gin.H{
+			"wallet_address":         user.WalletAddress,
+			"chain":                  user.Chain,
+			"balance":                purchasedBalance,
+			"purchased_balance":      purchasedBalance,
+			"rate_limit_remaining":   rateLimitRemaining,
+			"rate_limit_used":        rateLimitUsed,
+			"rate_limit_limit":       h.serverCfg.RateLimitRequests,
+			"is_premium":             isPremium,
+			"is_authenticated":       true,
+			"created_at":             user.CreatedAt,
+			"last_login_at":          user.LastLoginAt,
+		})
+		return
+	}
+
+	// Anonymous user
+	c.Header("X-RateLimit-Limit", fmt.Sprintf("%d", h.serverCfg.RateLimitRequests))
+	c.Header("X-RateLimit-Remaining", fmt.Sprintf("%d", rateLimitRemaining))
+	c.Header("X-RateLimit-Used", fmt.Sprintf("%d", rateLimitUsed))
+	c.Header("X-RateLimit-Source", "ip")
+
+	c.JSON(http.StatusOK, gin.H{
+		"wallet_address":         nil,
+		"chain":                  nil,
+		"balance":                rateLimitRemaining,
+		"purchased_balance":      0,
+		"rate_limit_remaining":   rateLimitRemaining,
+		"rate_limit_used":        rateLimitUsed,
+		"rate_limit_limit":       h.serverCfg.RateLimitRequests,
+		"is_premium":             false,
+		"is_authenticated":       false,
 	})
 }
 

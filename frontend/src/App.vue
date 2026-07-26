@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, provide } from 'vue'
+import { ref, onMounted, onUnmounted, provide } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
 
 // Network config - change IS_MAINNET to switch networks
@@ -21,8 +21,20 @@ const connectError = ref('')
 const stats = ref({ evm: 0, btc: 0, solana: 0, sui: 0, tron: 0 })
 const showWalletMenu = ref(false)
 
+// Rate limit info
+const rateLimitInfo = ref({
+  limit: 0,
+  remaining: 0,
+  used: 0,
+  reset: 0,
+  source: 'ip' as 'ip' | 'balance'
+})
+
 // Purchase history
 const recentPurchases = ref<any[]>([])
+
+// Polling interval ID
+let mePollInterval: number | null = null
 
 const walletOptions = [
   // Browser Extensions
@@ -39,8 +51,80 @@ const walletOptions = [
 ]
 
 // Provide auth state to all components
-provide('wallet', { connected, walletAddress, walletChain, userBalance, authToken, refreshBalance, fetchPurchaseHistory })
+provide('wallet', { connected, walletAddress, walletChain, userBalance, authToken, refreshBalance, fetchPurchaseHistory, fetchMe })
 provide('network', { isMainnet: IS_MAINNET, solanaNetwork: SOLANA_NETWORK })
+
+// Fetch comprehensive user info from /api/me endpoint
+async function fetchMe() {
+  try {
+    const headers: Record<string, string> = {}
+    if (authToken.value) {
+      headers['Authorization'] = `Bearer ${authToken.value}`
+    }
+    const res = await fetch('/api/me', { headers })
+    
+    // Parse rate limit headers from response
+    const limitHeader = res.headers.get('X-RateLimit-Limit')
+    const remainingHeader = res.headers.get('X-RateLimit-Remaining')
+    const usedHeader = res.headers.get('X-RateLimit-Used')
+    const resetHeader = res.headers.get('X-RateLimit-Reset')
+    const sourceHeader = res.headers.get('X-RateLimit-Source')
+    const balanceHeader = res.headers.get('X-Balance-Available')
+    
+    if (limitHeader) rateLimitInfo.value.limit = parseInt(limitHeader)
+    if (remainingHeader) rateLimitInfo.value.remaining = parseInt(remainingHeader)
+    if (usedHeader) rateLimitInfo.value.used = parseInt(usedHeader)
+    if (resetHeader) rateLimitInfo.value.reset = parseInt(resetHeader)
+    if (sourceHeader) rateLimitInfo.value.source = sourceHeader as 'ip' | 'balance'
+    
+    if (res.ok) {
+      const data = await res.json()
+      
+      // Update balance
+      if (data.balance !== undefined) {
+        userBalance.value = data.balance
+        // Save to localStorage for authenticated users
+        if (data.is_authenticated && data.balance > 0) {
+          localStorage.setItem('userBalance', data.balance.toString())
+        }
+      }
+      
+      // Update connection state if needed
+      if (data.is_authenticated && data.wallet_address) {
+        if (!connected.value) {
+          connected.value = true
+          walletAddress.value = data.wallet_address
+          if (data.chain) walletChain.value = data.chain
+        }
+      }
+      
+      console.log('[Me] Updated:', {
+        balance: data.balance,
+        isPremium: data.is_premium,
+        isAuthenticated: data.is_authenticated,
+        rateLimit: rateLimitInfo.value
+      })
+    }
+  } catch (err) {
+    console.error('Failed to fetch /api/me:', err)
+  }
+}
+
+// Start periodic polling for /api/me
+function startMePolling(intervalMs = 30000) {
+  stopMePolling()
+  mePollInterval = window.setInterval(fetchMe, intervalMs)
+  console.log('[Me] Started polling every', intervalMs, 'ms')
+}
+
+// Stop periodic polling
+function stopMePolling() {
+  if (mePollInterval !== null) {
+    clearInterval(mePollInterval)
+    mePollInterval = null
+    console.log('[Me] Stopped polling')
+  }
+}
 
 // Fetch balance from backend (works for both auth and anonymous users)
 async function refreshBalance() {
@@ -102,6 +186,12 @@ onMounted(async () => {
   // Always fetch balance from backend (works for auth and anonymous users)
   await refreshBalance()
   
+  // Fetch user info from /api/me
+  await fetchMe()
+  
+  // Start periodic polling for user data (every 30 seconds)
+  startMePolling(30000)
+  
   // Check backend availability
   try {
     const res = await fetch('/api/chains', { 
@@ -118,6 +208,11 @@ onMounted(async () => {
     backendAvailable.value = false
   }
   checkingBackend.value = false
+})
+
+// Stop polling when component unmounts
+onUnmounted(() => {
+  stopMePolling()
 })
 
 function toggleTheme() {
@@ -336,6 +431,9 @@ async function authenticateSolana(provider: any, address: string) {
       localStorage.setItem('walletChain', 'solana')
       localStorage.setItem('userBalance', String(authData.user?.balance || 0))
       
+      // Fetch full user info after successful auth
+      await fetchMe()
+      
       closeWalletModal()
     } else {
       connectError.value = authData.error || 'Auth failed'
@@ -388,6 +486,9 @@ async function authenticateEVM(provider: any, address: string) {
       localStorage.setItem('walletAddress', address)
       localStorage.setItem('walletChain', 'evm')
       localStorage.setItem('userBalance', String(authData.user?.balance || 0))
+      
+      // Fetch full user info after successful auth
+      await fetchMe()
       
       closeWalletModal()
     } else {
