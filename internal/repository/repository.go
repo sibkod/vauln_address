@@ -1273,3 +1273,100 @@ func (r *Repository) ExpireOrders(ctx context.Context, olderThan time.Duration) 
 	}
 	return result.RowsAffected()
 }
+
+// Stats table management for wallet counts
+
+// InitStatsTable creates the stats table if not exists
+func (r *Repository) InitStatsTable(ctx context.Context) error {
+	var sql string
+	switch r.dbType {
+	case config.DBTypeMySQL:
+		sql = `CREATE TABLE IF NOT EXISTS wallet_stats (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			chain VARCHAR(20) UNIQUE NOT NULL,
+			count INTEGER DEFAULT 0
+		)`
+	case config.DBTypeSQLite:
+		sql = `CREATE TABLE IF NOT EXISTS wallet_stats (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			chain TEXT UNIQUE NOT NULL,
+			count INTEGER DEFAULT 0
+		)`
+	default: // PostgreSQL
+		sql = `CREATE TABLE IF NOT EXISTS wallet_stats (
+			id BIGSERIAL PRIMARY KEY,
+			chain VARCHAR(20) UNIQUE NOT NULL,
+			count INTEGER DEFAULT 0
+		)`
+	}
+
+	_, err := r.db.ExecContext(ctx, sql)
+	if err != nil && !strings.Contains(err.Error(), "already exists") {
+		return err
+	}
+
+	// Initialize counts from wallets table if stats are empty
+	_, err = r.db.ExecContext(ctx, `INSERT OR IGNORE INTO wallet_stats (chain, count) 
+		SELECT chain, COUNT(*) FROM wallets GROUP BY chain`)
+	return err
+}
+
+// IncrementWalletCount increments the wallet count for a chain
+func (r *Repository) IncrementWalletCount(ctx context.Context, chain string) error {
+	// First ensure the row exists
+	_, err := r.db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO wallet_stats (chain, count) VALUES (?, 0)`, chain)
+	if err != nil {
+		return err
+	}
+
+	// Then increment
+	_, err = r.db.ExecContext(ctx,
+		`UPDATE wallet_stats SET count = count + 1 WHERE chain = ?`, chain)
+	return err
+}
+
+// GetWalletStats returns the count of wallets per chain from stats table
+func (r *Repository) GetWalletStats(ctx context.Context) (map[string]int, error) {
+	stats := make(map[string]int)
+
+	rows, err := r.db.QueryContext(ctx, `SELECT chain, count FROM wallet_stats`)
+	if err != nil {
+		// Fallback to counting from wallets table
+		return r.getWalletStatsFromWallets(ctx)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var chain string
+		var count int
+		if err := rows.Scan(&chain, &count); err != nil {
+			continue
+		}
+		stats[chain] = count
+	}
+
+	return stats, rows.Err()
+}
+
+// getWalletStatsFromWallets counts wallets directly from wallets table
+func (r *Repository) getWalletStatsFromWallets(ctx context.Context) (map[string]int, error) {
+	stats := make(map[string]int)
+
+	rows, err := r.db.QueryContext(ctx, `SELECT chain, COUNT(*) FROM wallets GROUP BY chain`)
+	if err != nil {
+		return stats, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var chain string
+		var count int
+		if err := rows.Scan(&chain, &count); err != nil {
+			continue
+		}
+		stats[chain] = count
+	}
+
+	return stats, rows.Err()
+}

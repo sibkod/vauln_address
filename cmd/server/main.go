@@ -35,6 +35,13 @@ func main() {
 	}
 	log.Println("Database schema initialized")
 
+	// Initialize wallet stats table
+	if err := repo.InitStatsTable(ctx); err != nil {
+		log.Printf("Warning: failed to initialize stats table: %v", err)
+	} else {
+		log.Println("Wallet stats table initialized")
+	}
+
 	// Start price service for SOL/USD updates
 	priceService := services.NewPriceService(cfg)
 	defer priceService.Stop()

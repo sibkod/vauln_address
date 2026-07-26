@@ -1003,6 +1003,13 @@ func (h *Handler) SubmitContact(c *gin.Context) {
 }
 
 func (h *Handler) GetSupportedChains(c *gin.Context) {
+	// Get wallet counts per chain
+	counts, err := h.repo.GetWalletStats(c.Request.Context())
+	if err != nil {
+		log.Printf("Failed to get wallet stats: %v", err)
+		counts = make(map[string]int)
+	}
+	
 	c.JSON(http.StatusOK, gin.H{
 		"chains": []gin.H{
 			{"name": "EVM", "id": "evm", "example": "0x742d35Cc6634C0532925a3b844Bc9e7595f5B2a1"},
@@ -1011,6 +1018,7 @@ func (h *Handler) GetSupportedChains(c *gin.Context) {
 			{"name": "Sui", "id": "sui", "example": "0x8a1c4cd2d2fd05e02e3d2b5f4d6f8a1c3e5b7d9f0a2c4e6"},
 			{"name": "Tron", "id": "tron", "example": "TJK5M5kKxP8xF9cGvN2pL6rU4sW7xA3bCd"},
 		},
+		"counts": counts,
 	})
 }
 
@@ -1532,6 +1540,11 @@ func (h *Handler) AddWallet(c *gin.Context) {
 		if err != nil {
 			log.Printf("Failed to create wallet %s/%s: %v", chain, address, err)
 			continue
+		}
+
+		// Update stats table
+		if err := h.repo.IncrementWalletCount(ctx, chain); err != nil {
+			log.Printf("Failed to update stats for chain %s: %v", chain, err)
 		}
 
 		walletIDs = append(walletIDs, walletID)
