@@ -61,21 +61,6 @@ func main() {
 	authService := h.GetAuthService()
 	router.Use(middleware.AuthMiddleware(authService))
 
-	// Serve React frontend from frontend/dist
-	frontendDist := "./frontend/dist"
-	if _, err := os.Stat(frontendDist); err == nil {
-		router.Static("/assets", frontendDist+"/assets")
-		router.GET("/", func(c *gin.Context) {
-			c.File(frontendDist + "/index.html")
-		})
-		router.NoRoute(func(c *gin.Context) {
-			c.File(frontendDist + "/index.html")
-		})
-		log.Println("Serving React frontend from:", frontendDist)
-	} else {
-		log.Fatal("frontend/dist not found! Run 'npm run build' in frontend/")
-	}
-
 	// API routes
 	api := router.Group("/api")
 	api.GET("/health", func(c *gin.Context) {
