@@ -125,9 +125,10 @@ type PaymentStatus string
 
 const (
 	PaymentPending   PaymentStatus = "pending"
-	PaymentCompleted  PaymentStatus = "completed"
+	PaymentCompleted PaymentStatus = "completed"
 	PaymentFailed    PaymentStatus = "failed"
 	PaymentCancelled PaymentStatus = "cancelled"
+	PaymentExpired   PaymentStatus = "expired"
 )
 
 type Order struct {

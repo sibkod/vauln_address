@@ -356,6 +356,76 @@ func (h *Handler) CreateOrder(c *gin.Context) {
 	})
 }
 
+// CancelOrder cancels a pending order
+func (h *Handler) CancelOrder(c *gin.Context) {
+	walletAddress, exists := c.Get("userAddress")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
+			Error: "authentication required",
+			Code:  "UNAUTHORIZED",
+		})
+		return
+	}
+
+	orderID := c.Param("id")
+	if orderID == "" {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error: "order id required",
+			Code:  "INVALID_ORDER",
+		})
+		return
+	}
+
+	// Get order
+	order, err := h.repo.GetOrderByUUID(c.Request.Context(), orderID)
+	if err != nil || order == nil {
+		c.JSON(http.StatusNotFound, models.ErrorResponse{
+			Error: "order not found",
+			Code:  "NOT_FOUND",
+		})
+		return
+	}
+
+	// Verify ownership
+	if order.WalletAddress != walletAddress.(string) {
+		c.JSON(http.StatusForbidden, models.ErrorResponse{
+			Error: "order does not belong to user",
+			Code:  "FORBIDDEN",
+		})
+		return
+	}
+
+	// Check if already completed or cancelled
+	if order.Status == string(models.PaymentCompleted) {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error: "cannot cancel completed order",
+			Code:  "ALREADY_COMPLETED",
+		})
+		return
+	}
+	if order.Status == string(models.PaymentCancelled) || order.Status == string(models.PaymentExpired) {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error: "order is already cancelled",
+			Code:  "ALREADY_CANCELLED",
+		})
+		return
+	}
+
+	// Cancel the order
+	if err := h.repo.CancelOrder(c.Request.Context(), orderID); err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error: "failed to cancel order",
+			Code:  "DB_ERROR",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "cancelled",
+		"message": "Order has been cancelled",
+	})
+}
+
 // ConfirmOrder confirms a payment by verifying the blockchain transaction or message signature
 func (h *Handler) ConfirmOrder(c *gin.Context) {
 	walletAddress, exists := c.Get("userAddress")
