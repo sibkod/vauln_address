@@ -97,8 +97,20 @@ async function payWithSolana() {
     return
   }
   
-  // Check if Phantom is connected
+  // Try to connect if not connected
   if (!phantom.isConnected || !phantom.publicKey) {
+    try {
+      await phantom.connect()
+    } catch (err) {
+      paymentStatus.value = 'error'
+      paymentMessage.value = 'Please connect your Phantom wallet first'
+      showPaymentModal.value = true
+      return
+    }
+  }
+  
+  // Check if we have publicKey now
+  if (!phantom.publicKey) {
     paymentStatus.value = 'error'
     paymentMessage.value = 'Please connect your Phantom wallet first'
     showPaymentModal.value = true
