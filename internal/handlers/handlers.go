@@ -862,8 +862,12 @@ func (h *Handler) CheckWallet(c *gin.Context) {
 	}
 
 	// Record check in history
+	userAddr := ""
+	if ua, exists := c.Get("userAddress"); exists {
+		userAddr = ua.(string)
+	}
 	go func() {
-		h.repo.RecordCheck(context.Background(), req.Address, req.Chain, status)
+		h.repo.RecordCheck(context.Background(), userAddr, req.Address, req.Chain, status)
 	}()
 
 	c.JSON(http.StatusOK, response)
@@ -877,11 +881,32 @@ func maxInt(a, b int) int {
 }
 
 func (h *Handler) GetRecentChecks(c *gin.Context) {
-	// First try to get from check_history
-	checks, err := h.repo.GetCheckHistory(c.Request.Context(), 50)
-	if err != nil {
-		// Fallback to wallets table
-		checks, err = h.repo.GetRecentChecks(c.Request.Context(), 50)
+	// Default limit
+	limit := 10
+	offset := 0
+	
+	// Check for pagination params
+	if l := c.Query("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
+			limit = parsed
+		}
+	}
+	if o := c.Query("offset"); o != "" {
+		if parsed, err := strconv.Atoi(o); err == nil && parsed >= 0 {
+			offset = parsed
+		}
+	}
+
+	// Check if user is authenticated
+	walletAddress, isAuthenticated := c.Get("userAddress")
+	
+	var checks []models.RecentCheck
+	var total int
+	var err error
+
+	if isAuthenticated && walletAddress != nil {
+		// Authenticated user: get their check history with pagination
+		checks, total, err = h.repo.GetCheckHistoryByWallet(c.Request.Context(), walletAddress.(string), limit, offset)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 				Error: "database error",
@@ -889,16 +914,42 @@ func (h *Handler) GetRecentChecks(c *gin.Context) {
 			})
 			return
 		}
+	} else {
+		// Anonymous: get global recent checks (limited to 10)
+		checks, err = h.repo.GetCheckHistory(c.Request.Context(), 10)
+		if err != nil {
+			// Fallback to wallets table
+			checks, err = h.repo.GetRecentChecks(c.Request.Context(), 10)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+					Error: "database error",
+					Code:  "DB_ERROR",
+				})
+				return
+			}
+		}
+		if checks == nil {
+			checks = []models.RecentCheck{}
+		}
 	}
 
 	if checks == nil {
 		checks = []models.RecentCheck{}
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	response := gin.H{
 		"checks": checks,
 		"count":  len(checks),
-	})
+	}
+	
+	// Add pagination info for authenticated users
+	if isAuthenticated && walletAddress != nil {
+		response["total"] = total
+		response["limit"] = limit
+		response["offset"] = offset
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 func (h *Handler) SubmitContact(c *gin.Context) {

@@ -590,6 +590,11 @@ function getTotal() {
             📦 Purchase History
           </RouterLink>
           
+          <!-- Checks history link -->
+          <RouterLink to="/checks" class="menu-item" @click="closeWalletMenu">
+            🔍 My Checks
+          </RouterLink>
+          
           <button class="menu-item logout" @click="disconnectWallet">
             🚪 Logout
           </button>
