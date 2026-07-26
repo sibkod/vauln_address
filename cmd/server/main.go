@@ -76,6 +76,7 @@ func main() {
 	})
 	api.GET("/chains", h.GetSupportedChains)
 	api.GET("/recent", h.GetRecentChecks)
+	api.GET("/checks", h.GetRecentChecks) // User check history
 	api.GET("/pricing", h.GetPricing)
 	api.GET("/packages", h.GetPackages) // Returns pre-defined pricing packages
 	api.GET("/auth/nonce", h.GetNonce)
