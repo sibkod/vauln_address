@@ -264,6 +264,13 @@ function closePaymentModal() {
   paymentMessage.value = ''
   txSignature.value = ''
 }
+
+function closeIfAllowed() {
+  // Only allow close by clicking overlay on success or error
+  if (paymentStatus.value !== 'waiting' && paymentStatus.value !== 'processing') {
+    closePaymentModal()
+  }
+}
 </script>
 
 <template>
@@ -395,16 +402,6 @@ function closePaymentModal() {
     </div>
   </Teleport>
 </template>
-
-<script setup lang="ts">
-// Add helper function for conditional close
-function closeIfAllowed() {
-  // Only allow close by clicking overlay on success or error
-  if (paymentStatus.value !== 'waiting' && paymentStatus.value !== 'processing') {
-    closePaymentModal()
-  }
-}
-</script>
 
 <style scoped>
 .pricing-header {
