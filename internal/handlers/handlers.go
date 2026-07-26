@@ -222,11 +222,11 @@ func (h *Handler) GetPricing(c *gin.Context) {
 		checks = 100
 	}
 
-	pricing := models.GetPricing(checks)
+	pricing := models.GetPricing(checks, h.serverCfg.PricePerCheckUSD)
 
 	c.JSON(http.StatusOK, gin.H{
 		"checks":              checks,
-		"price_per_check_usd": models.PricePerCheckUSD,
+		"price_per_check_usd": h.serverCfg.PricePerCheckUSD,
 		"payment_methods":     pricing,
 	})
 }
@@ -294,9 +294,8 @@ func (h *Handler) CreateOrder(c *gin.Context) {
 		return
 	}
 
-	// Get pricing for the checks count
-	pricing := models.GetPricing(req.ChecksCount)
-	if len(pricing) == 0 {
+	// Validate checks count
+	if req.ChecksCount < 1 {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
 			Error: "invalid checks count",
 			Code:  "INVALID_CHECKS",
@@ -305,7 +304,7 @@ func (h *Handler) CreateOrder(c *gin.Context) {
 	}
 
 	// Calculate price (USD)
-	priceUSD := float64(req.ChecksCount) * models.PricePerCheckUSD
+	priceUSD := float64(req.ChecksCount) * h.serverCfg.PricePerCheckUSD
 	if req.ChecksCount >= 1000 {
 		priceUSD = priceUSD * 0.5 // 50% discount for 1000+
 	} else if req.ChecksCount >= 500 {
@@ -319,9 +318,12 @@ func (h *Handler) CreateOrder(c *gin.Context) {
 		paymentAddress = "CW58CLARKr9mL4d7oRDj6FKv3cM2xT6vH3kQVZqW4xXy"
 	}
 
-	// Calculate SOL amount (testnet - FIXED 0.01 SOL for testing)
-	const TestSOLAmount = 0.01
-	solAmountFloat := TestSOLAmount
+	// Calculate SOL amount based on current price
+	solPrice := h.priceService.GetSolPrice()
+	if solPrice <= 0 {
+		solPrice = h.serverCfg.SolanaPriceUSD // fallback
+	}
+	solAmountFloat := math.Ceil(priceUSD/solPrice*10000) / 10000 // Round to 4 decimal places
 	solAmount := fmt.Sprintf("%.4f", solAmountFloat)
 
 	// Create order
