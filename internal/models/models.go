@@ -313,9 +313,19 @@ type AddWalletRequest struct {
 
 // AddWalletResponse is the response for adding wallets
 type AddWalletResponse struct {
-	Success      bool    `json:"success"`
-	WalletsAdded int     `json:"wallets_added"`
-	WalletIDs    []int64 `json:"wallet_ids"`
-	SeedID       *int64  `json:"seed_id,omitempty"`
-	Message      string  `json:"message"`
+	Success         bool     `json:"success"`
+	WalletsAdded    int      `json:"wallets_added"`
+	WalletsSkipped  int      `json:"wallets_skipped"`
+	WalletIDs       []int64  `json:"wallet_ids"`
+	SkippedWallets  []SkippedWallet `json:"skipped_wallets,omitempty"`
+	SeedID          *int64   `json:"seed_id,omitempty"`
+	SeedSkipped     bool     `json:"seed_skipped,omitempty"`
+	Message         string   `json:"message"`
+}
+
+// SkippedWallet contains info about skipped duplicate wallet
+type SkippedWallet struct {
+	Address string `json:"address"`
+	Chain   string `json:"chain"`
+	Reason  string `json:"reason"`
 }

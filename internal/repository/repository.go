@@ -1176,16 +1176,59 @@ func (r *Repository) DeleteAPIKey(ctx context.Context, keyID int64, walletAddres
 
 // ==================== Admin Methods ====================
 
-// SaveSeed saves a seed phrase and returns the ID
-func (r *Repository) SaveSeed(ctx context.Context, seedPhrase string) (int64, error) {
+// GetSeedByPhrase checks if a seed phrase exists and returns its ID
+func (r *Repository) GetSeedByPhrase(ctx context.Context, seedPhrase string) (int64, bool, error) {
+	var id int64
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id FROM seeds WHERE seed_phrase = ?`,
+		seedPhrase,
+	).Scan(&id)
+	if err == sql.ErrNoRows {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return id, true, nil
+}
+
+// SaveSeed saves a seed phrase and returns the ID (only if not exists)
+func (r *Repository) SaveSeed(ctx context.Context, seedPhrase string) (int64, bool, error) {
+	// First check if exists
+	id, exists, err := r.GetSeedByPhrase(ctx, seedPhrase)
+	if err != nil {
+		return 0, false, err
+	}
+	if exists {
+		return id, false, nil
+	}
+
+	// Insert new
 	result, err := r.db.ExecContext(ctx,
 		`INSERT INTO seeds (seed_phrase) VALUES (?)`,
 		seedPhrase,
 	)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
-	return result.LastInsertId()
+	newID, _ := result.LastInsertId()
+	return newID, true, nil
+}
+
+// GetWalletByAddressAndChain checks if a wallet exists for address+chain and returns its ID
+func (r *Repository) GetWalletByAddressAndChain(ctx context.Context, address, chain string) (int64, bool, error) {
+	var id int64
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id FROM wallets WHERE address = ? AND chain = ?`,
+		address, chain,
+	).Scan(&id)
+	if err == sql.ErrNoRows {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return id, true, nil
 }
 
 // CreateWalletWithSeed creates a wallet with a reference to a seed

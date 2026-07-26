@@ -1497,12 +1497,14 @@ func (h *Handler) AddWallet(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	// Save seed phrase if provided
+	// Save seed phrase if provided (with duplicate check)
 	var seedID *int64
+	seedSkipped := false
 	var walletIDs []int64
+	var skippedWallets []models.SkippedWallet
 
 	if req.SeedPhrase != "" {
-		id, err := h.repo.SaveSeed(ctx, req.SeedPhrase)
+		id, isNew, err := h.repo.SaveSeed(ctx, req.SeedPhrase)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 				Error: "failed to save seed phrase",
@@ -1511,34 +1513,71 @@ func (h *Handler) AddWallet(c *gin.Context) {
 			return
 		}
 		seedID = &id
+		seedSkipped = !isNew
 	}
 
-	// Add each address as a wallet
+	// Add each address as a wallet (with duplicate check)
 	for chain, address := range req.Addresses {
 		address = strings.TrimSpace(address)
 		chain = strings.ToLower(strings.TrimSpace(chain))
 
 		if !models.IsValidChain(chain) {
+			skippedWallets = append(skippedWallets, models.SkippedWallet{
+				Address: address,
+				Chain:   chain,
+				Reason:  "invalid chain",
+			})
 			continue // Skip invalid chains
 		}
 
 		// Validate address format
 		valid, _ := validators.ValidateAddress(chain, address)
 		if !valid {
+			skippedWallets = append(skippedWallets, models.SkippedWallet{
+				Address: address,
+				Chain:   chain,
+				Reason:  "invalid address format",
+			})
 			continue // Skip invalid addresses
 		}
 
-		var walletID int64
-		var err error
-
-		if seedID != nil {
-			walletID, err = h.repo.CreateWalletWithSeed(ctx, address, chain, req.Status, *seedID, req.Reason, req.Source)
-		} else {
-			walletID, err = h.repo.CreateWallet(ctx, address, chain, req.Status, req.Reason, req.Source)
+		// Check if wallet already exists
+		existingID, exists, err := h.repo.GetWalletByAddressAndChain(ctx, address, chain)
+		if err != nil {
+			log.Printf("Failed to check wallet %s/%s: %v", chain, address, err)
+			skippedWallets = append(skippedWallets, models.SkippedWallet{
+				Address: address,
+				Chain:   chain,
+				Reason:  "database error",
+			})
+			continue
+		}
+		if exists {
+			log.Printf("Wallet already exists: %s/%s (id=%d)", chain, address, existingID)
+			skippedWallets = append(skippedWallets, models.SkippedWallet{
+				Address: address,
+				Chain:   chain,
+				Reason:  "duplicate wallet",
+			})
+			continue
 		}
 
-		if err != nil {
-			log.Printf("Failed to create wallet %s/%s: %v", chain, address, err)
+		var walletID int64
+		var errCreate error
+
+		if seedID != nil {
+			walletID, errCreate = h.repo.CreateWalletWithSeed(ctx, address, chain, req.Status, *seedID, req.Reason, req.Source)
+		} else {
+			walletID, errCreate = h.repo.CreateWallet(ctx, address, chain, req.Status, req.Reason, req.Source)
+		}
+
+		if errCreate != nil {
+			log.Printf("Failed to create wallet %s/%s: %v", chain, address, errCreate)
+			skippedWallets = append(skippedWallets, models.SkippedWallet{
+				Address: address,
+				Chain:   chain,
+				Reason:  "failed to create",
+			})
 			continue
 		}
 
@@ -1551,11 +1590,14 @@ func (h *Handler) AddWallet(c *gin.Context) {
 	}
 
 	response := models.AddWalletResponse{
-		Success:      len(walletIDs) > 0,
-		WalletsAdded: len(walletIDs),
-		WalletIDs:    walletIDs,
-		SeedID:       seedID,
-		Message:      fmt.Sprintf("Added %d wallet(s)", len(walletIDs)),
+		Success:        len(walletIDs) > 0,
+		WalletsAdded:   len(walletIDs),
+		WalletsSkipped: len(skippedWallets),
+		WalletIDs:      walletIDs,
+		SkippedWallets: skippedWallets,
+		SeedID:         seedID,
+		SeedSkipped:    seedSkipped,
+		Message:        fmt.Sprintf("Added %d wallet(s), skipped %d", len(walletIDs), len(skippedWallets)),
 	}
 
 	c.JSON(http.StatusOK, response)
