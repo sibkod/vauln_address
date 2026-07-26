@@ -26,8 +26,10 @@ interface PackagesResponse {
   network: string
 }
 
-// Network config - from backend
-const RPC_URL = 'https://api.devnet.solana.com'
+// Network config - from environment variables
+// Set VITE_SOLANA_RPC in .env to switch between devnet/mainnet
+const RPC_URL = import.meta.env.VITE_SOLANA_RPC || 'https://api.devnet.solana.com'
+const SOLANA_CLUSTER = import.meta.env.VITE_SOLANA_CLUSTER || 'devnet'
 
 const globalWallet = inject<any>('wallet')
 
@@ -390,7 +392,7 @@ function closeIfAllowed() {
         
         <div v-if="txSignature && paymentStatus !== 'error'" class="modal-tx">
           <span>TX:</span>
-          <a :href="`https://explorer.solana.com/tx/${txSignature}?cluster=devnet`" target="_blank">
+          <a :href="`https://explorer.solana.com/tx/${txSignature}?cluster=${SOLANA_CLUSTER}`" target="_blank">
             {{ txSignature.slice(0, 8) }}...{{ txSignature.slice(-8) }}
           </a>
         </div>
