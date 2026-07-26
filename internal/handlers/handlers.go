@@ -303,13 +303,19 @@ func (h *Handler) CreateOrder(c *gin.Context) {
 		return
 	}
 
-	// Calculate price (USD)
-	priceUSD := float64(req.ChecksCount) * h.serverCfg.PricePerCheckUSD
+	// Calculate price (USD) - use PricePerCheckUSD as base
+	pricePerCheck := h.serverCfg.PricePerCheckUSD
+	priceUSD := float64(req.ChecksCount) * pricePerCheck
+	
+	// Apply volume discounts
 	if req.ChecksCount >= 1000 {
 		priceUSD = priceUSD * 0.5 // 50% discount for 1000+
 	} else if req.ChecksCount >= 500 {
 		priceUSD = priceUSD * 0.6 // 40% discount for 500+
 	}
+	
+	// Round to 2 decimal places
+	priceUSD = math.Round(priceUSD*100) / 100
 
 	// Get payment address
 	paymentAddress := h.serverCfg.SolanaPaymentAddr
