@@ -254,9 +254,6 @@ type RenewAPIKeyRequest struct {
 // ==================== Pricing Plans ====================
 
 const (
-	// Price per check in USD
-	PricePerCheckUSD = 0.10 // $0.10 per check
-	
 	// Token discount
 	SUIDiscountPercent = 50 // 50% discount for SUI token payments
 	
@@ -269,8 +266,8 @@ const (
 )
 
 // GetPricing returns pricing for different currencies
-func GetPricing(checksCount int) []PaymentMethod {
-	basePrice := float64(checksCount) * PricePerCheckUSD
+func GetPricing(checksCount int, pricePerCheck float64) []PaymentMethod {
+	basePrice := float64(checksCount) * pricePerCheck
 	
 	return []PaymentMethod{
 		{
