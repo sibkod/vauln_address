@@ -629,22 +629,6 @@ function getTotal() {
           </div>
         </div>
         
-        <div class="wallet-section">
-          <div class="wallet-section-title">🟣 Ethereum / EVM</div>
-          <div class="wallet-options">
-            <button 
-              v-for="wallet in walletOptions.filter(w => w.chain === 'evm')" 
-              :key="wallet.id"
-              class="wallet-option"
-              @click="connectWallet(wallet.id)"
-              :disabled="connecting"
-            >
-              <span class="wallet-icon">{{ wallet.icon }}</span>
-              <span class="wallet-name">{{ wallet.name }}</span>
-            </button>
-          </div>
-        </div>
-        
         <div v-if="connectError" class="wallet-error">{{ connectError }}</div>
       </div>
     </div>
