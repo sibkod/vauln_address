@@ -100,7 +100,7 @@ const chainPlaceholders: Record<string, string> = {
 
 onMounted(async () => {
   try {
-    const res = await fetch(apiUrl('/api/chains')
+    const res = await fetch(apiUrl('/api/chains'))
     if (res.ok) {
       const data = await res.json()
       chains.value = data.chains || []
@@ -108,7 +108,7 @@ onMounted(async () => {
   } catch {}
 
   try {
-    const res = await fetch(apiUrl('/api/recent')
+    const res = await fetch(apiUrl('/api/recent'))
     if (res.ok) {
       const data = await res.json()
       recentChecks.value = (data.checks || []).map((c: any) => ({
@@ -135,7 +135,7 @@ async function check() {
   }
   
   try {
-    const res = await fetch(apiUrl('/api/check', {
+    const res = await fetch(apiUrl('/api/check'), {
       method: 'POST',
       headers,
       body: JSON.stringify({ address: address.value.trim(), chain: chain.value })

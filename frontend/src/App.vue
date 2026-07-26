@@ -133,7 +133,7 @@ async function refreshBalance() {
     if (authToken.value) {
       headers['Authorization'] = `Bearer ${authToken.value}`
     }
-    const res = await fetch(apiUrl('/api/user/balance', { headers })
+    const res = await fetch(apiUrl('/api/user/balance'), { headers })
     if (res.ok) {
       const data = await res.json()
       userBalance.value = data.balance
@@ -151,7 +151,7 @@ async function refreshBalance() {
 async function fetchPurchaseHistory(limit = 5) {
   if (!authToken.value) return []
   try {
-    const res = await fetch(apiUrl(`/api/user/purchases?limit=${limit}`, {
+    const res = await fetch(apiUrl(`/api/user/purchases?limit=${limit}`), {
       headers: { 'Authorization': `Bearer ${authToken.value}` }
     })
     if (res.ok) {
@@ -194,7 +194,7 @@ onMounted(async () => {
   
   // Check backend availability
   try {
-    const res = await fetch(apiUrl('/api/chains', { 
+    const res = await fetch(apiUrl('/api/chains'), { 
       signal: AbortSignal.timeout(5000)
     })
     if (res.ok) {
@@ -373,7 +373,7 @@ function hexToBase64(hex: string): string {
 
 async function authenticateSolana(provider: any, address: string) {
   try {
-    const nonceRes = await fetch(apiUrl(`/api/auth/nonce?address=${address}&chain=solana`)
+    const nonceRes = await fetch(apiUrl(`/api/auth/nonce?address=${address}&chain=solana`))
     const nonceData = await nonceRes.json()
     
     if (!nonceData.nonce) {
@@ -410,7 +410,7 @@ async function authenticateSolana(provider: any, address: string) {
     const signature = uint8ArrayToBase64(signedMessage)
     console.log('Signature (base64):', signature.substring(0, 20) + '...')
     
-    const authRes = await fetch(apiUrl('/api/auth/login', {
+    const authRes = await fetch(apiUrl('/api/auth/login'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ address, chain: 'solana', Signature: signature, Message: message })
@@ -448,7 +448,7 @@ async function authenticateSolana(provider: any, address: string) {
 
 async function authenticateEVM(provider: any, address: string) {
   try {
-    const nonceRes = await fetch(apiUrl(`/api/auth/nonce?address=${address}&chain=evm`)
+    const nonceRes = await fetch(apiUrl(`/api/auth/nonce?address=${address}&chain=evm`))
     const nonceData = await nonceRes.json()
     
     if (!nonceData.nonce) {
@@ -467,7 +467,7 @@ async function authenticateEVM(provider: any, address: string) {
     
     const signatureBase64 = hexToBase64(signature)
     
-    const authRes = await fetch(apiUrl('/api/auth/login', {
+    const authRes = await fetch(apiUrl('/api/auth/login'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ address, chain: 'evm', Signature: signatureBase64, Message: message })
