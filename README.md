@@ -2,18 +2,39 @@
 
 API для проверки безопасности криптокошельков в разных блокчейнах (EVM, Bitcoin, Solana, Sui, Tron).
 
+## Архитектура
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Nginx (port 80/443)                     │
+│   ┌─────────────────────────────────────────────────────┐   │
+│   │  Frontend (SPA) - статические файлы                │   │
+│   │  /api/* → проксирует на API                        │   │
+│   └─────────────────────────────────────────────────────┘   │
+└─────────────────────┬───────────────────────────────────────┘
+                      │
+                      │ proxy_pass
+                      ▼
+┌─────────────────────────────────────────────────────────────┐
+│                 Go API Server (port 9111)                   │
+│   Только API endpoints /api/*                                │
+└─────────────────────────────────────────────────────────────┘
+```
+
 ## Технологии
 
 - **Язык**: Go 1.21+
 - **База данных**: PostgreSQL
 - **Фреймворк**: Gin
+- **Frontend**: Vue.js (собирается отдельно)
+- **Веб-сервер**: Nginx
 - **Конфигурация**: .env файл
 
 ## Структура проекта
 
 ```
 vauln-address/
-├── cmd/server/          # Точка входа
+├── cmd/server/          # Точка входа API
 ├── internal/
 │   ├── config/          # Конфигурация
 │   ├── handlers/        # HTTP обработчики
@@ -21,8 +42,12 @@ vauln-address/
 │   ├── models/          # Модели данных
 │   ├── repository/     # Работа с БД
 │   └── validators/      # Валидация адресов
+├── frontend/            # Vue.js приложение
+│   ├── src/            # Исходный код
+│   └── dist/           # Собранные файлы
 ├── migrations/          # SQL миграции
-├── .env.example         # Пример конфигурации
+├── nginx.conf.example   # Пример конфигурации Nginx
+├── .env.example         # Пример конфигурации API
 └── go.mod
 ```
 
@@ -153,6 +178,45 @@ go run cmd/server/main.go
 
 ## Развертывание
 
+### 1. Сборка Frontend
+
+```bash
+cd frontend
+npm install
+npm run build
+# Файлы будут в frontend/dist/
+```
+
+### 2. Настройка API
+
+```bash
+cp .env.example .env
+# Отредактируйте .env (SERVER_PORT=9111 уже установлен по умолчанию)
+```
+
+### 3. Настройка Nginx
+
+```bash
+# Скопируйте конфигурацию
+cp nginx.conf.example /etc/nginx/sites-available/vauln-address
+
+# Отредактируйте конфигурацию:
+# - set $API_ADDRESS - адрес вашего API сервера
+# - set $FRONTEND_PATH - путь к собранным файлам frontend
+# - server_name - ваш домен
+
+# Активируйте сайт
+ln -s /etc/nginx/sites-available/vauln-address /etc/nginx/sites-enabled/
+nginx -t && systemctl reload nginx
+```
+
+### 4. Запуск API
+
+```bash
+# Запуск API сервера (порт 9111)
+go run cmd/server/main.go
+```
+
 ### Docker
 
 ```dockerfile
@@ -165,6 +229,25 @@ FROM alpine
 COPY --from=builder /app/server /server
 COPY --from=builder /app/.env.example /.env
 CMD ["/server"]
+```
+
+### Systemd Service (пример)
+
+```ini
+[Unit]
+Description=Vauln Address API
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/vauln-address
+ExecStart=/opt/vauln-address/server
+EnvironmentFile=/opt/vauln-address/.env
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
 ```
 
 ## Разработка

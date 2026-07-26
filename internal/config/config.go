@@ -68,7 +68,7 @@ func Load() *Config {
 		DBSSLMode:         getEnv("DB_SSLMODE", "disable"),
 		DBCharset:         getEnv("DB_CHARSET", "utf8mb4"),
 		SQLitePath:        getEnv("SQLITE_PATH", "./data/vauln_address.db"),
-		ServerPort:        getEnv("SERVER_PORT", "8080"),
+		ServerPort:        getEnv("SERVER_PORT", "9111"),
 		RateLimitRequests: getEnvInt("RATE_LIMIT_REQUESTS", 10),
 		RateLimitHours:    getEnvInt("RATE_LIMIT_WINDOW_HOURS", 24),
 		FreeCheckLimit:    getEnvInt("FREE_CHECK_LIMIT", 3),
