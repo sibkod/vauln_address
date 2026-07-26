@@ -214,6 +214,10 @@ function startPolling(signature: string) {
         if (globalWallet) {
           globalWallet.userBalance.value = data.balance || 0
           localStorage.setItem('userBalance', String(data.balance || 0))
+          // Refresh user data from /api/me
+          if (globalWallet.fetchMe) {
+            globalWallet.fetchMe()
+          }
         }
         
         setTimeout(() => {

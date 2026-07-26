@@ -416,6 +416,89 @@ func (h *Handler) VerifyPayment(c *gin.Context) {
 	})
 }
 
+// GetMe returns comprehensive user info including balance, rate limits, and user data
+func (h *Handler) GetMe(c *gin.Context) {
+	walletAddress, exists := c.Get("userAddress")
+	chain, _ := c.Get("userChain")
+	chainStr, _ := chain.(string)
+
+	// Get rate limit info
+	ip := c.ClientIP()
+	rateLimit, _ := h.repo.GetRateLimit(c.Request.Context(), ip)
+	rateLimitRemaining := h.serverCfg.RateLimitRequests
+	rateLimitUsed := 0
+	if rateLimit != nil {
+		rateLimitRemaining = h.serverCfg.RateLimitRequests - rateLimit.Count
+		if rateLimitRemaining < 0 {
+			rateLimitRemaining = 0
+		}
+		rateLimitUsed = rateLimit.Count
+	}
+
+	// Check if user is authenticated
+	if exists && walletAddress != nil && walletAddress.(string) != "" && chainStr != "" {
+		// Authenticated user
+		user, err := h.authService.GetUserByWallet(walletAddress.(string), chainStr)
+		if err != nil || user == nil {
+			c.JSON(http.StatusOK, gin.H{
+				"wallet_address":         walletAddress.(string),
+				"chain":                  chainStr,
+				"balance":                0,
+				"purchased_balance":      0,
+				"rate_limit_remaining":   rateLimitRemaining,
+				"rate_limit_used":        rateLimitUsed,
+				"rate_limit_limit":       h.serverCfg.RateLimitRequests,
+				"is_premium":             false,
+				"is_authenticated":       true,
+			})
+			return
+		}
+
+		purchasedBalance := user.Balance
+		isPremium := purchasedBalance > 0
+
+		// Add rate limit headers
+		c.Header("X-RateLimit-Limit", fmt.Sprintf("%d", h.serverCfg.RateLimitRequests))
+		c.Header("X-RateLimit-Remaining", fmt.Sprintf("%d", rateLimitRemaining))
+		c.Header("X-RateLimit-Used", fmt.Sprintf("%d", rateLimitUsed))
+		c.Header("X-RateLimit-Source", "balance")
+		c.Header("X-Balance-Available", fmt.Sprintf("%d", purchasedBalance))
+
+		c.JSON(http.StatusOK, gin.H{
+			"wallet_address":         user.WalletAddress,
+			"chain":                  user.Chain,
+			"balance":                purchasedBalance,
+			"purchased_balance":      purchasedBalance,
+			"rate_limit_remaining":   rateLimitRemaining,
+			"rate_limit_used":        rateLimitUsed,
+			"rate_limit_limit":       h.serverCfg.RateLimitRequests,
+			"is_premium":             isPremium,
+			"is_authenticated":       true,
+			"created_at":             user.CreatedAt,
+			"last_login_at":          user.LastLoginAt,
+		})
+		return
+	}
+
+	// Anonymous user
+	c.Header("X-RateLimit-Limit", fmt.Sprintf("%d", h.serverCfg.RateLimitRequests))
+	c.Header("X-RateLimit-Remaining", fmt.Sprintf("%d", rateLimitRemaining))
+	c.Header("X-RateLimit-Used", fmt.Sprintf("%d", rateLimitUsed))
+	c.Header("X-RateLimit-Source", "ip")
+
+	c.JSON(http.StatusOK, gin.H{
+		"wallet_address":         nil,
+		"chain":                  nil,
+		"balance":                rateLimitRemaining,
+		"purchased_balance":      0,
+		"rate_limit_remaining":   rateLimitRemaining,
+		"rate_limit_used":        rateLimitUsed,
+		"rate_limit_limit":       h.serverCfg.RateLimitRequests,
+		"is_premium":             false,
+		"is_authenticated":       false,
+	})
+}
+
 // GetBalance returns the current user's balance (or remaining rate limit for anonymous)
 func (h *Handler) GetBalance(c *gin.Context) {
 	// Check if user is authenticated

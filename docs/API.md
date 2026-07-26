@@ -212,6 +212,60 @@ Verifies signature and returns JWT token.
 
 ---
 
+### Get Current User (Me)
+
+**GET** `/api/me`
+
+Returns comprehensive user information including balance, rate limits, and authentication status. This endpoint is designed for polling from the frontend to keep user data up-to-date.
+
+**Headers:**
+- `Authorization: Bearer {token}` (optional - works for both authenticated and anonymous users)
+
+**Response (Authenticated):**
+```json
+{
+  "wallet_address": "0x742d35Cc...",
+  "chain": "evm",
+  "balance": 100,
+  "purchased_balance": 100,
+  "rate_limit_remaining": 95,
+  "rate_limit_used": 5,
+  "rate_limit_limit": 100,
+  "is_premium": true,
+  "is_authenticated": true,
+  "created_at": "2024-01-01T00:00:00Z",
+  "last_login_at": "2024-01-01T00:00:00Z"
+}
+```
+
+**Response (Anonymous):**
+```json
+{
+  "wallet_address": null,
+  "chain": null,
+  "balance": 95,
+  "purchased_balance": 0,
+  "rate_limit_remaining": 95,
+  "rate_limit_used": 5,
+  "rate_limit_limit": 100,
+  "is_premium": false,
+  "is_authenticated": false
+}
+```
+
+**Response Headers:**
+- `X-RateLimit-Limit` - Maximum requests allowed
+- `X-RateLimit-Remaining` - Requests remaining
+- `X-RateLimit-Used` - Requests used
+- `X-RateLimit-Reset` - Unix timestamp for reset
+- `X-RateLimit-Source` - `ip` or `balance`
+- `X-Balance-Available` - Available balance (for authenticated users)
+
+**Errors:**
+- Returns 200 OK for all requests (works for anonymous users)
+
+---
+
 ## Payment Endpoints
 
 ### Create Order
@@ -594,6 +648,29 @@ All errors follow this format:
 
 - **Unauthenticated:** 100 requests per 15 minutes per IP
 - **Authenticated:** Based on user's balance (checks remaining)
+
+### Rate Limit Response Headers
+
+All API responses include rate limit headers:
+
+| Header | Description |
+|--------|-------------|
+| `X-RateLimit-Limit` | Maximum requests allowed in current window |
+| `X-RateLimit-Remaining` | Requests remaining in current window |
+| `X-RateLimit-Used` | Requests used in current window |
+| `X-RateLimit-Reset` | Unix timestamp when the rate limit resets |
+| `X-RateLimit-Source` | Source of rate limiting: `ip` or `balance` |
+| `X-Balance-Available` | Available balance for authenticated users (if using balance) |
+
+**Example Response Headers:**
+```
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 95
+X-RateLimit-Used: 5
+X-RateLimit-Reset: 1751347200
+X-RateLimit-Source: balance
+X-Balance-Available: 50
+```
 
 ---
 
