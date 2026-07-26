@@ -157,7 +157,7 @@ async function fetchPurchaseHistory(limit = 5) {
 }
 
 onMounted(async () => {
-  const saved = localStorage.getItem('walletCheckerTheme')
+  const saved = localStorage.getItem('pwndTheme')
   if (saved === 'light') darkMode.value = false
   
   // Restore auth state
@@ -209,7 +209,7 @@ onUnmounted(() => {
 function toggleTheme() {
   darkMode.value = !darkMode.value
   document.body.classList.toggle('light', !darkMode.value)
-  localStorage.setItem('walletCheckerTheme', darkMode.value ? 'dark' : 'light')
+  localStorage.setItem('pwndTheme', darkMode.value ? 'dark' : 'light')
 }
 
 function formatAddress(addr: string) {
@@ -546,7 +546,7 @@ function getTotal() {
         
   <!-- Navigation -->
   <nav class="nav">
-    <div class="nav-brand" @click="$router.push('/')">◈ <span>Wallet</span>Checker</div>
+    <div class="nav-brand" @click="$router.push('/')">◈ <span>pwnd</span></div>
     <div class="nav-center">
       <RouterLink to="/" class="nav-link">Home</RouterLink>
       <RouterLink to="/pricing" class="nav-link">Pricing</RouterLink>
