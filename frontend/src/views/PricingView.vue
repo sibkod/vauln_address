@@ -128,7 +128,7 @@ async function payWithSolana() {
   // Open payment modal
   showPaymentModal.value = true
   paymentStatus.value = 'waiting'
-  paymentMessage.value = `Send ${selectedPackage.value.price_sol} SOL to complete your purchase`
+  paymentMessage.value = 'Creating order...'
   txSignature.value = ''
   
   try {
@@ -140,7 +140,6 @@ async function payWithSolana() {
     }
     
     paymentStatus.value = 'processing'
-    paymentMessage.value = 'Creating order...'
     
     const walletAddr = phantom.publicKey.toString()
     
@@ -172,11 +171,12 @@ async function payWithSolana() {
       throw new Error(orderData.error || 'Failed to create order')
     }
     
-    paymentMessage.value = 'Waiting for payment...'
+    // Show actual amount from backend (may differ from displayed price due to SOL price changes)
+    const solAmount = parseFloat(orderData.amount)
+    paymentMessage.value = `Send ${solAmount.toFixed(4)} SOL to complete your purchase`
     
     const senderPublicKey = phantom.publicKey
     const recipientPublicKey = new PublicKey(orderData.payment_address || paymentAddress.value)
-    const solAmount = parseFloat(orderData.amount) || selectedPackage.value.price_sol
     const lamports = Math.round(solAmount * LAMPORTS_PER_SOL)
     
     // Create transaction
@@ -193,7 +193,8 @@ async function payWithSolana() {
     transaction.feePayer = senderPublicKey
     
     // Sign and send using Phantom
-    paymentMessage.value = 'Sign the transaction in your wallet...'
+    paymentStatus.value = 'waiting'
+    paymentMessage.value = `Sign the transaction in your wallet (${solAmount.toFixed(4)} SOL)...`
     const { signature } = await phantom.signAndSendTransaction(transaction)
     
     console.log('Transaction signature:', signature)
