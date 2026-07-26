@@ -650,7 +650,7 @@ function getTotal() {
       <span class="stat-item" style="font-weight:500;color:#98a8ce;">total <span class="num">{{ getTotal() }}</span></span>
     </div>
     <div class="footer-meta">
-      <span>© 2026 Wallet Checker</span>
+      <span>© 2026 <a href="https://pwnd.info" style="color:inherit;text-decoration:none;">pwnd.info</a></span>
       <span>Security intelligence for Web3</span>
       <span>v2.0</span>
     </div>

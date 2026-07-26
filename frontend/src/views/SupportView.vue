@@ -78,7 +78,7 @@ function copyAddress(address: string) {
     </div>
 
     <div class="support-note">
-      <p>💡 All donations are greatly appreciated and help us maintain and improve Wallet Checker.</p>
+      <p>💡 All donations are greatly appreciated and help us maintain and improve pwnd.</p>
     </div>
   </div>
 </template>

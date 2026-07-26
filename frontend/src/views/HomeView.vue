@@ -157,7 +157,7 @@ function getResultClass() {
   <!-- Logo -->
   <div class="logo-area">
     <div class="badge">⚡ multi‑chain security</div>
-    <h1>Wallet Checker</h1>
+    <h1>pwnd</h1>
     <div class="sub">EVM · BTC · Solana · Sui · Tron</div>
   </div>
 
