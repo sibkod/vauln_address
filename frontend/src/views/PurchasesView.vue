@@ -21,15 +21,24 @@ const orders = ref<Order[]>([])
 const loading = ref(true)
 const error = ref('')
 
-async function fetchPurchases() {
+// Pagination
+const currentPage = ref(1)
+const perPage = ref(10)
+const totalPages = ref(1)
+const total = ref(0)
+
+async function fetchPurchases(page: number = 1) {
   if (!wallet?.authToken.value) {
     error.value = 'Please connect your wallet to view purchase history'
     loading.value = false
     return
   }
 
+  loading.value = true
+  error.value = ''
+
   try {
-    const res = await fetch('/api/user/purchases?limit=100', {
+    const res = await fetch(`/api/user/purchases?page=${page}&per_page=${perPage.value}`, {
       headers: { 'Authorization': `Bearer ${wallet.authToken.value}` }
     })
     
@@ -39,6 +48,9 @@ async function fetchPurchases() {
     
     const data = await res.json()
     orders.value = data.orders || []
+    total.value = data.total || 0
+    totalPages.value = data.total_pages || 1
+    currentPage.value = data.page || 1
   } catch (err: any) {
     error.value = err.message || 'Failed to load purchase history'
   } finally {
@@ -56,6 +68,12 @@ function formatAmount(order: Order) {
     return `${order.token_amount.toFixed(4)} SOL`
   }
   return `$${order.total_usd.toFixed(2)}`
+}
+
+function goToPage(page: number) {
+  if (page >= 1 && page <= totalPages.value) {
+    fetchPurchases(page)
+  }
 }
 
 onMounted(() => {
@@ -77,6 +95,7 @@ onMounted(() => {
 
     <div v-else-if="error" class="error-message">
       <p>{{ error }}</p>
+      <button @click="fetchPurchases(currentPage)" class="retry-btn">Retry</button>
     </div>
 
     <div v-else-if="orders.length === 0" class="empty-state">
@@ -87,6 +106,10 @@ onMounted(() => {
     </div>
 
     <div v-else class="orders-list">
+      <div class="orders-count">
+        Showing {{ orders.length }} of {{ total }} purchases
+      </div>
+      
       <table class="orders-table">
         <thead>
           <tr>
@@ -116,6 +139,37 @@ onMounted(() => {
           </tr>
         </tbody>
       </table>
+
+      <!-- Pagination -->
+      <div v-if="totalPages > 1" class="pagination">
+        <button 
+          class="page-btn" 
+          :disabled="currentPage === 1" 
+          @click="goToPage(currentPage - 1)"
+        >
+          ← Prev
+        </button>
+        
+        <div class="page-numbers">
+          <button 
+            v-for="page in totalPages" 
+            :key="page"
+            class="page-num"
+            :class="{ active: page === currentPage }"
+            @click="goToPage(page)"
+          >
+            {{ page }}
+          </button>
+        </div>
+        
+        <button 
+          class="page-btn" 
+          :disabled="currentPage === totalPages" 
+          @click="goToPage(currentPage + 1)"
+        >
+          Next →
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -293,5 +347,86 @@ onMounted(() => {
 
 .no-tx {
   color: #4a5568;
+}
+
+.orders-count {
+  font-size: 0.85rem;
+  color: #6b7a9e;
+  margin-bottom: 1rem;
+  text-align: right;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid #2a3548;
+}
+
+.page-btn {
+  padding: 0.5rem 1rem;
+  background: #151a24;
+  border: 1px solid #2a3548;
+  border-radius: 8px;
+  color: #98a8ce;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.page-btn:hover:not(:disabled) {
+  border-color: #667eea;
+  color: #667eea;
+}
+
+.page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.page-numbers {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.page-num {
+  min-width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #151a24;
+  border: 1px solid #2a3548;
+  border-radius: 6px;
+  color: #98a8ce;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.page-num:hover {
+  border-color: #667eea;
+  color: #667eea;
+}
+
+.page-num.active {
+  background: #667eea;
+  border-color: #667eea;
+  color: white;
+}
+
+.retry-btn {
+  margin-top: 1rem;
+  padding: 0.5rem 1rem;
+  background: #667eea;
+  border: none;
+  border-radius: 6px;
+  color: white;
+  cursor: pointer;
+}
+
+.retry-btn:hover {
+  background: #5568d3;
 }
 </style>

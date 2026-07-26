@@ -608,7 +608,7 @@ func (h *Handler) GetBalance(c *gin.Context) {
 	})
 }
 
-// GetPurchaseHistory returns the user's order history
+// GetPurchaseHistory returns the user's order history with pagination
 func (h *Handler) GetPurchaseHistory(c *gin.Context) {
 	walletAddress, exists := c.Get("userAddress")
 	if !exists {
@@ -619,16 +619,23 @@ func (h *Handler) GetPurchaseHistory(c *gin.Context) {
 		return
 	}
 
-	limitStr := c.DefaultQuery("limit", "50")
-	var limit int
-	if _, err := fmt.Sscanf(limitStr, "%d", &limit); err != nil || limit < 1 {
-		limit = 50
+	pageStr := c.DefaultQuery("page", "1")
+	perPageStr := c.DefaultQuery("per_page", "10")
+	
+	var page, perPage int
+	if _, err := fmt.Sscanf(pageStr, "%d", &page); err != nil || page < 1 {
+		page = 1
 	}
-	if limit > 100 {
-		limit = 100
+	if _, err := fmt.Sscanf(perPageStr, "%d", &perPage); err != nil || perPage < 1 {
+		perPage = 10
+	}
+	if perPage > 50 {
+		perPage = 50
 	}
 
-	orders, err := h.repo.GetOrdersByWallet(c.Request.Context(), walletAddress.(string), limit)
+	offset := (page - 1) * perPage
+
+	orders, total, err := h.repo.GetOrdersByWalletPaginated(c.Request.Context(), walletAddress.(string), perPage, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error: "failed to get orders",
@@ -641,9 +648,14 @@ func (h *Handler) GetPurchaseHistory(c *gin.Context) {
 		orders = []models.Order{}
 	}
 
+	totalPages := (total + perPage - 1) / perPage
+
 	c.JSON(http.StatusOK, gin.H{
-		"orders": orders,
-		"count":  len(orders),
+		"orders":      orders,
+		"total":       total,
+		"page":        page,
+		"per_page":    perPage,
+		"total_pages": totalPages,
 	})
 }
 
