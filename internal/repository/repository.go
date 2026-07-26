@@ -395,7 +395,7 @@ func (r *Repository) runMigrations(ctx context.Context) error {
 	}
 
 	// Migration 004: Create seeds table and add columns to wallets
-	migration004(ctx)
+	r.migration004(ctx)
 
 	return nil
 }
