@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, inject, onMounted, computed } from 'vue'
+import { ref, inject, onMounted, computed, onUnmounted } from 'vue'
 
 const chain = ref('evm')
 const address = ref('')
@@ -27,12 +27,52 @@ const displayBalance = computed(() => {
 
 const isExhausted = computed(() => displayBalance.value <= 0)
 
-const resetTime = computed(() => {
-  if (!isExhausted.value) return null
+// Countdown timer
+const countdown = ref('')
+let countdownInterval: number | null = null
+
+function updateCountdown() {
   const reset = rateLimitInfo?.value?.reset
-  if (!reset) return null
-  const resetDate = new Date(reset * 1000)
-  return resetDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  if (!reset) {
+    countdown.value = ''
+    return
+  }
+  
+  const now = Date.now()
+  const resetMs = reset * 1000
+  const diff = resetMs - now
+  
+  if (diff <= 0) {
+    countdown.value = ''
+    // Refresh to get new balance
+    if (rateLimitInfo) {
+      rateLimitInfo.value.remaining = rateLimitInfo.value.limit
+    }
+    return
+  }
+  
+  const hours = Math.floor(diff / (1000 * 60 * 60))
+  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
+  const seconds = Math.floor((diff % (1000 * 60)) / 1000)
+  
+  if (hours > 0) {
+    countdown.value = `${hours}h ${minutes.toString().padStart(2, '0')}m`
+  } else if (minutes > 0) {
+    countdown.value = `${minutes}m ${seconds.toString().padStart(2, '0')}s`
+  } else {
+    countdown.value = `${seconds}s`
+  }
+}
+
+onMounted(() => {
+  updateCountdown()
+  countdownInterval = window.setInterval(updateCountdown, 1000)
+})
+
+onUnmounted(() => {
+  if (countdownInterval) {
+    clearInterval(countdownInterval)
+  }
 })
 
 const chainIcons: Record<string, string> = { evm: '🟣', btc: '🟠', solana: '🟢', sui: '🔵', tron: '🔴' }
@@ -179,7 +219,8 @@ function getResultClass() {
 
   <!-- Balance info -->
   <div class="free-tier-info" :class="{ exhausted: isExhausted }">
-    <span v-if="isExhausted">No checks available. Next at {{ resetTime }}</span>
+    <span v-if="isExhausted && countdown">No checks. Reset in {{ countdown }}</span>
+    <span v-else-if="isExhausted">No checks available</span>
     <span v-else-if="isConnected">{{ displayBalance }} checks</span>
     <span v-else>{{ displayBalance }} free checks</span>
     <RouterLink v-if="!isConnected" to="/pricing" class="upgrade-link">Connect wallet →</RouterLink>
