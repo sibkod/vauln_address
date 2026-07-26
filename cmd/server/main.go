@@ -15,6 +15,7 @@ import (
 	"vauln-address/internal/handlers"
 	"vauln-address/internal/middleware"
 	"vauln-address/internal/repository"
+	"vauln-address/internal/services"
 )
 
 func main() {
@@ -34,13 +35,17 @@ func main() {
 	}
 	log.Println("Database schema initialized")
 
+	// Start price service for SOL/USD updates
+	priceService := services.NewPriceService(cfg)
+	defer priceService.Stop()
+
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(middleware.CORS())
 
 	rateLimiter := middleware.NewRateLimiter(repo, cfg)
-	h := handlers.New(repo, cfg)
+	h := handlers.New(repo, cfg, priceService)
 	authService := h.GetAuthService()
 	router.Use(middleware.AuthMiddleware(authService))
 
