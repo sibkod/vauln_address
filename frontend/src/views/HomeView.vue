@@ -20,7 +20,13 @@ const userBalance = computed(() => wallet?.userBalance?.value || 0)
 // Calculate display balance and status
 const displayBalance = computed(() => {
   if (isConnected.value) {
-    return userBalance.value
+    // Use purchased balance, or IP-based free checks if purchased is 0
+    const purchased = userBalance.value || 0
+    if (purchased > 0) {
+      return purchased
+    }
+    // Fall back to IP-based free checks
+    return rateLimitInfo?.value?.remaining || 0
   }
   return rateLimitInfo?.value?.remaining || 0
 })
