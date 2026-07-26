@@ -2,8 +2,11 @@ package middleware
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +29,12 @@ func NewRateLimiter(repo *repository.Repository, cfg *config.Config) *RateLimite
 		repo: repo,
 		cfg:  cfg,
 	}
+}
+
+// CheckRequest for validation before rate limiting
+type CheckRequest struct {
+	Address string `json:"address"`
+	Chain   string `json:"chain"`
 }
 
 func (rl *RateLimiter) Limit() gin.HandlerFunc {
@@ -58,6 +67,53 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 
 		// Add rate limit headers for all responses
 		rl.setRateLimitHeaders(c, rateLimit, isAuthenticated && walletAddress != nil && chainStr != "")
+
+		// For /check endpoint, validate early to avoid wasting rate limit on bad requests
+		if c.Request.URL.Path == "/api/check" && c.Request.Method == "POST" {
+			// Read body for validation
+			body, err := io.ReadAll(c.Request.Body)
+			if err != nil {
+				c.Next()
+				return
+			}
+			// Restore body for handler
+			c.Request.Body = io.NopCloser(strings.NewReader(string(body)))
+
+			var req CheckRequest
+			if err := json.Unmarshal(body, &req); err != nil {
+				c.JSON(http.StatusBadRequest, models.ErrorResponse{
+					Error: "invalid request body",
+					Code:  "INVALID_REQUEST",
+				})
+				c.Abort()
+				return
+			}
+
+			req.Address = strings.TrimSpace(req.Address)
+			req.Chain = strings.ToLower(strings.TrimSpace(req.Chain))
+
+			// Validate chain
+			if !models.IsValidChain(req.Chain) {
+				c.JSON(http.StatusBadRequest, models.ErrorResponse{
+					Error:   "unsupported chain",
+					Code:    "INVALID_CHAIN",
+					Details: "supported chains: evm, btc, solana, sui, tron",
+				})
+				c.Abort()
+				return
+			}
+
+			// Validate address format
+			if !validateAddressFormat(req.Chain, req.Address) {
+				c.JSON(http.StatusBadRequest, models.ErrorResponse{
+					Error:   "invalid address format",
+					Code:    "INVALID_ADDRESS",
+					Details: fmt.Sprintf("invalid %s address format", req.Chain),
+				})
+				c.Abort()
+				return
+			}
+		}
 
 					// Check IP limit using FreeCheckLimit
 		if rateLimit.Count >= rl.cfg.FreeCheckLimit {
@@ -180,6 +236,36 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%dh %dm", hours, minutes)
 	}
 	return fmt.Sprintf("%d minutes", minutes)
+}
+
+// Address validation regexes
+var (
+	evmRegex   = regexp.MustCompile(`^0x[a-fA-F0-9]{40}$`)
+	btcRegex   = regexp.MustCompile(`^(bc1|[13])[a-zA-HJ-NP-Z0-9]{25,39}$`)
+	solRegex   = regexp.MustCompile(`^[1-9A-HJ-NP-Za-km-z]{32,44}$`)
+	suiRegex   = regexp.MustCompile(`^0x[a-fA-F0-9]{64}$`)
+	tronRegex  = regexp.MustCompile(`^T[A-HJ-NP-Za-km-z1-9]{33}$`)
+)
+
+func validateAddressFormat(chain, address string) bool {
+	if address == "" {
+		return false
+	}
+	
+	switch chain {
+	case "evm":
+		return evmRegex.MatchString(address)
+	case "btc":
+		return btcRegex.MatchString(address)
+	case "solana":
+		return solRegex.MatchString(address)
+	case "sui":
+		return suiRegex.MatchString(address)
+	case "tron":
+		return tronRegex.MatchString(address)
+	default:
+		return false
+	}
 }
 
 func CORS() gin.HandlerFunc {
