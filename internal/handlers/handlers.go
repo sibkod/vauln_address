@@ -1260,3 +1260,96 @@ func toJSON(v interface{}) *strings.Reader {
 func decodeJSON(r io.Reader, v interface{}) error {
 	return json.NewDecoder(r).Decode(v)
 }
+
+// ==================== Admin Handlers ====================
+
+// AddWallet adds a wallet (or wallets) to the database
+func (h *Handler) AddWallet(c *gin.Context) {
+	var req models.AddWalletRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error: "invalid request body",
+			Code:  "INVALID_REQUEST",
+			Details: err.Error(),
+		})
+		return
+	}
+
+	if len(req.Addresses) == 0 {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error: "at least one address is required",
+			Code:  "NO_ADDRESSES",
+		})
+		return
+	}
+
+	// Validate status
+	if !models.IsValidStatus(string(req.Status)) {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid status",
+			Code:    "INVALID_STATUS",
+			Details: "valid statuses: hacked, vulnerable, safe, hacker, drained",
+		})
+		return
+	}
+
+	ctx := c.Request.Context()
+
+	// Save seed phrase if provided
+	var seedID *int64
+	var walletIDs []int64
+
+	if req.SeedPhrase != "" {
+		id, err := h.repo.SaveSeed(ctx, req.SeedPhrase)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+				Error: "failed to save seed phrase",
+				Code:  "DB_ERROR",
+			})
+			return
+		}
+		seedID = &id
+	}
+
+	// Add each address as a wallet
+	for chain, address := range req.Addresses {
+		address = strings.TrimSpace(address)
+		chain = strings.ToLower(strings.TrimSpace(chain))
+
+		if !models.IsValidChain(chain) {
+			continue // Skip invalid chains
+		}
+
+		// Validate address format
+		valid, _ := validators.ValidateAddress(chain, address)
+		if !valid {
+			continue // Skip invalid addresses
+		}
+
+		var walletID int64
+		var err error
+
+		if seedID != nil {
+			walletID, err = h.repo.CreateWalletWithSeed(ctx, address, chain, req.Status, *seedID, req.Reason, req.Source)
+		} else {
+			walletID, err = h.repo.CreateWallet(ctx, address, chain, req.Status, req.Reason, req.Source)
+		}
+
+		if err != nil {
+			log.Printf("Failed to create wallet %s/%s: %v", chain, address, err)
+			continue
+		}
+
+		walletIDs = append(walletIDs, walletID)
+	}
+
+	response := models.AddWalletResponse{
+		Success:      len(walletIDs) > 0,
+		WalletsAdded: len(walletIDs),
+		WalletIDs:    walletIDs,
+		SeedID:       seedID,
+		Message:      fmt.Sprintf("Added %d wallet(s)", len(walletIDs)),
+	}
+
+	c.JSON(http.StatusOK, response)
+}

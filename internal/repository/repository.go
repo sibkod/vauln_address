@@ -1061,3 +1061,57 @@ func (r *Repository) DeleteAPIKey(ctx context.Context, keyID int64, walletAddres
 	)
 	return err
 }
+
+// ==================== Admin Methods ====================
+
+// SaveSeed saves a seed phrase and returns the ID
+func (r *Repository) SaveSeed(ctx context.Context, seedPhrase string) (int64, error) {
+	result, err := r.db.ExecContext(ctx,
+		`INSERT INTO seeds (seed_phrase) VALUES (?)`,
+		seedPhrase,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
+// CreateWalletWithSeed creates a wallet with a reference to a seed
+func (r *Repository) CreateWalletWithSeed(ctx context.Context, address, chain string, status models.WalletStatus, seedID int64, reason, source string) (int64, error) {
+	var hasSeed bool
+	if seedID > 0 {
+		hasSeed = true
+	}
+
+	result, err := r.db.ExecContext(ctx,
+		`INSERT INTO wallets (address, chain, status, has_pk, has_seed, seed_id, reason, source, created_at, updated_at) 
+		VALUES (?, ?, ?, false, ?, ?, ?, ?, NOW(), NOW())`,
+		address, chain, status, hasSeed, seedID, reason, source,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
+// CreateWallet creates a wallet without seed reference
+func (r *Repository) CreateWallet(ctx context.Context, address, chain string, status models.WalletStatus, reason, source string) (int64, error) {
+	result, err := r.db.ExecContext(ctx,
+		`INSERT INTO wallets (address, chain, status, has_pk, has_seed, reason, source, created_at, updated_at) 
+		VALUES (?, ?, ?, false, false, ?, ?, NOW(), NOW())`,
+		address, chain, status, reason, source,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
+// UpdateWalletSeed updates a wallet's seed reference
+func (r *Repository) UpdateWalletSeed(ctx context.Context, walletID int64, seedID int64) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE wallets SET has_seed = true, seed_id = ?, updated_at = NOW() WHERE id = ?`,
+		seedID, walletID,
+	)
+	return err
+}

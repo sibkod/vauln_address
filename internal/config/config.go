@@ -33,6 +33,7 @@ type Config struct {
 	SolanaPaymentAddr string
 	SolanaRPCURL      string
 	SolanaUseDevnet   bool
+	AdminAPIKey       string
 }
 
 func Load() *Config {
@@ -71,6 +72,7 @@ func Load() *Config {
 		SolanaPaymentAddr: getEnv("SOLANA_PAYMENT_ADDR", ""),
 		SolanaRPCURL:      solanaRPCURL,
 		SolanaUseDevnet:   solanaUseDevnet,
+		AdminAPIKey:       getEnv("ADMIN_API_KEY", ""),
 	}
 }
 
