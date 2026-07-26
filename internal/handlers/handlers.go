@@ -69,7 +69,7 @@ func loadPackages(cfg *config.Config) []gin.H {
 
 	if err := json.Unmarshal(data, &pkgData); err != nil {
 		log.Printf("Failed to parse pricing.json: %v, using defaults", err)
-		return getDefaultPackages()
+		return getDefaultPackages(cfg)
 	}
 
 	packages := make([]gin.H, len(pkgData.Packages))
