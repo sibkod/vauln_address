@@ -9,10 +9,15 @@ interface RecentCheck {
   checked_at: string
 }
 
+const apiBase = inject<string>('apiBase', '')
 const wallet = inject<any>('wallet')
 const checks = ref<RecentCheck[]>([])
 const loading = ref(true)
 const error = ref('')
+
+function apiUrl(path: string): string {
+  return apiBase + path
+}
 
 // Pagination
 const currentOffset = ref(0)
@@ -32,7 +37,7 @@ async function fetchChecks(offset: number = 0) {
   error.value = ''
 
   try {
-    const res = await fetch(`/api/checks?limit=${perPage.value}&offset=${offset}`, {
+    const res = await fetch(apiUrl(`/api/checks?limit=${perPage.value}&offset=${offset}`), {
       headers: { 'Authorization': `Bearer ${wallet.authToken.value}` }
     })
     

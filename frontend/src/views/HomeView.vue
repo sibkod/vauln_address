@@ -9,6 +9,9 @@ const chains = ref<any[]>([])
 const recentChecks = ref<any[]>([])
 const alertId = ref(0)
 
+// API base URL
+const apiBase = inject<string>('apiBase', '')
+
 // Rate limit info from App.vue
 const rateLimitInfo = inject<any>('rateLimitInfo')
 
@@ -16,6 +19,11 @@ const rateLimitInfo = inject<any>('rateLimitInfo')
 const wallet = inject<any>('wallet')
 const isConnected = computed(() => wallet?.connected?.value || false)
 const userBalance = computed(() => wallet?.userBalance?.value || 0)
+
+// Helper for API URLs
+function apiUrl(path: string): string {
+  return apiBase + path
+}
 
 // Calculate display balance and status
 const displayBalance = computed(() => {
@@ -92,7 +100,7 @@ const chainPlaceholders: Record<string, string> = {
 
 onMounted(async () => {
   try {
-    const res = await fetch('/api/chains')
+    const res = await fetch(apiUrl('/api/chains')
     if (res.ok) {
       const data = await res.json()
       chains.value = data.chains || []
@@ -100,7 +108,7 @@ onMounted(async () => {
   } catch {}
 
   try {
-    const res = await fetch('/api/recent')
+    const res = await fetch(apiUrl('/api/recent')
     if (res.ok) {
       const data = await res.json()
       recentChecks.value = (data.checks || []).map((c: any) => ({
@@ -127,7 +135,7 @@ async function check() {
   }
   
   try {
-    const res = await fetch('/api/check', {
+    const res = await fetch(apiUrl('/api/check', {
       method: 'POST',
       headers,
       body: JSON.stringify({ address: address.value.trim(), chain: chain.value })

@@ -1,14 +1,19 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, inject, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 
+const apiBase = inject<string>('apiBase', '')
 const router = useRouter()
 const checking = ref(false)
+
+function apiUrl(path: string): string {
+  return apiBase + path
+}
 
 async function retry() {
   checking.value = true
   try {
-    const res = await fetch('/api/chains', { 
+    const res = await fetch(apiUrl('/api/chains'), { 
       signal: AbortSignal.timeout(5000)
     })
     if (res.ok) {

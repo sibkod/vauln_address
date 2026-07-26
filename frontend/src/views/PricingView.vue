@@ -31,7 +31,13 @@ interface PackagesResponse {
 const RPC_URL = import.meta.env.VITE_SOLANA_RPC || 'https://api.devnet.solana.com'
 const SOLANA_CLUSTER = import.meta.env.VITE_SOLANA_CLUSTER || 'devnet'
 
+// API base URL
+const apiBase = inject<string>('apiBase', '')
 const globalWallet = inject<any>('wallet')
+
+function apiUrl(path: string): string {
+  return apiBase + path
+}
 
 // Create connection
 const connection = new Connection(RPC_URL, 'confirmed')
@@ -60,7 +66,7 @@ async function fetchPackages() {
   loadingPackages.value = true
   packagesError.value = ''
   try {
-    const res = await fetch('/api/packages')
+    const res = await fetch(apiUrl('/api/packages'))
     if (!res.ok) throw new Error('Failed to load packages')
     
     const data: PackagesResponse = await res.json()
@@ -146,7 +152,7 @@ async function payWithSolana() {
     const walletAddr = phantom.publicKey.toString()
     
     // Create order first (requires auth)
-    const orderRes = await fetch('/api/orders', {
+    const orderRes = await fetch(apiUrl('/api/orders'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -221,7 +227,7 @@ function startPolling(signature: string) {
   const authToken = localStorage.getItem('authToken')
   pollInterval.value = window.setInterval(async () => {
     try {
-      const res = await fetch(`/api/payment/status/${signature}`, {
+      const res = await fetch(apiUrl(`/api/payment/status/${signature}`), {
         method: 'POST',
         headers: {
           'Authorization': authToken ? `Bearer ${authToken}` : ''
