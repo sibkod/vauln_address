@@ -599,13 +599,21 @@ func (h *Handler) GetMe(c *gin.Context) {
 	rateLimit, _ := h.repo.GetRateLimit(c.Request.Context(), ip)
 	rateLimitRemaining := h.serverCfg.FreeCheckLimit
 	rateLimitUsed := 0
+	var windowStart time.Time
 	if rateLimit != nil {
 		rateLimitRemaining = h.serverCfg.FreeCheckLimit - rateLimit.Count
 		if rateLimitRemaining < 0 {
 			rateLimitRemaining = 0
 		}
 		rateLimitUsed = rateLimit.Count
+		windowStart = rateLimit.WindowStart
+	} else {
+		windowStart = time.Now()
 	}
+
+	// Calculate reset time
+	resetAt := windowStart.Add(time.Duration(h.serverCfg.RateLimitHours) * time.Hour)
+	resetAtUnix := resetAt.Unix()
 
 	// Check if user is authenticated
 	if exists && walletAddress != nil && walletAddress.(string) != "" && chainStr != "" {
@@ -620,6 +628,7 @@ func (h *Handler) GetMe(c *gin.Context) {
 				"rate_limit_remaining":   rateLimitRemaining,
 				"rate_limit_used":        rateLimitUsed,
 				"rate_limit_limit":       h.serverCfg.FreeCheckLimit,
+				"reset_at":              resetAtUnix,
 				"is_premium":             false,
 				"is_authenticated":       true,
 			})
@@ -633,6 +642,7 @@ func (h *Handler) GetMe(c *gin.Context) {
 		c.Header("X-RateLimit-Limit", fmt.Sprintf("%d", h.serverCfg.FreeCheckLimit))
 		c.Header("X-RateLimit-Remaining", fmt.Sprintf("%d", rateLimitRemaining))
 		c.Header("X-RateLimit-Used", fmt.Sprintf("%d", rateLimitUsed))
+		c.Header("X-RateLimit-Reset", fmt.Sprintf("%d", resetAtUnix))
 		c.Header("X-RateLimit-Source", "balance")
 		c.Header("X-Balance-Available", fmt.Sprintf("%d", purchasedBalance))
 
@@ -644,6 +654,7 @@ func (h *Handler) GetMe(c *gin.Context) {
 			"rate_limit_remaining":   rateLimitRemaining,
 			"rate_limit_used":        rateLimitUsed,
 			"rate_limit_limit":       h.serverCfg.FreeCheckLimit,
+			"reset_at":              resetAtUnix,
 			"is_premium":             isPremium,
 			"is_authenticated":       true,
 			"created_at":             user.CreatedAt,
@@ -656,6 +667,7 @@ func (h *Handler) GetMe(c *gin.Context) {
 	c.Header("X-RateLimit-Limit", fmt.Sprintf("%d", h.serverCfg.FreeCheckLimit))
 	c.Header("X-RateLimit-Remaining", fmt.Sprintf("%d", rateLimitRemaining))
 	c.Header("X-RateLimit-Used", fmt.Sprintf("%d", rateLimitUsed))
+	c.Header("X-RateLimit-Reset", fmt.Sprintf("%d", resetAtUnix))
 	c.Header("X-RateLimit-Source", "ip")
 
 	c.JSON(http.StatusOK, gin.H{
@@ -666,6 +678,7 @@ func (h *Handler) GetMe(c *gin.Context) {
 		"rate_limit_remaining":   rateLimitRemaining,
 		"rate_limit_used":        rateLimitUsed,
 		"rate_limit_limit":       h.serverCfg.FreeCheckLimit,
+		"reset_at":              resetAtUnix,
 		"is_premium":             false,
 		"is_authenticated":       false,
 	})

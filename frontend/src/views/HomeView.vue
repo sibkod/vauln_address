@@ -87,6 +87,18 @@ async function check() {
       body: JSON.stringify({ address: address.value.trim(), chain: chain.value })
     })
     
+    // Always update rate limit info from headers (even on error)
+    if (rateLimitInfo) {
+      const remaining = res.headers.get('X-RateLimit-Remaining')
+      const used = res.headers.get('X-RateLimit-Used')
+      const reset = res.headers.get('X-RateLimit-Reset')
+      const limit = res.headers.get('X-RateLimit-Limit')
+      if (remaining !== null) rateLimitInfo.value.remaining = parseInt(remaining)
+      if (used !== null) rateLimitInfo.value.used = parseInt(used)
+      if (reset !== null) rateLimitInfo.value.reset = parseInt(reset)
+      if (limit !== null) rateLimitInfo.value.limit = parseInt(limit)
+    }
+    
     if (res.status === 429) {
       result.value = { status: 'error', message: '⏳ Too many requests. Try again later.' }
       loading.value = false
@@ -110,6 +122,7 @@ async function check() {
     
     result.value = data
     
+    // Update balance from response
     if (data.balance_left !== undefined && wallet) {
       wallet.userBalance.value = data.balance_left
       localStorage.setItem('userBalance', String(data.balance_left))
