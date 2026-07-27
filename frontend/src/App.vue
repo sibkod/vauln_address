@@ -267,14 +267,51 @@ async function connectWallet(walletId: string) {
           
           // Get Phantom network
           if (walletId === 'phantom') {
-            console.log('[Phantom] Trying getNetwork...')
-            try {
-              const network = await provider.request({ method: 'getNetwork' })
-              console.log('[Phantom] getNetwork result:', network)
-              phantomNetwork.value = network || ''
-            } catch (err) {
-              console.log('[Phantom] getNetwork error:', err)
+            let network = ''
+            
+            // Try direct properties first
+            network = (provider as any).network || ''
+            if (network) {
+              console.log('[Phantom] network from direct property:', network)
             }
+            
+            // Try session
+            if (!network) {
+              const session = (provider as any).session
+              if (session?.network) {
+                network = session.network
+                console.log('[Phantom] network from session:', network)
+              }
+            }
+            
+            // Try isMainnetBeta
+            if (!network) {
+              const isMainnetBeta = (provider as any).isMainnetBeta
+              if (isMainnetBeta !== undefined) {
+                network = isMainnetBeta ? 'mainnet-beta' : 'devnet'
+                console.log('[Phantom] network from isMainnetBeta:', network)
+              }
+            }
+            
+            // Try request methods
+            if (!network) {
+              const methods = ['getNetwork', 'solana', 'getSolanaNetwork', 'network']
+              for (const method of methods) {
+                try {
+                  const result = await provider.request({ method })
+                  if (result) {
+                    network = result
+                    console.log(`[Phantom] network from ${method}:`, network)
+                    break
+                  }
+                } catch (err) {
+                  // ignore
+                }
+              }
+            }
+            
+            console.log('[Phantom] Final network:', network)
+            phantomNetwork.value = network
           }
           
           await authenticateSolana(provider, address)
