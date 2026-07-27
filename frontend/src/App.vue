@@ -25,6 +25,7 @@ const checkingBackend = ref(true)
 const showWalletModal = ref(false)
 const connecting = ref(false)
 const connectError = ref('')
+const phantomNetwork = ref<'mainnet-beta' | 'devnet' | ''>('')
 
 const stats = ref({ evm: 0, btc: 0, solana: 0, sui: 0, tron: 0 })
 const showWalletMenu = ref(false)
@@ -50,7 +51,7 @@ const walletOptions = [
 ]
 
 // Provide auth state and wallet modal control to all components
-provide('wallet', { connected, walletAddress, walletChain, userBalance, authToken, refreshBalance, fetchPurchaseHistory, fetchMe, openWalletModal })
+provide('wallet', { connected, walletAddress, walletChain, userBalance, authToken, refreshBalance, fetchPurchaseHistory, fetchMe, openWalletModal, phantomNetwork })
 provide('network', { isMainnet: IS_MAINNET, solanaNetwork: SOLANA_NETWORK })
 provide('rateLimitInfo', rateLimitInfo)
 provide('apiBase', API_BASE)
@@ -263,6 +264,10 @@ async function connectWallet(walletId: string) {
         await provider.connect()
         if (provider.publicKey) {
           const address = provider.publicKey.toString()
+          // Capture Phantom network (devnet or mainnet-beta)
+          if (walletId === 'phantom' && provider.network) {
+            phantomNetwork.value = provider.network
+          }
           await authenticateSolana(provider, address)
           return
         }

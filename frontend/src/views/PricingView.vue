@@ -60,6 +60,12 @@ const pollInterval = ref<number | null>(null)
 const walletAddress = computed(() => globalWallet?.walletAddress?.value || '')
 const isConnected = computed(() => globalWallet?.connected?.value || false)
 const walletChain = computed(() => globalWallet?.walletChain?.value || '')
+const phantomNetwork = computed(() => globalWallet?.phantomNetwork?.value || '')
+const isCorrectNetwork = computed(() => {
+  if (walletChain.value !== 'solana') return false
+  const expectedNetwork = SOLANA_CLUSTER === 'mainnet' ? 'mainnet-beta' : SOLANA_CLUSTER
+  return phantomNetwork.value === expectedNetwork
+})
 
 // Fetch packages from backend
 async function fetchPackages() {
@@ -88,6 +94,17 @@ function selectPackage(pkg: Package) {
     }
     return
   }
+  
+  // Check if wallet is on correct network
+  if (walletChain.value === 'solana' && !isCorrectNetwork.value) {
+    const expectedLabel = SOLANA_CLUSTER === 'mainnet' ? 'Mainnet' : 'Devnet'
+    const currentLabel = phantomNetwork.value === 'mainnet-beta' ? 'Mainnet' : phantomNetwork.value || 'Unknown'
+    paymentStatus.value = 'error'
+    paymentMessage.value = `Wrong network! Please switch Phantom to ${expectedLabel} (currently on ${currentLabel})`
+    showPaymentModal.value = true
+    return
+  }
+  
   selectedPackage.value = pkg
   payWithSolana()
 }
@@ -314,6 +331,11 @@ function closeIfAllowed() {
       <button class="connect-wallet-btn" @click="globalWallet?.openWalletModal?.()">Connect Wallet</button>
     </div>
 
+    <!-- Wrong network warning -->
+    <div v-else-if="walletChain === 'solana' && !isCorrectNetwork" class="network-warning">
+      <p>⚠️ Wrong network! Please switch Phantom to {{ SOLANA_CLUSTER === 'mainnet' ? 'Mainnet' : 'Devnet' }}</p>
+    </div>
+
     <!-- Packages -->
     <div class="packages-grid">
       <div 
@@ -471,6 +493,23 @@ function closeIfAllowed() {
 .connect-wallet-btn:hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+.network-warning {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem 1.5rem;
+  background: rgba(255, 193, 7, 0.1);
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
+}
+.network-warning p {
+  margin: 0;
+  color: #ffc107;
+  font-size: 0.95rem;
+  font-weight: 500;
 }
 
 .packages-grid {
