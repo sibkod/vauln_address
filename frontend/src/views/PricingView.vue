@@ -60,6 +60,37 @@ const pollInterval = ref<number | null>(null)
 const walletAddress = computed(() => globalWallet?.walletAddress?.value || '')
 const isConnected = computed(() => globalWallet?.connected?.value || false)
 const walletChain = computed(() => globalWallet?.walletChain?.value || '')
+const phantomNetwork = computed(() => globalWallet?.phantomNetwork?.value || '')
+const isCorrectNetwork = computed(() => {
+  if (walletChain.value !== 'solana') return false
+  const expectedNetwork = SOLANA_CLUSTER === 'mainnet' ? 'mainnet-beta' : SOLANA_CLUSTER
+  return phantomNetwork.value === expectedNetwork
+})
+
+// Switch Phantom to correct network
+async function switchToCorrectNetwork() {
+  const phantom = (window as any).solana
+  if (!phantom) {
+    paymentStatus.value = 'error'
+    paymentMessage.value = 'Phantom wallet not found'
+    return
+  }
+  
+  const targetNetwork = SOLANA_CLUSTER === 'mainnet' ? 'mainnet-beta' : 'devnet'
+  
+  try {
+    await phantom.setNetwork(targetNetwork)
+    // Update local state
+    if (globalWallet?.phantomNetwork) {
+      globalWallet.phantomNetwork.value = targetNetwork
+    }
+    // Close the modal after switching
+    closePaymentModal()
+  } catch (err: any) {
+    paymentStatus.value = 'error'
+    paymentMessage.value = 'Failed to switch network: ' + (err.message || 'Unknown error')
+  }
+}
 
 // Fetch packages from backend
 async function fetchPackages() {
@@ -88,6 +119,17 @@ function selectPackage(pkg: Package) {
     }
     return
   }
+  
+  // Check if wallet is on correct network
+  if (walletChain.value === 'solana' && !isCorrectNetwork.value) {
+    const expectedLabel = SOLANA_CLUSTER === 'mainnet' ? 'Mainnet' : 'Devnet'
+    const currentLabel = phantomNetwork.value === 'mainnet-beta' ? 'Mainnet' : phantomNetwork.value || 'Unknown'
+    paymentStatus.value = 'error'
+    paymentMessage.value = `Wrong network! Please switch Phantom to ${expectedLabel} (currently on ${currentLabel})`
+    showPaymentModal.value = true
+    return
+  }
+  
   selectedPackage.value = pkg
   payWithSolana()
 }
@@ -314,6 +356,14 @@ function closeIfAllowed() {
       <button class="connect-wallet-btn" @click="globalWallet?.openWalletModal?.()">Connect Wallet</button>
     </div>
 
+    <!-- Wrong network warning -->
+    <div v-else-if="walletChain === 'solana' && !isCorrectNetwork" class="network-warning">
+      <p>⚠️ Wrong network! Please switch Phantom to {{ SOLANA_CLUSTER === 'mainnet' ? 'Mainnet' : 'Devnet' }}</p>
+      <button class="network-switch-btn" @click="switchToCorrectNetwork">
+        🔄 Switch Network
+      </button>
+    </div>
+
     <!-- Packages -->
     <div class="packages-grid">
       <div 
@@ -413,6 +463,12 @@ function closeIfAllowed() {
           </a>
         </div>
         
+        <div v-if="paymentStatus === 'error' && walletChain === 'solana' && !isCorrectNetwork" class="switch-network-section">
+          <button class="switch-network-btn" @click="switchToCorrectNetwork">
+            🔄 Switch to {{ SOLANA_CLUSTER === 'mainnet' ? 'Mainnet' : 'Devnet' }}
+          </button>
+        </div>
+
         <button v-if="paymentStatus === 'success' || paymentStatus === 'error'" class="modal-btn" @click="closePaymentModal">
           <template v-if="paymentStatus === 'success'">Done</template>
           <template v-else>Close</template>
@@ -471,6 +527,40 @@ function closeIfAllowed() {
 .connect-wallet-btn:hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+.network-warning {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  background: rgba(255, 193, 7, 0.1);
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+.network-warning p {
+  margin: 0;
+  color: #ffc107;
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+.network-switch-btn {
+  padding: 0.5rem 1rem;
+  background: linear-gradient(135deg, #4bc9a0, #2ed573);
+  border: none;
+  border-radius: 8px;
+  color: #0c0f14;
+  font-weight: 600;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.network-switch-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 15px rgba(75, 201, 160, 0.4);
 }
 
 .packages-grid {
@@ -891,6 +981,28 @@ function closeIfAllowed() {
 
 .modal-tx a:hover {
   text-decoration: underline;
+}
+
+.switch-network-section {
+  margin-bottom: 1rem;
+}
+
+.switch-network-btn {
+  width: 100%;
+  padding: 0.8rem;
+  background: linear-gradient(135deg, #4bc9a0, #2ed573);
+  border: none;
+  border-radius: 10px;
+  color: #0c0f14;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.switch-network-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(75, 201, 160, 0.4);
 }
 
 .modal-btn {
