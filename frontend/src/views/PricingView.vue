@@ -60,47 +60,7 @@ const pollInterval = ref<number | null>(null)
 const walletAddress = computed(() => globalWallet?.walletAddress?.value || '')
 const isConnected = computed(() => globalWallet?.connected?.value || false)
 const walletChain = computed(() => globalWallet?.walletChain?.value || '')
-const phantomNetwork = computed(() => {
-  const network = globalWallet?.phantomNetwork?.value || ''
-  console.log('[PricingView] phantomNetwork:', network, 'SOLANA_CLUSTER:', SOLANA_CLUSTER)
-  return network
-})
-const isCorrectNetwork = computed(() => {
-  if (walletChain.value !== 'solana') return false
-  
-  // Mainnet check - must be mainnet-beta
-  if (SOLANA_CLUSTER === 'mainnet') {
-    return phantomNetwork.value === 'mainnet-beta'
-  }
-  
-  // Devnet/testnet check - if NOT mainnet-beta, it's dev/test network
-  return phantomNetwork.value !== 'mainnet-beta'
-})
-
-// Switch Phantom to correct network
-async function switchToCorrectNetwork() {
-  const phantom = (window as any).solana
-  if (!phantom) {
-    paymentStatus.value = 'error'
-    paymentMessage.value = 'Phantom wallet not found'
-    return
-  }
-  
-  const targetLabel = SOLANA_CLUSTER === 'mainnet' ? 'Mainnet' : 'Devnet'
-  
-  // Show instruction
-  paymentStatus.value = 'error'
-  paymentMessage.value = `Please switch Phantom to ${targetLabel} and click the button again.`
-  
-  // Reconnect to refresh network detection
-  try {
-    await phantom.disconnect()
-    await phantom.connect()
-    // Network will be re-detected in App.vue
-  } catch (err: any) {
-    console.log('Reconnection:', err.message)
-  }
-}
+const phantomNetwork = computed(() => globalWallet?.phantomNetwork?.value || '')
 
 // Fetch packages from backend
 async function fetchPackages() {
@@ -127,16 +87,6 @@ function selectPackage(pkg: Package) {
     if (globalWallet?.openWalletModal) {
       globalWallet.openWalletModal()
     }
-    return
-  }
-  
-  // Check if wallet is on correct network
-  if (walletChain.value === 'solana' && !isCorrectNetwork.value) {
-    const expectedLabel = SOLANA_CLUSTER === 'mainnet' ? 'Mainnet' : 'Devnet'
-    const currentLabel = phantomNetwork.value === 'mainnet-beta' ? 'Mainnet' : (phantomNetwork.value || 'Unknown')
-    paymentStatus.value = 'error'
-    paymentMessage.value = `Wrong network! Please switch Phantom to ${expectedLabel} (currently on ${currentLabel})`
-    showPaymentModal.value = true
     return
   }
   
@@ -360,18 +310,15 @@ function closeIfAllowed() {
       <div class="sub">Secure wallet checks with SOL</div>
     </div>
 
+    <!-- Devnet warning -->
+    <div v-if="SOLANA_CLUSTER !== 'mainnet'" class="devnet-warning">
+      ⚠️ <strong>DEVNET MODE</strong> — All transactions are on Solana Devnet blockchain
+    </div>
+
     <!-- Wallet connection prompt -->
     <div v-if="!isConnected" class="wallet-prompt">
       <p>👻 Connect your wallet to purchase checks</p>
       <button class="connect-wallet-btn" @click="globalWallet?.openWalletModal?.()">Connect Wallet</button>
-    </div>
-
-    <!-- Wrong network warning -->
-    <div v-else-if="walletChain === 'solana' && !isCorrectNetwork" class="network-warning">
-      <p>⚠️ Wrong network! Please switch Phantom to {{ SOLANA_CLUSTER === 'mainnet' ? 'Mainnet' : 'Devnet' }}</p>
-      <button class="network-switch-btn" @click="switchToCorrectNetwork">
-        🔄 Switch Network
-      </button>
     </div>
 
     <!-- Packages -->
@@ -472,12 +419,6 @@ function closeIfAllowed() {
             {{ txSignature.slice(0, 8) }}...{{ txSignature.slice(-8) }}
           </a>
         </div>
-        
-        <div v-if="paymentStatus === 'error' && walletChain === 'solana' && !isCorrectNetwork" class="switch-network-section">
-          <button class="switch-network-btn" @click="switchToCorrectNetwork">
-            🔄 Switch Network
-          </button>
-        </div>
 
         <button v-if="paymentStatus === 'success' || paymentStatus === 'error'" class="modal-btn" @click="closePaymentModal">
           <template v-if="paymentStatus === 'success'">Done</template>
@@ -504,6 +445,21 @@ function closeIfAllowed() {
 .pricing-header .sub {
   color: #6b7a9e;
   font-size: 0.95rem;
+}
+
+.devnet-warning {
+  background: rgba(255, 193, 7, 0.15);
+  border: 1px solid rgba(255, 193, 7, 0.4);
+  border-radius: 12px;
+  padding: 1rem 1.5rem;
+  text-align: center;
+  color: #ffc107;
+  font-size: 0.95rem;
+  margin-bottom: 1.5rem;
+}
+
+.devnet-warning strong {
+  color: #ffca28;
 }
 
 .wallet-prompt {
@@ -537,40 +493,6 @@ function closeIfAllowed() {
 .connect-wallet-btn:hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-}
-
-.network-warning {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 1rem;
-  padding: 1rem 1.5rem;
-  background: rgba(255, 193, 7, 0.1);
-  border: 1px solid rgba(255, 193, 7, 0.3);
-  border-radius: 12px;
-  margin-bottom: 1.5rem;
-  flex-wrap: wrap;
-}
-.network-warning p {
-  margin: 0;
-  color: #ffc107;
-  font-size: 0.95rem;
-  font-weight: 500;
-}
-.network-switch-btn {
-  padding: 0.5rem 1rem;
-  background: linear-gradient(135deg, #4bc9a0, #2ed573);
-  border: none;
-  border-radius: 8px;
-  color: #0c0f14;
-  font-weight: 600;
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.network-switch-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 15px rgba(75, 201, 160, 0.4);
 }
 
 .packages-grid {
@@ -991,28 +913,6 @@ function closeIfAllowed() {
 
 .modal-tx a:hover {
   text-decoration: underline;
-}
-
-.switch-network-section {
-  margin-bottom: 1rem;
-}
-
-.switch-network-btn {
-  width: 100%;
-  padding: 0.8rem;
-  background: linear-gradient(135deg, #4bc9a0, #2ed573);
-  border: none;
-  border-radius: 10px;
-  color: #0c0f14;
-  font-weight: 600;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.switch-network-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 15px rgba(75, 201, 160, 0.4);
 }
 
 .modal-btn {
