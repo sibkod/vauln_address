@@ -69,8 +69,8 @@ const isCorrectNetwork = computed(() => {
     return phantomNetwork.value === 'mainnet-beta'
   }
   
-  // Devnet check - accept devnet, testnet, or devnet as valid dev/test networks
-  return phantomNetwork.value === 'devnet' || phantomNetwork.value === 'testnet'
+  // Devnet/testnet check - if NOT mainnet-beta, it's dev/test network
+  return phantomNetwork.value !== 'mainnet-beta'
 })
 
 // Switch Phantom to correct network
