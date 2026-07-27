@@ -63,8 +63,14 @@ const walletChain = computed(() => globalWallet?.walletChain?.value || '')
 const phantomNetwork = computed(() => globalWallet?.phantomNetwork?.value || '')
 const isCorrectNetwork = computed(() => {
   if (walletChain.value !== 'solana') return false
-  const expectedNetwork = SOLANA_CLUSTER === 'mainnet' ? 'mainnet-beta' : SOLANA_CLUSTER
-  return phantomNetwork.value === expectedNetwork
+  
+  // Mainnet check - must be mainnet-beta
+  if (SOLANA_CLUSTER === 'mainnet') {
+    return phantomNetwork.value === 'mainnet-beta'
+  }
+  
+  // Devnet check - accept devnet, testnet, or devnet as valid dev/test networks
+  return phantomNetwork.value === 'devnet' || phantomNetwork.value === 'testnet'
 })
 
 // Switch Phantom to correct network
@@ -76,12 +82,11 @@ async function switchToCorrectNetwork() {
     return
   }
   
-  const targetNetwork = SOLANA_CLUSTER === 'mainnet' ? 'mainnet-beta' : 'devnet'
-  const targetLabel = SOLANA_CLUSTER === 'mainnet' ? 'Mainnet' : 'Devnet'
+  const targetLabel = SOLANA_CLUSTER === 'mainnet' ? 'Mainnet' : 'Devnet or Testnet'
   
-  // Phantom doesn't have programmatic network switch, show instructions
+  // Show instruction message
   paymentStatus.value = 'error'
-  paymentMessage.value = `Please switch to ${targetLabel} in your Phantom wallet, then click the button again.`
+  paymentMessage.value = `Please switch to ${targetLabel} in your Phantom wallet popup, then try again.`
   
   // Try to re-connect to trigger Phantom's network selector
   try {
@@ -94,7 +99,7 @@ async function switchToCorrectNetwork() {
       }
     }
   } catch (err: any) {
-    console.log('Reconnection skipped, user needs to manually switch network')
+    console.log('Reconnection result:', err.message || 'User may need to switch manually')
   }
 }
 
@@ -128,7 +133,7 @@ function selectPackage(pkg: Package) {
   
   // Check if wallet is on correct network
   if (walletChain.value === 'solana' && !isCorrectNetwork.value) {
-    const expectedLabel = SOLANA_CLUSTER === 'mainnet' ? 'Mainnet' : 'Devnet'
+    const expectedLabel = SOLANA_CLUSTER === 'mainnet' ? 'Mainnet' : 'Devnet/Testnet'
     const currentLabel = phantomNetwork.value === 'mainnet-beta' ? 'Mainnet' : phantomNetwork.value || 'Unknown'
     paymentStatus.value = 'error'
     paymentMessage.value = `Wrong network! Please switch Phantom to ${expectedLabel} (currently on ${currentLabel})`
@@ -364,7 +369,7 @@ function closeIfAllowed() {
 
     <!-- Wrong network warning -->
     <div v-else-if="walletChain === 'solana' && !isCorrectNetwork" class="network-warning">
-      <p>⚠️ Wrong network! Please switch Phantom to {{ SOLANA_CLUSTER === 'mainnet' ? 'Mainnet' : 'Devnet' }}</p>
+      <p>⚠️ Wrong network! Please switch Phantom to {{ SOLANA_CLUSTER === 'mainnet' ? 'Mainnet' : 'Devnet or Testnet' }}</p>
       <button class="network-switch-btn" @click="switchToCorrectNetwork">
         🔄 Switch Network in Phantom
       </button>
