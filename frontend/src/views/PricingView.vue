@@ -60,7 +60,11 @@ const pollInterval = ref<number | null>(null)
 const walletAddress = computed(() => globalWallet?.walletAddress?.value || '')
 const isConnected = computed(() => globalWallet?.connected?.value || false)
 const walletChain = computed(() => globalWallet?.walletChain?.value || '')
-const phantomNetwork = computed(() => globalWallet?.phantomNetwork?.value || '')
+const phantomNetwork = computed(() => {
+  const network = globalWallet?.phantomNetwork?.value || ''
+  console.log('[PricingView] phantomNetwork:', network)
+  return network
+})
 const isCorrectNetwork = computed(() => {
   if (walletChain.value !== 'solana') return false
   

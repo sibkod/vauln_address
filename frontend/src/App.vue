@@ -265,8 +265,10 @@ async function connectWallet(walletId: string) {
         if (provider.publicKey) {
           const address = provider.publicKey.toString()
           // Capture Phantom network (devnet or mainnet-beta)
-          if (walletId === 'phantom' && provider.network) {
-            phantomNetwork.value = provider.network
+          if (walletId === 'phantom') {
+            console.log('[Phantom] provider.network:', provider.network)
+            console.log('[Phantom] provider:', Object.keys(provider))
+            phantomNetwork.value = provider.network || ''
           }
           await authenticateSolana(provider, address)
           return
