@@ -268,13 +268,12 @@ async function connectWallet(walletId: string) {
           // Get Phantom network
           if (walletId === 'phantom') {
             try {
-              // Try to get network via request
-              const network = await provider.request({ method: 'solana' })
-              console.log('[Phantom] network from request:', network)
-              phantomNetwork.value = network || ''
+              // Try different methods
+              console.log('[Phantom] Trying methods...')
+              console.log('[Phantom] isMainnetBeta:', (provider as any).isMainnetBeta)
+              console.log('[Phantom] network from getAccount:', await provider.request({ method: 'getAccount' }))
             } catch (err) {
-              console.log('[Phantom] Could not get network:', err)
-              phantomNetwork.value = ''
+              console.log('[Phantom] getAccount error:', err)
             }
           }
           
