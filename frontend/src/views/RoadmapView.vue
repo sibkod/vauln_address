@@ -1,32 +1,32 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-
-interface RoadmapItem {
-  text: string
+const roadmap = {
+  sections: [
+    {
+      title: "✓ Done",
+      items: [
+        { text: "Phantom wallet authorization" },
+        { text: "Wallet checks functionality" },
+        { text: "Basic database with 100,000+ records" }
+      ]
+    },
+    {
+      title: "◐ In Progress",
+      items: [
+        { text: "Adding more wallet options" }
+      ]
+    },
+    {
+      title: "○ Future Plans",
+      items: [
+        { text: "Solana network transaction analysis" },
+        { text: "Multi-chain transaction analysis" },
+        { text: "Hacked wallet detection" },
+        { text: "Malicious smart contract identification" },
+        { text: "Stolen funds and hacker wallet tracking" }
+      ]
+    }
+  ]
 }
-
-interface Section {
-  title: string
-  items: RoadmapItem[]
-}
-
-interface RoadmapData {
-  sections: Section[]
-}
-
-const roadmap = ref<RoadmapData | null>(null)
-const loading = ref(true)
-
-onMounted(async () => {
-  try {
-    const res = await fetch('/data/roadmap.json')
-    roadmap.value = await res.json()
-  } catch (err) {
-    console.error('Failed to load roadmap:', err)
-  } finally {
-    loading.value = false
-  }
-})
 </script>
 
 <template>

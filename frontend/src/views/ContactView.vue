@@ -1,27 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-
-interface Channel {
-  name: string
-  icon: string
-  url: string
-  description: string
-}
-
-const channels = ref<Channel[]>([])
-const loading = ref(true)
-
-onMounted(async () => {
-  try {
-    const res = await fetch('/data/contacts.json')
-    const data = await res.json()
-    channels.value = data.channels || []
-  } catch (err) {
-    console.error('Failed to load contacts:', err)
-  } finally {
-    loading.value = false
-  }
-})
+const channels = [
+  { name: "Telegram", icon: "✈️", url: "#", description: "Telegram group (coming soon)" },
+  { name: "Discord", icon: "💬", url: "#", description: "Discord server (coming soon)" },
+  { name: "Bitcointalk", icon: "📋", url: "#", description: "Bitcointalk thread (coming soon)" },
+  { name: "Reddit", icon: "🅡", url: "#", description: "Reddit community (coming soon)" }
+]
 </script>
 
 <template>
@@ -31,11 +14,7 @@ onMounted(async () => {
       <p class="subtitle">Join our community and stay updated</p>
     </div>
 
-    <div v-if="loading" class="loading">
-      <div class="spinner"></div>
-    </div>
-
-    <div v-else class="channels-grid">
+    <div class="channels-grid">
       <a 
         v-for="channel in channels" 
         :key="channel.name"
@@ -83,25 +62,6 @@ onMounted(async () => {
 .subtitle {
   color: #6b7a9e;
   font-size: 1.1rem;
-}
-
-.loading {
-  text-align: center;
-  padding: 3rem;
-}
-
-.spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid #2a3548;
-  border-top-color: #667eea;
-  border-radius: 50%;
-  margin: 0 auto;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
 }
 
 .channels-grid {
