@@ -77,18 +77,24 @@ async function switchToCorrectNetwork() {
   }
   
   const targetNetwork = SOLANA_CLUSTER === 'mainnet' ? 'mainnet-beta' : 'devnet'
+  const targetLabel = SOLANA_CLUSTER === 'mainnet' ? 'Mainnet' : 'Devnet'
   
+  // Phantom doesn't have programmatic network switch, show instructions
+  paymentStatus.value = 'error'
+  paymentMessage.value = `Please switch to ${targetLabel} in your Phantom wallet, then click the button again.`
+  
+  // Try to re-connect to trigger Phantom's network selector
   try {
-    await phantom.setNetwork(targetNetwork)
-    // Update local state
-    if (globalWallet?.phantomNetwork) {
-      globalWallet.phantomNetwork.value = targetNetwork
+    await phantom.disconnect()
+    await phantom.connect()
+    // Update network from reconnection
+    if (phantom.network) {
+      if (globalWallet?.phantomNetwork) {
+        globalWallet.phantomNetwork.value = phantom.network
+      }
     }
-    // Close the modal after switching
-    closePaymentModal()
   } catch (err: any) {
-    paymentStatus.value = 'error'
-    paymentMessage.value = 'Failed to switch network: ' + (err.message || 'Unknown error')
+    console.log('Reconnection skipped, user needs to manually switch network')
   }
 }
 
@@ -360,7 +366,7 @@ function closeIfAllowed() {
     <div v-else-if="walletChain === 'solana' && !isCorrectNetwork" class="network-warning">
       <p>⚠️ Wrong network! Please switch Phantom to {{ SOLANA_CLUSTER === 'mainnet' ? 'Mainnet' : 'Devnet' }}</p>
       <button class="network-switch-btn" @click="switchToCorrectNetwork">
-        🔄 Switch Network
+        🔄 Switch Network in Phantom
       </button>
     </div>
 
@@ -465,7 +471,7 @@ function closeIfAllowed() {
         
         <div v-if="paymentStatus === 'error' && walletChain === 'solana' && !isCorrectNetwork" class="switch-network-section">
           <button class="switch-network-btn" @click="switchToCorrectNetwork">
-            🔄 Switch to {{ SOLANA_CLUSTER === 'mainnet' ? 'Mainnet' : 'Devnet' }}
+            🔄 Switch Network in Phantom
           </button>
         </div>
 
