@@ -60,7 +60,11 @@ const pollInterval = ref<number | null>(null)
 const walletAddress = computed(() => globalWallet?.walletAddress?.value || '')
 const isConnected = computed(() => globalWallet?.connected?.value || false)
 const walletChain = computed(() => globalWallet?.walletChain?.value || '')
-const phantomNetwork = computed(() => globalWallet?.phantomNetwork?.value || '')
+const phantomNetwork = computed(() => {
+  const network = globalWallet?.phantomNetwork?.value || ''
+  console.log('[PricingView] phantomNetwork:', network)
+  return network
+})
 const isCorrectNetwork = computed(() => {
   if (walletChain.value !== 'solana') return false
   
@@ -69,8 +73,8 @@ const isCorrectNetwork = computed(() => {
     return phantomNetwork.value === 'mainnet-beta'
   }
   
-  // Devnet check - accept devnet, testnet, or devnet as valid dev/test networks
-  return phantomNetwork.value === 'devnet' || phantomNetwork.value === 'testnet'
+  // Devnet/testnet check - if NOT mainnet-beta, it's dev/test network
+  return phantomNetwork.value !== 'mainnet-beta'
 })
 
 // Switch Phantom to correct network
