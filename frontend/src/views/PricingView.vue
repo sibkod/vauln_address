@@ -82,6 +82,10 @@ async function fetchPackages() {
 
 function selectPackage(pkg: Package) {
   if (!isConnected.value) {
+    // Open wallet connection modal
+    if (globalWallet?.openWalletModal) {
+      globalWallet.openWalletModal()
+    }
     return
   }
   selectedPackage.value = pkg
@@ -304,6 +308,12 @@ function closeIfAllowed() {
       <div class="sub">Secure wallet checks with SOL</div>
     </div>
 
+    <!-- Wallet connection prompt -->
+    <div v-if="!isConnected" class="wallet-prompt">
+      <p>👻 Connect your wallet to purchase checks</p>
+      <button class="connect-wallet-btn" @click="globalWallet?.openWalletModal?.()">Connect Wallet</button>
+    </div>
+
     <!-- Packages -->
     <div class="packages-grid">
       <div 
@@ -428,6 +438,39 @@ function closeIfAllowed() {
 .pricing-header .sub {
   color: #6b7a9e;
   font-size: 0.95rem;
+}
+
+.wallet-prompt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  background: rgba(102, 126, 234, 0.1);
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+.wallet-prompt p {
+  margin: 0;
+  color: #98a8ce;
+  font-size: 0.95rem;
+}
+.connect-wallet-btn {
+  padding: 0.6rem 1.2rem;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.connect-wallet-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
 }
 
 .packages-grid {

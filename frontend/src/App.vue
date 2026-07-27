@@ -49,8 +49,8 @@ const walletOptions = [
   { id: 'phantom', name: 'Phantom', icon: '👻', url: 'https://phantom.app/', type: 'extension', chain: 'solana' },
 ]
 
-// Provide auth state to all components
-provide('wallet', { connected, walletAddress, walletChain, userBalance, authToken, refreshBalance, fetchPurchaseHistory, fetchMe })
+// Provide auth state and wallet modal control to all components
+provide('wallet', { connected, walletAddress, walletChain, userBalance, authToken, refreshBalance, fetchPurchaseHistory, fetchMe, openWalletModal })
 provide('network', { isMainnet: IS_MAINNET, solanaNetwork: SOLANA_NETWORK })
 provide('rateLimitInfo', rateLimitInfo)
 provide('apiBase', API_BASE)
