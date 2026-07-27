@@ -267,51 +267,7 @@ async function connectWallet(walletId: string) {
           
           // Get Phantom network
           if (walletId === 'phantom') {
-            let network = ''
-            
-            // Try direct properties first
-            network = (provider as any).network || ''
-            if (network) {
-              console.log('[Phantom] network from direct property:', network)
-            }
-            
-            // Try session
-            if (!network) {
-              const session = (provider as any).session
-              if (session?.network) {
-                network = session.network
-                console.log('[Phantom] network from session:', network)
-              }
-            }
-            
-            // Try isMainnetBeta
-            if (!network) {
-              const isMainnetBeta = (provider as any).isMainnetBeta
-              if (isMainnetBeta !== undefined) {
-                network = isMainnetBeta ? 'mainnet-beta' : 'devnet'
-                console.log('[Phantom] network from isMainnetBeta:', network)
-              }
-            }
-            
-            // Try request methods
-            if (!network) {
-              const methods = ['getNetwork', 'solana', 'getSolanaNetwork', 'network']
-              for (const method of methods) {
-                try {
-                  const result = await provider.request({ method })
-                  if (result) {
-                    network = result
-                    console.log(`[Phantom] network from ${method}:`, network)
-                    break
-                  }
-                } catch (err) {
-                  // ignore
-                }
-              }
-            }
-            
-            console.log('[Phantom] Final network:', network)
-            phantomNetwork.value = network
+            phantomNetwork.value = await getPhantomNetwork(provider)
           }
           
           await authenticateSolana(provider, address)
@@ -420,6 +376,53 @@ function hexToBase64(hex: string): string {
     binary += String.fromCharCode(parseInt(cleanHex.substr(i, 2), 16))
   }
   return btoa(binary)
+}
+
+// Get Phantom network via RPC
+async function getPhantomNetwork(provider: any): Promise<string> {
+  try {
+    // Method 1: Direct property
+    if (provider.network) {
+      console.log('[Phantom] network property:', provider.network)
+      return provider.network
+    }
+    
+    // Method 2: session
+    if (provider.session?.network) {
+      console.log('[Phantom] session.network:', provider.session.network)
+      return provider.session.network
+    }
+    
+    // Method 3: Via RPC calls
+    try {
+      const { Connection } = await import('@solana/web3.js')
+      
+      // Try mainnet
+      try {
+        const mainnet = new Connection('https://api.mainnet-beta.solana.com')
+        await mainnet.getBalance(provider.publicKey)
+        console.log('[Phantom] RPC: mainnet-beta')
+        return 'mainnet-beta'
+      } catch {}
+      
+      // Try devnet
+      try {
+        const devnet = new Connection('https://api.devnet.solana.com')
+        await devnet.getBalance(provider.publicKey)
+        console.log('[Phantom] RPC: devnet')
+        return 'devnet'
+      } catch {}
+      
+    } catch (err) {
+      console.log('[Phantom] RPC error:', err)
+    }
+    
+    console.log('[Phantom] Could not detect network')
+    return 'unknown'
+  } catch (err) {
+    console.error('[Phantom] getPhantomNetwork error:', err)
+    return 'unknown'
+  }
 }
 
 async function authenticateSolana(provider: any, address: string) {
