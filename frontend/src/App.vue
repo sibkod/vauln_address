@@ -383,44 +383,33 @@ async function getPhantomNetwork(provider: any): Promise<string> {
   try {
     // Method 1: Direct property
     if (provider.network) {
-      console.log('[Phantom] network property:', provider.network)
       return provider.network
     }
     
     // Method 2: session
     if (provider.session?.network) {
-      console.log('[Phantom] session.network:', provider.session.network)
       return provider.session.network
     }
     
     // Method 3: Via RPC calls
-    try {
-      const { Connection } = await import('@solana/web3.js')
-      
-      // Try mainnet
-      try {
-        const mainnet = new Connection('https://api.mainnet-beta.solana.com')
-        await mainnet.getBalance(provider.publicKey)
-        console.log('[Phantom] RPC: mainnet-beta')
-        return 'mainnet-beta'
-      } catch {}
-      
-      // Try devnet
-      try {
-        const devnet = new Connection('https://api.devnet.solana.com')
-        await devnet.getBalance(provider.publicKey)
-        console.log('[Phantom] RPC: devnet')
-        return 'devnet'
-      } catch {}
-      
-    } catch (err) {
-      console.log('[Phantom] RPC error:', err)
-    }
+    const { Connection } = await import('@solana/web3.js')
     
-    console.log('[Phantom] Could not detect network')
+    // Try mainnet first
+    try {
+      const mainnet = new Connection('https://api.mainnet-beta.solana.com')
+      await mainnet.getBalance(provider.publicKey)
+      return 'mainnet-beta'
+    } catch {}
+    
+    // Try devnet
+    try {
+      const devnet = new Connection('https://api.devnet.solana.com')
+      await devnet.getBalance(provider.publicKey)
+      return 'devnet'
+    } catch {}
+    
     return 'unknown'
   } catch (err) {
-    console.error('[Phantom] getPhantomNetwork error:', err)
     return 'unknown'
   }
 }
