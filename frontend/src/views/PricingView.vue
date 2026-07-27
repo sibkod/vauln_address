@@ -305,7 +305,6 @@ function closeIfAllowed() {
   <template v-else>
     <!-- Header -->
     <div class="pricing-header">
-      <div class="badge">💎 Fair pricing</div>
       <h1>Choose Your Plan</h1>
       <div class="sub">Secure wallet checks with SOL</div>
     </div>
