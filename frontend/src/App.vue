@@ -393,20 +393,33 @@ async function getPhantomNetwork(provider: any): Promise<string> {
     
     // Method 3: Via RPC calls
     const { Connection } = await import('@solana/web3.js')
+    const pubkey = provider.publicKey.toString()
     
-    // Try mainnet first
-    try {
-      const mainnet = new Connection('https://api.mainnet-beta.solana.com')
-      await mainnet.getBalance(provider.publicKey)
-      return 'mainnet-beta'
-    } catch {}
+    // Try both networks in parallel
+    const [mainnetResult, devnetResult] = await Promise.all([
+      (async () => {
+        try {
+          const mainnet = new Connection('https://api.mainnet-beta.solana.com', { commitment: 'processed' })
+          await mainnet.getBalance(provider.publicKey)
+          return 'mainnet-beta'
+        } catch {
+          return null
+        }
+      })(),
+      (async () => {
+        try {
+          const devnet = new Connection('https://api.devnet.solana.com', { commitment: 'processed' })
+          await devnet.getBalance(provider.publicKey)
+          return 'devnet'
+        } catch {
+          return null
+        }
+      })()
+    ])
     
-    // Try devnet
-    try {
-      const devnet = new Connection('https://api.devnet.solana.com')
-      await devnet.getBalance(provider.publicKey)
-      return 'devnet'
-    } catch {}
+    // Return whichever network worked
+    if (mainnetResult) return mainnetResult
+    if (devnetResult) return devnetResult
     
     return 'unknown'
   } catch (err) {
