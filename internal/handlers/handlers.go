@@ -75,13 +75,13 @@ func loadPackages(cfg *config.Config) []gin.H {
 	packages := make([]gin.H, len(pkgData.Packages))
 	for i, p := range pkgData.Packages {
 		packages[i] = gin.H{
-			"id":                p.ID,
-			"name":              p.Name,
-			"checks":            p.Checks,
-			"price_usd":         p.PriceUSD,
-			"discount_percent":   p.DiscountPercent,
-			"discount_label":    p.DiscountLabel,
-			"popular":           p.Popular,
+			"id":               p.ID,
+			"name":             p.Name,
+			"checks":           p.Checks,
+			"price_usd":        p.PriceUSD,
+			"discount_percent": p.DiscountPercent,
+			"discount_label":   p.DiscountLabel,
+			"popular":          p.Popular,
 		}
 	}
 	return packages
@@ -89,11 +89,12 @@ func loadPackages(cfg *config.Config) []gin.H {
 
 func getDefaultPackages(cfg *config.Config) []gin.H {
 	pricePerCheck := cfg.PricePerCheckUSD
-	
+
 	return []gin.H{
-		{"id": "starter", "name": "Starter", "checks": 50, "price_usd": math.Round(float64(50)*pricePerCheck*100) / 100, "discount_percent": 0, "discount_label": "", "popular": false},
-		{"id": "pro", "name": "Pro", "checks": 200, "price_usd": math.Round(float64(200)*pricePerCheck*100) / 100, "discount_percent": 0, "discount_label": "", "popular": true},
-		{"id": "enterprise", "name": "Enterprise", "checks": 1000, "price_usd": math.Round(float64(1000)*pricePerCheck*0.5*100) / 100, "discount_percent": 50, "discount_label": "50% OFF", "popular": false},
+		{"id": "beginner", "name": "Beginner", "checks": 10, "price_usd": math.Round(float64(10)*pricePerCheck*100) / 100, "discount_percent": 0, "discount_label": "", "popular": false},
+		{"id": "starter", "name": "Starter", "checks": 50, "price_usd": math.Round(float64(50)*0.95*pricePerCheck*100) / 100, "discount_percent": 0, "discount_label": "", "popular": false},
+		{"id": "pro", "name": "Pro", "checks": 150, "price_usd": math.Round(float64(150)*pricePerCheck*0.85*100) / 100, "discount_percent": 0, "discount_label": "", "popular": true},
+		{"id": "enterprise", "name": "Enterprise", "checks": 500, "price_usd": math.Round(float64(500)*pricePerCheck*0.75*100) / 100, "discount_percent": 0, "discount_label": "", "popular": false},
 	}
 }
 
@@ -236,22 +237,22 @@ func (h *Handler) GetPricing(c *gin.Context) {
 // GetPackages returns pre-defined pricing packages with dynamic SOL prices
 func (h *Handler) GetPackages(c *gin.Context) {
 	solPrice := h.priceService.GetSolPrice()
-	
+
 	// Calculate SOL price for each package
 	packages := make([]gin.H, len(h.packages))
 	for i, pkg := range h.packages {
 		priceUSD := pkg["price_usd"].(float64)
 		priceSOL := math.Ceil(priceUSD/solPrice*10000) / 10000 // Round to 4 decimal places
-		
+
 		packages[i] = gin.H{
-			"id":                pkg["id"],
-			"name":              pkg["name"],
-			"checks":            pkg["checks"],
-			"price_usd":         priceUSD,
-			"price_sol":         priceSOL,
-			"discount_percent":  pkg["discount_percent"],
-			"discount_label":    pkg["discount_label"],
-			"popular":           pkg["popular"],
+			"id":               pkg["id"],
+			"name":             pkg["name"],
+			"checks":           pkg["checks"],
+			"price_usd":        priceUSD,
+			"price_sol":        priceSOL,
+			"discount_percent": pkg["discount_percent"],
+			"discount_label":   pkg["discount_label"],
+			"popular":          pkg["popular"],
 		}
 	}
 
@@ -267,12 +268,12 @@ func (h *Handler) GetPackages(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"packages":          packages,
-		"payment_address":  paymentAddress,
-		"sol_price_usd":     solPrice,
-		"price_per_check":   h.serverCfg.PricePerCheckUSD,
-		"network":           network,
-		"updated_at":        h.priceService.GetUpdatedAt().Unix(),
+		"packages":        packages,
+		"payment_address": paymentAddress,
+		"sol_price_usd":   solPrice,
+		"price_per_check": h.serverCfg.PricePerCheckUSD,
+		"network":         network,
+		"updated_at":      h.priceService.GetUpdatedAt().Unix(),
 	})
 }
 
@@ -308,14 +309,14 @@ func (h *Handler) CreateOrder(c *gin.Context) {
 	// Calculate price (USD) - use PricePerCheckUSD as base
 	pricePerCheck := h.serverCfg.PricePerCheckUSD
 	priceUSD := float64(req.ChecksCount) * pricePerCheck
-	
+
 	// Apply volume discounts
 	if req.ChecksCount >= 1000 {
 		priceUSD = priceUSD * 0.5 // 50% discount for 1000+
 	} else if req.ChecksCount >= 500 {
 		priceUSD = priceUSD * 0.6 // 40% discount for 500+
 	}
-	
+
 	// Round to 2 decimal places
 	priceUSD = math.Round(priceUSD*100) / 100
 
@@ -629,16 +630,16 @@ func (h *Handler) GetMe(c *gin.Context) {
 		user, err := h.authService.GetUserByWallet(walletAddress.(string), chainStr)
 		if err != nil || user == nil {
 			c.JSON(http.StatusOK, gin.H{
-				"wallet_address":         walletAddress.(string),
-				"chain":                  chainStr,
-				"balance":                0,
-				"purchased_balance":      0,
-				"rate_limit_remaining":   rateLimitRemaining,
-				"rate_limit_used":        rateLimitUsed,
-				"rate_limit_limit":       h.serverCfg.FreeCheckLimit,
-				"reset_at":              resetAtUnix,
-				"is_premium":             false,
-				"is_authenticated":       true,
+				"wallet_address":       walletAddress.(string),
+				"chain":                chainStr,
+				"balance":              0,
+				"purchased_balance":    0,
+				"rate_limit_remaining": rateLimitRemaining,
+				"rate_limit_used":      rateLimitUsed,
+				"rate_limit_limit":     h.serverCfg.FreeCheckLimit,
+				"reset_at":             resetAtUnix,
+				"is_premium":           false,
+				"is_authenticated":     true,
 			})
 			return
 		}
@@ -655,18 +656,18 @@ func (h *Handler) GetMe(c *gin.Context) {
 		c.Header("X-Balance-Available", fmt.Sprintf("%d", purchasedBalance))
 
 		c.JSON(http.StatusOK, gin.H{
-			"wallet_address":         user.WalletAddress,
-			"chain":                  user.Chain,
-			"balance":                purchasedBalance,
-			"purchased_balance":      purchasedBalance,
-			"rate_limit_remaining":   rateLimitRemaining,
-			"rate_limit_used":        rateLimitUsed,
-			"rate_limit_limit":       h.serverCfg.FreeCheckLimit,
-			"reset_at":              resetAtUnix,
-			"is_premium":             isPremium,
-			"is_authenticated":       true,
-			"created_at":             user.CreatedAt,
-			"last_login_at":          user.LastLoginAt,
+			"wallet_address":       user.WalletAddress,
+			"chain":                user.Chain,
+			"balance":              purchasedBalance,
+			"purchased_balance":    purchasedBalance,
+			"rate_limit_remaining": rateLimitRemaining,
+			"rate_limit_used":      rateLimitUsed,
+			"rate_limit_limit":     h.serverCfg.FreeCheckLimit,
+			"reset_at":             resetAtUnix,
+			"is_premium":           isPremium,
+			"is_authenticated":     true,
+			"created_at":           user.CreatedAt,
+			"last_login_at":        user.LastLoginAt,
 		})
 		return
 	}
@@ -679,16 +680,16 @@ func (h *Handler) GetMe(c *gin.Context) {
 	c.Header("X-RateLimit-Source", "ip")
 
 	c.JSON(http.StatusOK, gin.H{
-		"wallet_address":         nil,
-		"chain":                  nil,
-		"balance":                rateLimitRemaining,
-		"purchased_balance":      0,
-		"rate_limit_remaining":   rateLimitRemaining,
-		"rate_limit_used":        rateLimitUsed,
-		"rate_limit_limit":       h.serverCfg.FreeCheckLimit,
-		"reset_at":              resetAtUnix,
-		"is_premium":             false,
-		"is_authenticated":       false,
+		"wallet_address":       nil,
+		"chain":                nil,
+		"balance":              rateLimitRemaining,
+		"purchased_balance":    0,
+		"rate_limit_remaining": rateLimitRemaining,
+		"rate_limit_used":      rateLimitUsed,
+		"rate_limit_limit":     h.serverCfg.FreeCheckLimit,
+		"reset_at":             resetAtUnix,
+		"is_premium":           false,
+		"is_authenticated":     false,
 	})
 }
 
@@ -726,17 +727,17 @@ func (h *Handler) GetBalance(c *gin.Context) {
 		// Otherwise, show rate limit remaining (free checks for authenticated users)
 		if purchasedBalance > 0 {
 			c.JSON(http.StatusOK, gin.H{
-				"balance":               purchasedBalance,
-				"purchased_balance":     purchasedBalance,
-				"rate_limit_remaining":  rateLimitRemaining,
-				"source":                "purchased",
+				"balance":              purchasedBalance,
+				"purchased_balance":    purchasedBalance,
+				"rate_limit_remaining": rateLimitRemaining,
+				"source":               "purchased",
 			})
 		} else {
 			c.JSON(http.StatusOK, gin.H{
-				"balance":               rateLimitRemaining,
-				"purchased_balance":     0,
+				"balance":              rateLimitRemaining,
+				"purchased_balance":    0,
 				"rate_limit_remaining": rateLimitRemaining,
-				"source":                "rate_limit",
+				"source":               "rate_limit",
 			})
 		}
 		return
@@ -744,8 +745,8 @@ func (h *Handler) GetBalance(c *gin.Context) {
 
 	// Anonymous user - return IP-based rate limit remaining only
 	c.JSON(http.StatusOK, gin.H{
-		"balance":               rateLimitRemaining,
-		"purchased_balance":     0,
+		"balance":              rateLimitRemaining,
+		"purchased_balance":    0,
 		"rate_limit_remaining": rateLimitRemaining,
 		"source":               "rate_limit",
 	})
@@ -764,7 +765,7 @@ func (h *Handler) GetPurchaseHistory(c *gin.Context) {
 
 	pageStr := c.DefaultQuery("page", "1")
 	perPageStr := c.DefaultQuery("per_page", "10")
-	
+
 	var page, perPage int
 	if _, err := fmt.Sscanf(pageStr, "%d", &page); err != nil || page < 1 {
 		page = 1
@@ -844,7 +845,7 @@ func (h *Handler) CheckWallet(c *gin.Context) {
 		deductionChainVal, _ := c.Get("pendingDeductionChain")
 		deductionAddr, _ := deductionAddrVal.(string)
 		deductionChain, _ := deductionChainVal.(string)
-		
+
 		if deductionAddr != "" && deductionChain != "" {
 			if err := h.repo.DeductUserBalance(c.Request.Context(), deductionAddr, deductionChain, 1); err == nil {
 				if prevBalance, exists := c.Get("pendingDeductionBalance"); exists {
@@ -905,7 +906,7 @@ func (h *Handler) GetRecentChecks(c *gin.Context) {
 	// Default limit
 	limit := 10
 	offset := 0
-	
+
 	// Check for pagination params
 	if l := c.Query("limit"); l != "" {
 		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
@@ -920,7 +921,7 @@ func (h *Handler) GetRecentChecks(c *gin.Context) {
 
 	// Check if user is authenticated
 	walletAddress, isAuthenticated := c.Get("userAddress")
-	
+
 	var checks []models.RecentCheck
 	var total int
 	var err error
@@ -962,7 +963,7 @@ func (h *Handler) GetRecentChecks(c *gin.Context) {
 		"checks": checks,
 		"count":  len(checks),
 	}
-	
+
 	// Add pagination info for authenticated users
 	if isAuthenticated && walletAddress != nil {
 		response["total"] = total
@@ -1009,7 +1010,7 @@ func (h *Handler) GetSupportedChains(c *gin.Context) {
 		log.Printf("Failed to get wallet stats: %v", err)
 		counts = make(map[string]int)
 	}
-	
+
 	c.JSON(http.StatusOK, gin.H{
 		"chains": []gin.H{
 			{"name": "EVM", "id": "evm", "example": "0x742d35Cc6634C0532925a3b844Bc9e7595f5B2a1"},
@@ -1470,8 +1471,8 @@ func (h *Handler) AddWallet(c *gin.Context) {
 	var req models.AddWalletRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
-			Error: "invalid request body",
-			Code:  "INVALID_REQUEST",
+			Error:   "invalid request body",
+			Code:    "INVALID_REQUEST",
 			Details: err.Error(),
 		})
 		return
