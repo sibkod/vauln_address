@@ -265,15 +265,19 @@ async function connectWallet(walletId: string) {
         if (provider.publicKey) {
           const address = provider.publicKey.toString()
           
-          // Get Phantom network
+          // Get Phantom network - dump all properties
           if (walletId === 'phantom') {
-            try {
-              // Try different methods
-              console.log('[Phantom] Trying methods...')
-              console.log('[Phantom] isMainnetBeta:', (provider as any).isMainnetBeta)
-              console.log('[Phantom] network from getAccount:', await provider.request({ method: 'getAccount' }))
-            } catch (err) {
-              console.log('[Phantom] getAccount error:', err)
+            console.log('[Phantom] === FULL PROVIDER DUMP ===')
+            console.log('[Phantom] All keys:', Object.keys(provider))
+            console.log('[Phantom] network:', (provider as any).network)
+            console.log('[Phantom] isMainnetBeta:', (provider as any).isMainnetBeta)
+            console.log('[Phantom] session:', (provider as any).session)
+            console.log('[Phantom] provider details:', JSON.stringify(Object.getOwnPropertyNames(provider)))
+            
+            // Try session if exists
+            const session = (provider as any).session
+            if (session) {
+              console.log('[Phantom] session.network:', session.network)
             }
           }
           
