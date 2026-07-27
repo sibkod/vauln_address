@@ -264,12 +264,20 @@ async function connectWallet(walletId: string) {
         await provider.connect()
         if (provider.publicKey) {
           const address = provider.publicKey.toString()
-          // Capture Phantom network (devnet or mainnet-beta)
+          
+          // Get Phantom network
           if (walletId === 'phantom') {
-            console.log('[Phantom] provider.network:', provider.network)
-            console.log('[Phantom] provider:', Object.keys(provider))
-            phantomNetwork.value = provider.network || ''
+            try {
+              // Try to get network via request
+              const network = await provider.request({ method: 'solana' })
+              console.log('[Phantom] network from request:', network)
+              phantomNetwork.value = network || ''
+            } catch (err) {
+              console.log('[Phantom] Could not get network:', err)
+              phantomNetwork.value = ''
+            }
           }
+          
           await authenticateSolana(provider, address)
           return
         }
