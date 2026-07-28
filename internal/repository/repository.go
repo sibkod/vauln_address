@@ -88,8 +88,20 @@ func (r *Repository) executeStatements(ctx context.Context, schema string) error
 			continue
 		}
 		if _, err := r.db.ExecContext(ctx, stmt); err != nil {
-			// Ignore "already exists" errors for CREATE statements
-			if !strings.Contains(err.Error(), "already exists") {
+			// Ignore common "already exists" errors for CREATE statements
+			errMsg := strings.ToLower(err.Error())
+			ignoreErrors := []string{
+				"already exists",
+				"duplicate",
+			}
+			shouldIgnore := false
+			for _, ignore := range ignoreErrors {
+				if strings.Contains(errMsg, ignore) {
+					shouldIgnore = true
+					break
+				}
+			}
+			if !shouldIgnore {
 				return fmt.Errorf("failed to execute statement: %w\nStatement: %s", err, stmt)
 			}
 		}
