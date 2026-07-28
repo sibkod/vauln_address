@@ -30,8 +30,14 @@ func New(cfg *config.Config) (*Repository, error) {
 	switch cfg.DBType {
 	case config.DBTypeMySQL:
 		driverName = "mysql"
-		dsn = fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True",
-			cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort, cfg.DBName, cfg.DBCharset)
+		// Use unix socket if specified, otherwise use TCP
+		if cfg.DBUnixSocket != "" {
+			dsn = fmt.Sprintf("%s:%s@unix(%s)/%s?charset=%s&parseTime=True",
+				cfg.DBUser, cfg.DBPassword, cfg.DBUnixSocket, cfg.DBName, cfg.DBCharset)
+		} else {
+			dsn = fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&tls=false",
+				cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort, cfg.DBName, cfg.DBCharset)
+		}
 
 	case config.DBTypeSQLite:
 		driverName = "sqlite3"

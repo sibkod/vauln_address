@@ -25,6 +25,7 @@ type Config struct {
 	DBName            string
 	DBSSLMode         string
 	DBCharset         string
+	DBUnixSocket      string
 	SQLitePath        string
 	ServerPort        string
 	RateLimitRequests int
@@ -67,6 +68,7 @@ func Load() *Config {
 		DBName:            getEnv("DB_NAME", "vauln_address"),
 		DBSSLMode:         getEnv("DB_SSLMODE", "disable"),
 		DBCharset:         getEnv("DB_CHARSET", "utf8mb4"),
+		DBUnixSocket:      getEnv("DB_UNIX_SOCKET", ""),
 		SQLitePath:        getEnv("SQLITE_PATH", "./data/vauln_address.db"),
 		ServerPort:        getEnv("SERVER_PORT", "9111"),
 		RateLimitRequests: getEnvInt("RATE_LIMIT_REQUESTS", 10),
