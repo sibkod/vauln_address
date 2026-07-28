@@ -78,6 +78,25 @@ func (r *Repository) Close() {
 	r.db.Close()
 }
 
+// executeStatements splits SQL by semicolons and executes each statement
+func (r *Repository) executeStatements(ctx context.Context, schema string) error {
+	// Split by semicolon and trim whitespace
+	statements := strings.Split(schema, ";")
+	for _, stmt := range statements {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" {
+			continue
+		}
+		if _, err := r.db.ExecContext(ctx, stmt); err != nil {
+			// Ignore "already exists" errors for CREATE statements
+			if !strings.Contains(err.Error(), "already exists") {
+				return fmt.Errorf("failed to execute statement: %w\nStatement: %s", err, stmt)
+			}
+		}
+	}
+	return nil
+}
+
 func (r *Repository) InitSchema(ctx context.Context) error {
 	var schema string
 
@@ -93,12 +112,11 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 			has_seed TINYINT(1) DEFAULT 0,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-		);
-		CREATE INDEX idx_wallets_address ON wallets(address);
-		CREATE INDEX idx_wallets_chain ON wallets(chain);
-		CREATE INDEX idx_wallets_status ON wallets(status);
-		CREATE INDEX idx_wallets_chain_status ON wallets(chain, status);
-
+		)
+		CREATE INDEX idx_wallets_address ON wallets(address)
+		CREATE INDEX idx_wallets_chain ON wallets(chain)
+		CREATE INDEX idx_wallets_status ON wallets(status)
+		CREATE INDEX idx_wallets_chain_status ON wallets(chain, status)
 		CREATE TABLE IF NOT EXISTS users (
 			id BIGINT PRIMARY KEY AUTO_INCREMENT,
 			wallet_address VARCHAR(100) NOT NULL,
@@ -110,9 +128,8 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 			last_login_at TIMESTAMP NULL,
 			UNIQUE KEY uk_users_wallet_chain (wallet_address, chain)
-		);
-		CREATE INDEX idx_users_wallet ON users(wallet_address);
-
+		)
+		CREATE INDEX idx_users_wallet ON users(wallet_address)
 		CREATE TABLE IF NOT EXISTS orders (
 			id BIGINT PRIMARY KEY AUTO_INCREMENT,
 			wallet_address VARCHAR(100) NOT NULL,
@@ -128,31 +145,25 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 			completed_at TIMESTAMP NULL
-		);
-		CREATE INDEX idx_orders_wallet ON orders(wallet_address);
-		CREATE INDEX idx_orders_uuid ON orders(order_uuid);
-		CREATE INDEX idx_orders_status ON orders(status);
-		CREATE INDEX idx_orders_wallet_status ON orders(wallet_address, status);
-
-		-- Migration: add updated_at to orders (ignore error if column exists)
-		-- We'll handle this in code after table creation
-
+		)
+		CREATE INDEX idx_orders_wallet ON orders(wallet_address)
+		CREATE INDEX idx_orders_uuid ON orders(order_uuid)
+		CREATE INDEX idx_orders_status ON orders(status)
+		CREATE INDEX idx_orders_wallet_status ON orders(wallet_address, status)
 		CREATE TABLE IF NOT EXISTS contact_messages (
 			id BIGINT PRIMARY KEY AUTO_INCREMENT,
 			name VARCHAR(255) NOT NULL,
 			email VARCHAR(255) NOT NULL,
 			message TEXT NOT NULL,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);
-
+		)
 		CREATE TABLE IF NOT EXISTS rate_limits (
 			id BIGINT PRIMARY KEY AUTO_INCREMENT,
 			ip_address VARCHAR(45) NOT NULL UNIQUE,
 			request_count INT DEFAULT 0,
 			window_start TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);
-		CREATE INDEX idx_rate_limits_ip ON rate_limits(ip_address);
-
+		)
+		CREATE INDEX idx_rate_limits_ip ON rate_limits(ip_address)
 		CREATE TABLE IF NOT EXISTS check_history (
 			id BIGINT PRIMARY KEY AUTO_INCREMENT,
 			wallet_address VARCHAR(100) DEFAULT '',
@@ -160,10 +171,9 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 			chain VARCHAR(20) NOT NULL,
 			status VARCHAR(20),
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);
-		CREATE INDEX idx_check_history_created ON check_history(created_at);
-		CREATE INDEX idx_check_history_wallet ON check_history(wallet_address);
-
+		)
+		CREATE INDEX idx_check_history_created ON check_history(created_at)
+		CREATE INDEX idx_check_history_wallet ON check_history(wallet_address)
 		CREATE TABLE IF NOT EXISTS api_keys (
 			id BIGINT PRIMARY KEY AUTO_INCREMENT,
 			wallet_address VARCHAR(100) NOT NULL,
@@ -175,9 +185,9 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			revoked_at TIMESTAMP NULL,
 			is_revoked TINYINT(1) DEFAULT 0
-		);
-		CREATE INDEX idx_api_keys_wallet ON api_keys(wallet_address);
-		CREATE INDEX idx_api_keys_hash ON api_keys(key_hash);
+		)
+		CREATE INDEX idx_api_keys_wallet ON api_keys(wallet_address)
+		CREATE INDEX idx_api_keys_hash ON api_keys(key_hash)
 		`
 
 	case config.DBTypeSQLite:
@@ -371,8 +381,7 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 		`
 	}
 
-	_, err := r.db.ExecContext(ctx, schema)
-	if err != nil {
+	if err := r.executeStatements(ctx, schema); err != nil {
 		return err
 	}
 
