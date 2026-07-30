@@ -53,12 +53,6 @@ const roadmap = {
         </ul>
       </div>
     </div>
-
-    <div class="contribute-section">
-      <h3>🤝 Contribute to Security</h3>
-      <p>Help us build a safer Web3 by reporting new threats.</p>
-      <RouterLink to="/contact" class="btn-primary">Report a Threat</RouterLink>
-    </div>
   </div>
 </template>
 

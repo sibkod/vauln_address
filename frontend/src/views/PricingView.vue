@@ -310,7 +310,7 @@ function closeIfAllowed() {
     </div>
 
     <!-- Devnet warning -->
-    <div v-if="SOLANA_CLUSTER !== 'mainnet'" class="devnet-warning">
+    <div v-if="SOLANA_CLUSTER == 'devnet'" class="devnet-warning">
       ⚠️ <strong>DEVNET MODE</strong> — All transactions are on Solana Devnet blockchain
     </div>
 

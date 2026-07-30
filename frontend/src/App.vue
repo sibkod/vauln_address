@@ -254,9 +254,6 @@ async function connectWallet(walletId: string) {
     if (wallet.chain === 'solana') {
       const solanaProviders: Record<string, any> = {
         phantom: (window as any).solana,
-        solflare: (window as any).solflare,
-        slope: (window as any).slope,
-        glow: (window as any).glow,
       }
       
       const provider = solanaProviders[walletId]
@@ -354,6 +351,50 @@ async function connectWallet(walletId: string) {
   }
   
   connecting.value = false
+}
+
+async function getPhantomNetworkV2(provider: any): Promise<string> {
+  try {
+    // Проверяем, поддерживает ли провайдер метод getNetwork
+    if (typeof provider.getNetwork === 'function') {
+      const network = await provider.getNetwork()
+      return network
+    }
+
+    // Альтернативный способ через request
+    if (typeof provider.request === 'function') {
+      // Пробуем разные методы
+      const methods = [
+        { method: 'getNetwork' },
+        { method: 'solana_getNetwork' },
+        { method: 'network' }
+      ]
+
+      for (const req of methods) {
+        try {
+          const result = await provider.request(req)
+          if (result) {
+            return typeof result === 'string' ? result : result.network || result
+          }
+        } catch (err) {
+          // продолжаем
+        }
+      }
+    }
+
+    // Fallback: определяем по подключенной сети
+    if (provider.connection?.rpcEndpoint) {
+      const endpoint = provider.connection.rpcEndpoint
+      if (endpoint.includes('devnet')) return 'devnet'
+      if (endpoint.includes('testnet')) return 'testnet'
+      if (endpoint.includes('mainnet')) return 'mainnet-beta'
+    }
+
+    return 'unknown'
+  } catch (err) {
+    console.error('Failed to get Phantom network:', err)
+    return 'unknown'
+  }
 }
 
 // Convert Uint8Array to base64 (browser compatible)
@@ -618,7 +659,7 @@ function getTotal() {
       <RouterLink to="/roadmap" class="nav-link">Roadmap</RouterLink>
       <RouterLink to="/about" class="nav-link">About</RouterLink>
       <RouterLink to="/contact" class="nav-link">Contact</RouterLink>
-      <RouterLink to="/support" class="nav-link">Support</RouterLink>
+      <!-- <RouterLink to="/support" class="nav-link">Support</RouterLink> -->
     </div>
     <div class="nav-right">
       <span class="network-badge">{{ IS_MAINNET ? 'Mainnet' : 'Devnet' }}</span>
