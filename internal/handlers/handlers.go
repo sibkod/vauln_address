@@ -28,6 +28,13 @@ func contains(s, substr string) bool {
 	return strings.Contains(s, substr)
 }
 
+// nextMidnight returns the next midnight (00:00) UTC
+func nextMidnight() time.Time {
+	now := time.Now().UTC()
+	tomorrow := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, time.UTC)
+	return tomorrow
+}
+
 type Handler struct {
 	repo         *repository.Repository
 	authService  *auth.AuthService
@@ -608,20 +615,16 @@ func (h *Handler) GetMe(c *gin.Context) {
 	rateLimit, _ := h.repo.GetRateLimit(c.Request.Context(), ip)
 	rateLimitRemaining := h.serverCfg.FreeCheckLimit
 	rateLimitUsed := 0
-	var windowStart time.Time
 	if rateLimit != nil {
 		rateLimitRemaining = h.serverCfg.FreeCheckLimit - rateLimit.Count
 		if rateLimitRemaining < 0 {
 			rateLimitRemaining = 0
 		}
 		rateLimitUsed = rateLimit.Count
-		windowStart = rateLimit.WindowStart
-	} else {
-		windowStart = time.Now()
 	}
 
-	// Calculate reset time
-	resetAt := windowStart.Add(time.Duration(h.serverCfg.RateLimitHours) * time.Hour)
+	// Calculate reset time (next midnight)
+	resetAt := nextMidnight()
 	resetAtUnix := resetAt.Unix()
 
 	// Check if user is authenticated

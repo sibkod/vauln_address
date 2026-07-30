@@ -135,7 +135,7 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 				}
 
 				// No balance either - show same message as anonymous
-				windowEnd := rateLimit.WindowStart.Add(time.Duration(rl.cfg.RateLimitHours) * time.Hour)
+				windowEnd := nextMidnight()
 				resetIn := time.Until(windowEnd)
 
 				c.JSON(http.StatusTooManyRequests, models.ErrorResponse{
@@ -148,7 +148,7 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 			}
 
 			// Anonymous user - IP limit is final
-			windowEnd := rateLimit.WindowStart.Add(time.Duration(rl.cfg.RateLimitHours) * time.Hour)
+			windowEnd := nextMidnight()
 			resetIn := time.Until(windowEnd)
 
 			c.JSON(http.StatusTooManyRequests, models.ErrorResponse{
@@ -187,12 +187,19 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 	}
 }
 
+// nextMidnight returns the next midnight (00:00) UTC
+func nextMidnight() time.Time {
+	now := time.Now().UTC()
+	tomorrow := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, time.UTC)
+	return tomorrow
+}
+
 // setRateLimitHeaders sets common rate limit headers
 func (rl *RateLimiter) setRateLimitHeaders(c *gin.Context, rateLimit *models.RateLimit, isUserAuthenticated bool) {
 	limit := rl.cfg.FreeCheckLimit
 	used := rateLimit.Count
 	remaining := max(0, limit-used)
-	windowEnd := rateLimit.WindowStart.Add(time.Duration(rl.cfg.RateLimitHours) * time.Hour)
+	windowEnd := nextMidnight()
 
 	c.Header("X-RateLimit-Limit", strconv.Itoa(limit))
 	c.Header("X-RateLimit-Remaining", strconv.Itoa(remaining))
@@ -219,8 +226,9 @@ func (rl *RateLimiter) checkAndResetWindow(ctx context.Context, ip string) {
 		return
 	}
 
-	windowDuration := time.Duration(rl.cfg.RateLimitHours) * time.Hour
-	if time.Since(rateLimit.WindowStart) > windowDuration {
+	// Check if we're past midnight and need to reset
+	midnight := nextMidnight()
+	if time.Now().UTC().After(midnight) {
 		_ = rl.repo.ResetRateLimit(ctx, ip, time.Now())
 	}
 }
