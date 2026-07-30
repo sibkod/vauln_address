@@ -1,9 +1,9 @@
 <script setup lang="ts">
 const channels = [
-  { name: "Telegram", icon: "✈️", url: "#", description: "Telegram group (coming soon)" },
-  { name: "Discord", icon: "💬", url: "#", description: "Discord server (coming soon)" },
-  { name: "Bitcointalk", icon: "📋", url: "#", description: "Bitcointalk thread (coming soon)" },
-  { name: "Reddit", icon: "🅡", url: "#", description: "Reddit community (coming soon)" }
+  { name: "Discord", icon: "💬", url: "https://discord.gg/PEFtkRcSe", description: "Join our Discord community" },
+  { name: "Telegram", icon: "✈️", url: "https://t.me/pwndinfo", description: "Follow us on Telegram" },
+  // { name: "Bitcointalk", icon: "📋", url: "#", description: "Bitcointalk thread (coming soon)" },
+  // { name: "Reddit", icon: "🅡", url: "#", description: "Reddit community (coming soon)" }
 ]
 </script>
 
@@ -33,7 +33,7 @@ const channels = [
     </div>
 
     <div class="contact-note">
-      <p>For partnership inquiries or security-related reports, please reach out via Telegram or Discord.</p>
+      <p>For partnership inquiries or security-related reports, please reach out via Discord or Telegram.</p>
     </div>
   </div>
 </template>
