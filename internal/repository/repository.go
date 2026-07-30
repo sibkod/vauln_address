@@ -967,6 +967,15 @@ func (r *Repository) ResetRateLimit(ctx context.Context, ip string, windowStart 
 	return err
 }
 
+// ResetAllRateLimits resets rate limits for all IPs (used for daily reset at 00:00)
+func (r *Repository) ResetAllRateLimits(ctx context.Context) (int64, error) {
+	result, err := r.db.ExecContext(ctx, `UPDATE rate_limits SET request_count = 0, window_start = NOW()`)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 func (r *Repository) RecordCheck(ctx context.Context, walletAddress, address, chain, status string) error {
 	_, err := r.db.ExecContext(ctx,
 		`INSERT INTO check_history (wallet_address, address, chain, status) VALUES (?, ?, ?, ?)`,
