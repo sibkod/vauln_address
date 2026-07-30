@@ -36,7 +36,9 @@ const rateLimitInfo = ref({
   remaining: 0,
   used: 0,
   reset: 0,
-  source: 'ip' as 'ip' | 'balance'
+  source: 'free' as 'free' | 'mixed',
+  freeRemaining: 0,
+  purchasedBalance: 0
 })
 
 // Purchase history
@@ -65,45 +67,55 @@ async function fetchMe() {
     }
     const res = await fetch(apiUrl('/api/me'), { headers })
     
+    if (res.status === 401) {
+      // Not authenticated
+      connected.value = false
+      walletAddress.value = ''
+      rateLimitInfo.value = {
+        limit: 0,
+        remaining: 0,
+        used: 0,
+        reset: 0,
+        source: 'free',
+        freeRemaining: 0,
+        purchasedBalance: 0
+      }
+      return
+    }
+    
     if (res.ok) {
       const data = await res.json()
       
-      // Parse rate limit info from response body (more reliable)
-      if (data.rate_limit_limit !== undefined) rateLimitInfo.value.limit = data.rate_limit_limit
-      if (data.rate_limit_remaining !== undefined) rateLimitInfo.value.remaining = data.rate_limit_remaining
-      if (data.rate_limit_used !== undefined) rateLimitInfo.value.used = data.rate_limit_used
+      // Parse rate limit info from response body
+      if (data.balance !== undefined) {
+        rateLimitInfo.value.limit = data.balance
+        rateLimitInfo.value.remaining = data.balance
+      }
+      if (data.free_remaining !== undefined) rateLimitInfo.value.freeRemaining = data.free_remaining
+      if (data.purchased_balance !== undefined) rateLimitInfo.value.purchasedBalance = data.purchased_balance
       if (data.reset_at !== undefined) rateLimitInfo.value.reset = data.reset_at
-      if (data.rate_limit_source) rateLimitInfo.value.source = data.rate_limit_source as 'ip' | 'balance'
-      
-      // Also try headers as fallback
-      if (!data.reset_at) {
-        const resetHeader = res.headers.get('X-RateLimit-Reset')
-        if (resetHeader) rateLimitInfo.value.reset = parseInt(resetHeader)
+      if (data.is_premium !== undefined) {
+        rateLimitInfo.value.source = data.is_premium ? 'mixed' : 'free'
       }
       
       // Update balance
       if (data.balance !== undefined) {
         userBalance.value = data.balance
-        // Save to localStorage for authenticated users
-        if (data.is_authenticated && data.balance > 0) {
-          localStorage.setItem('userBalance', data.balance.toString())
-        }
       }
       
       // Update connection state if needed
       if (data.is_authenticated && data.wallet_address) {
-        if (!connected.value) {
-          connected.value = true
-          walletAddress.value = data.wallet_address
-          if (data.chain) walletChain.value = data.chain
-        }
+        connected.value = true
+        walletAddress.value = data.wallet_address
+        if (data.chain) walletChain.value = data.chain
       }
       
       console.log('[Me] Updated:', {
         balance: data.balance,
+        freeRemaining: data.free_remaining,
+        purchasedBalance: data.purchased_balance,
         isPremium: data.is_premium,
-        isAuthenticated: data.is_authenticated,
-        rateLimit: rateLimitInfo.value
+        isAuthenticated: data.is_authenticated
       })
     }
   } catch (err) {

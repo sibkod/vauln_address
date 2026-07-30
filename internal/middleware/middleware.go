@@ -39,73 +39,29 @@ type CheckRequest struct {
 
 func (rl *RateLimiter) Limit() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		ip := c.ClientIP()
-		ctx := c.Request.Context()
+		// For /api/check endpoint - require authentication
+		if c.Request.URL.Path == "/api/check" && c.Request.Method == "POST" {
+			walletAddress, isAuthenticated := c.Get("userAddress")
+			userChain, _ := c.Get("userChain")
+			chainStr, _ := userChain.(string)
 
-		// Check if user is authenticated
-		walletAddress, isAuthenticated := c.Get("userAddress")
-		userChain, _ := c.Get("userChain")
-		chainStr, _ := userChain.(string)
-
-		// 1. Check IP rate limit
-		rl.checkAndResetWindow(ctx, ip)
-
-		rateLimit, err := rl.repo.GetRateLimit(ctx, ip)
-		if err != nil {
-			c.Next()
-			return
-		}
-
-		if rateLimit == nil {
-			err = rl.repo.ResetRateLimit(ctx, ip, time.Now())
-			if err != nil {
-				c.Next()
+			// Must be authenticated
+			if !isAuthenticated || walletAddress == nil || chainStr == "" {
+				c.JSON(http.StatusUnauthorized, models.ErrorResponse{
+					Error:   "authentication required",
+					Code:    "UNAUTHORIZED",
+					Details: "please connect your wallet to check addresses",
+				})
+				c.Abort()
 				return
 			}
-			rateLimit = &models.RateLimit{Count: 0, WindowStart: time.Now()}
-		}
 
-		// Check if authenticated user has purchased balance
-		var purchasedBalance int
-		hasPurchasedBalance := false
-		if isAuthenticated && walletAddress != nil && chainStr != "" {
-			purchasedBalance, err = rl.repo.GetUserBalance(ctx, walletAddress.(string), chainStr)
-			if err == nil && purchasedBalance > 0 {
-				hasPurchasedBalance = true
-			}
-		}
-
-		// Calculate IP remaining
-		ipRemaining := max(0, rl.cfg.FreeCheckLimit-rateLimit.Count)
-
-		// Calculate total available: IP + purchased (only if has purchased)
-		totalAvailable := ipRemaining
-		if hasPurchasedBalance {
-			totalAvailable += purchasedBalance
-		}
-
-		// Set rate limit headers
-		c.Header("X-RateLimit-Limit", strconv.Itoa(totalAvailable))
-		c.Header("X-RateLimit-Remaining", strconv.Itoa(totalAvailable))
-		c.Header("X-RateLimit-Used", strconv.Itoa(rateLimit.Count))
-		c.Header("X-RateLimit-Reset", strconv.FormatInt(nextMidnight().Unix(), 10))
-		if hasPurchasedBalance {
-			c.Header("X-RateLimit-Source", "mixed")
-			c.Header("X-Balance-Available", strconv.Itoa(purchasedBalance))
-			c.Header("X-IP-Remaining", strconv.Itoa(ipRemaining))
-		} else {
-			c.Header("X-RateLimit-Source", "ip")
-		}
-
-		// For /check endpoint, validate early to avoid wasting rate limit on bad requests
-		if c.Request.URL.Path == "/api/check" && c.Request.Method == "POST" {
-			// Read body for validation
+			// Read and validate body early
 			body, err := io.ReadAll(c.Request.Body)
 			if err != nil {
 				c.Next()
 				return
 			}
-			// Restore body for handler
 			c.Request.Body = io.NopCloser(strings.NewReader(string(body)))
 
 			var req CheckRequest
@@ -121,7 +77,6 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 			req.Address = strings.TrimSpace(req.Address)
 			req.Chain = strings.ToLower(strings.TrimSpace(req.Chain))
 
-			// Validate chain
 			if !models.IsValidChain(req.Chain) {
 				c.JSON(http.StatusBadRequest, models.ErrorResponse{
 					Error:   "unsupported chain",
@@ -132,7 +87,6 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 				return
 			}
 
-			// Validate address format
 			if !validateAddressFormat(req.Chain, req.Address) {
 				c.JSON(http.StatusBadRequest, models.ErrorResponse{
 					Error:   "invalid address format",
@@ -142,39 +96,60 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 				c.Abort()
 				return
 			}
-		}
 
-		// Check if total available is exhausted
-		if totalAvailable <= 0 {
-			windowEnd := nextMidnight()
-			resetIn := time.Until(windowEnd)
+			// Check free checks remaining
+			ctx := c.Request.Context()
+			freeRemaining, err := rl.repo.GetFreeChecksRemaining(ctx, walletAddress.(string), chainStr)
+			if err != nil {
+				c.Next()
+				return
+			}
 
-			c.JSON(http.StatusTooManyRequests, models.ErrorResponse{
-				Error:   "rate limit exceeded",
-				Code:    "RATE_LIMIT_EXCEEDED",
-				Details: formatRateLimitDetails(rateLimit.Count, rl.cfg.FreeCheckLimit, resetIn),
-			})
-			c.Abort()
-			return
-		}
+			// Check purchased balance
+			purchasedBalance, _ := rl.repo.GetUserBalance(ctx, walletAddress.(string), chainStr)
 
-		// Use purchased balance first if available
-		if hasPurchasedBalance {
-			c.Set("pendingBalanceDeduction", true)
-			c.Set("pendingDeductionAddress", walletAddress.(string))
-			c.Set("pendingDeductionChain", chainStr)
-			c.Set("pendingDeductionBalance", purchasedBalance)
-			c.Set("usingBalance", true)
+			totalAvailable := freeRemaining + purchasedBalance
+
+			// Set headers
+			c.Header("X-RateLimit-Limit", strconv.Itoa(totalAvailable))
+			c.Header("X-RateLimit-Remaining", strconv.Itoa(totalAvailable))
+			c.Header("X-RateLimit-Reset", strconv.FormatInt(nextMidnight().Unix(), 10))
+			c.Header("X-Free-Remaining", strconv.Itoa(freeRemaining))
+			if purchasedBalance > 0 {
+				c.Header("X-RateLimit-Source", "mixed")
+				c.Header("X-Balance-Available", strconv.Itoa(purchasedBalance))
+			} else {
+				c.Header("X-RateLimit-Source", "free")
+			}
+
+			if totalAvailable <= 0 {
+				c.JSON(http.StatusTooManyRequests, models.ErrorResponse{
+					Error:   "no checks remaining",
+					Code:    "NO_CHECKS_REMAINING",
+					Details: "please wait for reset at midnight UTC or purchase more checks",
+				})
+				c.Abort()
+				return
+			}
+
+			// Use purchased balance first, then free
+			if purchasedBalance > 0 {
+				c.Set("pendingBalanceDeduction", true)
+				c.Set("pendingDeductionAddress", walletAddress.(string))
+				c.Set("pendingDeductionChain", chainStr)
+				c.Set("pendingDeductionBalance", purchasedBalance)
+				c.Set("usingBalance", true)
+			} else {
+				c.Set("pendingFreeDeduction", true)
+				c.Set("pendingFreeAddress", walletAddress.(string))
+				c.Set("pendingFreeChain", chainStr)
+			}
+
 			c.Next()
 			return
 		}
 
-		// No purchased balance - use IP-based check
-		if err := rl.repo.IncrementRateLimit(ctx, ip, rateLimit.WindowStart); err != nil {
-			c.Next()
-			return
-		}
-
+		// For other endpoints - allow but skip rate limiting
 		c.Next()
 	}
 }

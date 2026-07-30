@@ -636,6 +636,59 @@ func (r *Repository) GetUserBalance(ctx context.Context, address, chain string) 
 	return balance, nil
 }
 
+// GetFreeChecksRemaining returns the number of free checks remaining for today
+func (r *Repository) GetFreeChecksRemaining(ctx context.Context, address, chain string) (int, error) {
+	// Get free checks used and reset time
+	var freeUsed int
+	var resetAt time.Time
+	err := r.db.QueryRowContext(ctx,
+		`SELECT free_checks_used, free_checks_reset_at FROM users WHERE wallet_address = ? AND chain = ?`,
+		address, chain,
+	).Scan(&freeUsed, &resetAt)
+
+	if err == sql.ErrNoRows {
+		return r.freeCheckLimit, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+
+	// Check if we need to reset (past midnight UTC)
+	midnight := nextMidnightUTC()
+	if resetAt.Before(midnight) || resetAt.Equal(midnight) {
+		// Reset free checks
+		_, err = r.db.ExecContext(ctx,
+			`UPDATE users SET free_checks_used = 0, free_checks_reset_at = ? WHERE wallet_address = ? AND chain = ?`,
+			time.Now().UTC(), address, chain,
+		)
+		if err != nil {
+			return 0, err
+		}
+		return r.freeCheckLimit, nil
+	}
+
+	remaining := r.freeCheckLimit - freeUsed
+	if remaining < 0 {
+		remaining = 0
+	}
+	return remaining, nil
+}
+
+// DeductFreeCheck decrements the free check counter for today
+func (r *Repository) DeductFreeCheck(ctx context.Context, address, chain string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE users SET free_checks_used = free_checks_used + 1 WHERE wallet_address = ? AND chain = ?`,
+		address, chain,
+	)
+	return err
+}
+
+// nextMidnightUTC returns the next midnight (00:00 UTC)
+func nextMidnightUTC() time.Time {
+	now := time.Now().UTC()
+	return time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, time.UTC)
+}
+
 // ==================== Order Methods ====================
 
 func (r *Repository) CreateOrder(ctx context.Context, walletAddress, chain string, checksCount int, totalUSD float64, currency string, tokenAmount float64, paymentAddress string) (*models.Order, error) {

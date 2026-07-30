@@ -18,7 +18,10 @@ const rateLimitInfo = inject<any>('rateLimitInfo')
 // Get wallet auth from App.vue
 const wallet = inject<any>('wallet')
 const isConnected = computed(() => wallet?.connected?.value || false)
-const userBalance = computed(() => wallet?.userBalance?.value || 0)
+
+// Get balances from rateLimitInfo
+const freeRemaining = computed(() => rateLimitInfo?.value?.freeRemaining || 0)
+const purchasedBalance = computed(() => rateLimitInfo?.value?.purchasedBalance || 0)
 
 // Helper for API URLs
 function apiUrl(path: string): string {
@@ -28,15 +31,9 @@ function apiUrl(path: string): string {
 // Calculate display balance and status
 const displayBalance = computed(() => {
   if (isConnected.value) {
-    // Use purchased balance, or IP-based free checks if purchased is 0
-    const purchased = userBalance.value || 0
-    if (purchased > 0) {
-      return purchased
-    }
-    // Fall back to IP-based free checks
-    return rateLimitInfo?.value?.remaining || 0
+    return freeRemaining.value + purchasedBalance.value
   }
-  return rateLimitInfo?.value?.remaining || 0
+  return 0
 })
 
 const isExhausted = computed(() => displayBalance.value <= 0)
@@ -126,6 +123,11 @@ async function check() {
     return
   }
 
+  if (!isConnected.value) {
+    result.value = { status: 'error', message: 'Please connect your wallet first' }
+    return
+  }
+
   loading.value = true
   result.value = null
   
@@ -144,18 +146,24 @@ async function check() {
     // Always update rate limit info from headers (even on error)
     if (rateLimitInfo) {
       const remaining = res.headers.get('X-RateLimit-Remaining')
-      const used = res.headers.get('X-RateLimit-Used')
       const reset = res.headers.get('X-RateLimit-Reset')
-      const limit = res.headers.get('X-RateLimit-Limit')
+      const freeRemaining = res.headers.get('X-Free-Remaining')
+      const purchasedBalance = res.headers.get('X-Balance-Available')
       if (remaining !== null) rateLimitInfo.value.remaining = parseInt(remaining)
-      if (used !== null) rateLimitInfo.value.used = parseInt(used)
       if (reset !== null) rateLimitInfo.value.reset = parseInt(reset)
-      if (limit !== null) rateLimitInfo.value.limit = parseInt(limit)
+      if (freeRemaining !== null) rateLimitInfo.value.freeRemaining = parseInt(freeRemaining)
+      if (purchasedBalance !== null) rateLimitInfo.value.purchasedBalance = parseInt(purchasedBalance)
+    }
+    
+    if (res.status === 401) {
+      const data = await res.json()
+      result.value = { status: 'error', message: data.details || 'Please connect your wallet' }
+      loading.value = false
+      return
     }
     
     if (res.status === 429) {
       const data = await res.json()
-      // Show details from response
       result.value = { status: 'error', message: data.details || data.error || 'No checks remaining' }
       loading.value = false
       return
@@ -178,10 +186,9 @@ async function check() {
     
     result.value = data
     
-    // Update balance from response
-    if (data.balance_left !== undefined && wallet) {
-      wallet.userBalance.value = data.balance_left
-      localStorage.setItem('userBalance', String(data.balance_left))
+    // Update balance from response headers
+    if (res.headers.get('X-Free-Remaining')) {
+      rateLimitInfo.value.freeRemaining = parseInt(res.headers.get('X-Free-Remaining') || '0')
     }
     
     recentChecks.value.unshift({
@@ -235,10 +242,10 @@ function getResultClass() {
 
   <!-- Balance info -->
   <div class="free-tier-info" :class="{ exhausted: isExhausted }">
-    <span v-if="isExhausted && countdown">No checks. Reset in {{ countdown }}</span>
+    <span v-if="!isConnected">Connect wallet to check addresses</span>
+    <span v-else-if="isExhausted && countdown">No checks. Reset in {{ countdown }}</span>
     <span v-else-if="isExhausted">No checks available</span>
-    <span v-else-if="isConnected">{{ displayBalance }} checks</span>
-    <span v-else>{{ displayBalance }} free checks</span>
+    <span v-else>{{ displayBalance }} checks</span>
     <RouterLink v-if="!isConnected" to="/pricing" class="upgrade-link">Connect wallet →</RouterLink>
     <RouterLink v-else-if="isExhausted" to="/pricing" class="upgrade-link">Buy more →</RouterLink>
     <span v-else class="upgrade-link">Buy more →</span>
