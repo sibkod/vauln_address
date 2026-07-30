@@ -46,8 +46,8 @@ func Load() *Config {
 	dbType := DBType(getEnv("DB_TYPE", "postgres"))
 	
 	// Solana configuration - easy 1-line switch between devnet and mainnet
-	// Set SOLANA_USE_DEVNET=false for mainnet
-	solanaUseDevnet := getEnv("SOLANA_USE_DEVNET", "true") == "true"
+	// Set SOLANA_USE_DEVNET=true for devnet
+	solanaUseDevnet := getEnv("SOLANA_USE_DEVNET", "false") == "true"
 	
 	// Default RPC URLs
 	solanaRPCURL := getEnv("SOLANA_RPC_URL", "")
