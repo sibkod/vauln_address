@@ -556,6 +556,13 @@ func (r *Repository) UpsertUserNonce(address, chain, nonce string) error {
 			DO UPDATE SET nonce = ?`,
 			address, chain, nonce, r.freeCheckLimit, nonce,
 		)
+	} else if r.dbType == config.DBTypeMySQL {
+		_, err = r.db.ExecContext(ctx,
+			`INSERT INTO users (wallet_address, chain, nonce, balance) 
+			VALUES (?, ?, ?, ?) 
+			ON DUPLICATE KEY UPDATE nonce = ?`,
+			address, chain, nonce, r.freeCheckLimit, nonce,
+		)
 	} else {
 		_, err = r.db.ExecContext(ctx,
 			`INSERT INTO users (wallet_address, chain, nonce, balance) 
@@ -928,6 +935,18 @@ func (r *Repository) IncrementRateLimit(ctx context.Context, ip string, windowSt
 				END`,
 			ip, windowStart, windowStart, windowStart,
 		)
+	} else if r.dbType == config.DBTypeMySQL {
+		_, err = r.db.ExecContext(ctx,
+			`INSERT INTO rate_limits (ip_address, request_count, window_start) 
+			VALUES (?, 1, ?) 
+			ON DUPLICATE KEY UPDATE 
+				request_count = request_count + 1,
+				window_start = CASE 
+					WHEN window_start < ? THEN ? 
+					ELSE window_start 
+				END`,
+			ip, windowStart, windowStart, windowStart,
+		)
 	} else {
 		_, err = r.db.ExecContext(ctx,
 			`INSERT INTO rate_limits (ip_address, request_count, window_start) 
@@ -955,6 +974,13 @@ func (r *Repository) ResetRateLimit(ctx context.Context, ip string, windowStart 
 			DO UPDATE SET request_count = 0, window_start = ?`,
 			ip, windowStart, windowStart,
 		)
+	} else if r.dbType == config.DBTypeMySQL {
+		_, err = r.db.ExecContext(ctx,
+			`INSERT INTO rate_limits (ip_address, request_count, window_start) 
+			VALUES (?, 0, ?) 
+			ON DUPLICATE KEY UPDATE request_count = 0, window_start = ?`,
+			ip, windowStart, windowStart,
+		)
 	} else {
 		_, err = r.db.ExecContext(ctx,
 			`INSERT INTO rate_limits (ip_address, request_count, window_start) 
@@ -969,7 +995,13 @@ func (r *Repository) ResetRateLimit(ctx context.Context, ip string, windowStart 
 
 // ResetAllRateLimits resets rate limits for all IPs (used for daily reset at 00:00)
 func (r *Repository) ResetAllRateLimits(ctx context.Context) (int64, error) {
-	result, err := r.db.ExecContext(ctx, `UPDATE rate_limits SET request_count = 0, window_start = NOW()`)
+	var err error
+	var result sql.Result
+	if r.dbType == config.DBTypeMySQL {
+		result, err = r.db.ExecContext(ctx, `UPDATE rate_limits SET request_count = 0, window_start = NOW()`)
+	} else {
+		result, err = r.db.ExecContext(ctx, `UPDATE rate_limits SET request_count = 0, window_start = NOW()`)
+	}
 	if err != nil {
 		return 0, err
 	}
