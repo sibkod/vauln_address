@@ -65,8 +65,37 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 			rateLimit = &models.RateLimit{Count: 0, WindowStart: time.Now()}
 		}
 
-		// Add rate limit headers for all responses
-		rl.setRateLimitHeaders(c, rateLimit, isAuthenticated && walletAddress != nil && chainStr != "")
+		// Check if authenticated user has purchased balance
+		var purchasedBalance int
+		hasPurchasedBalance := false
+		if isAuthenticated && walletAddress != nil && chainStr != "" {
+			purchasedBalance, err = rl.repo.GetUserBalance(ctx, walletAddress.(string), chainStr)
+			if err == nil && purchasedBalance > 0 {
+				hasPurchasedBalance = true
+			}
+		}
+
+		// Calculate IP remaining
+		ipRemaining := max(0, rl.cfg.FreeCheckLimit-rateLimit.Count)
+
+		// Calculate total available: IP + purchased (only if has purchased)
+		totalAvailable := ipRemaining
+		if hasPurchasedBalance {
+			totalAvailable += purchasedBalance
+		}
+
+		// Set rate limit headers
+		c.Header("X-RateLimit-Limit", strconv.Itoa(totalAvailable))
+		c.Header("X-RateLimit-Remaining", strconv.Itoa(totalAvailable))
+		c.Header("X-RateLimit-Used", strconv.Itoa(rateLimit.Count))
+		c.Header("X-RateLimit-Reset", strconv.FormatInt(nextMidnight().Unix(), 10))
+		if hasPurchasedBalance {
+			c.Header("X-RateLimit-Source", "mixed")
+			c.Header("X-Balance-Available", strconv.Itoa(purchasedBalance))
+			c.Header("X-IP-Remaining", strconv.Itoa(ipRemaining))
+		} else {
+			c.Header("X-RateLimit-Source", "ip")
+		}
 
 		// For /check endpoint, validate early to avoid wasting rate limit on bad requests
 		if c.Request.URL.Path == "/api/check" && c.Request.Method == "POST" {
@@ -115,39 +144,8 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 			}
 		}
 
-					// Check IP limit using FreeCheckLimit
-		if rateLimit.Count >= rl.cfg.FreeCheckLimit {
-			// IP limit exhausted
-			// For authenticated users: try to use their balance as fallback
-			if isAuthenticated && walletAddress != nil && chainStr != "" {
-				balance, err := rl.repo.GetUserBalance(ctx, walletAddress.(string), chainStr)
-				if err == nil && balance > 0 {
-					// Set flag for handler to deduct balance after successful check
-					c.Set("pendingBalanceDeduction", true)
-					c.Set("pendingDeductionAddress", walletAddress.(string))
-					c.Set("pendingDeductionChain", chainStr)
-					c.Set("pendingDeductionBalance", balance)
-					c.Set("usingBalance", true)
-					c.Header("X-RateLimit-Source", "balance")
-					c.Header("X-Balance-Available", strconv.Itoa(balance))
-					c.Next()
-					return
-				}
-
-				// No balance either - show same message as anonymous
-				windowEnd := nextMidnight()
-				resetIn := time.Until(windowEnd)
-
-				c.JSON(http.StatusTooManyRequests, models.ErrorResponse{
-					Error:   "rate limit exceeded",
-					Code:    "RATE_LIMIT_EXCEEDED",
-					Details: formatRateLimitDetails(rateLimit.Count, rl.cfg.FreeCheckLimit, resetIn),
-				})
-				c.Abort()
-				return
-			}
-
-			// Anonymous user - IP limit is final
+		// Check if total available is exhausted
+		if totalAvailable <= 0 {
 			windowEnd := nextMidnight()
 			resetIn := time.Until(windowEnd)
 
@@ -160,29 +158,23 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 			return
 		}
 
-		// IP limit not exhausted - use IP-based check for everyone
+		// Use purchased balance first if available
+		if hasPurchasedBalance {
+			c.Set("pendingBalanceDeduction", true)
+			c.Set("pendingDeductionAddress", walletAddress.(string))
+			c.Set("pendingDeductionChain", chainStr)
+			c.Set("pendingDeductionBalance", purchasedBalance)
+			c.Set("usingBalance", true)
+			c.Next()
+			return
+		}
+
+		// No purchased balance - use IP-based check
 		if err := rl.repo.IncrementRateLimit(ctx, ip, rateLimit.WindowStart); err != nil {
 			c.Next()
 			return
 		}
 
-		// For authenticated users with balance, set flag for handler to deduct after successful check
-		if isAuthenticated && walletAddress != nil && chainStr != "" {
-			balance, err := rl.repo.GetUserBalance(ctx, walletAddress.(string), chainStr)
-			if err == nil && balance > 0 {
-				c.Set("pendingBalanceDeduction", true)
-				c.Set("pendingDeductionAddress", walletAddress.(string))
-				c.Set("pendingDeductionChain", chainStr)
-				c.Set("pendingDeductionBalance", balance)
-				c.Set("usingBalance", true)
-				c.Header("X-RateLimit-Source", "balance")
-				c.Header("X-Balance-Available", strconv.Itoa(balance))
-			}
-		}
-
-		// Update remaining header after increment
-		remaining := max(0, rl.cfg.FreeCheckLimit-rateLimit.Count-1)
-		c.Header("X-RateLimit-Remaining", strconv.Itoa(remaining))
 		c.Next()
 	}
 }

@@ -613,12 +613,12 @@ func (h *Handler) GetMe(c *gin.Context) {
 	// Get rate limit info using FreeCheckLimit (per IP free check limit)
 	ip := c.ClientIP()
 	rateLimit, _ := h.repo.GetRateLimit(c.Request.Context(), ip)
-	rateLimitRemaining := h.serverCfg.FreeCheckLimit
+	ipRemaining := h.serverCfg.FreeCheckLimit
 	rateLimitUsed := 0
 	if rateLimit != nil {
-		rateLimitRemaining = h.serverCfg.FreeCheckLimit - rateLimit.Count
-		if rateLimitRemaining < 0 {
-			rateLimitRemaining = 0
+		ipRemaining = h.serverCfg.FreeCheckLimit - rateLimit.Count
+		if ipRemaining < 0 {
+			ipRemaining = 0
 		}
 		rateLimitUsed = rateLimit.Count
 	}
@@ -629,55 +629,56 @@ func (h *Handler) GetMe(c *gin.Context) {
 
 	// Check if user is authenticated
 	if exists && walletAddress != nil && walletAddress.(string) != "" && chainStr != "" {
-		// Authenticated user
-		user, err := h.authService.GetUserByWallet(walletAddress.(string), chainStr)
-		if err != nil || user == nil {
-			c.JSON(http.StatusOK, gin.H{
-				"wallet_address":       walletAddress.(string),
-				"chain":                chainStr,
-				"balance":              0,
-				"purchased_balance":    0,
-				"rate_limit_remaining": rateLimitRemaining,
-				"rate_limit_used":      rateLimitUsed,
-				"rate_limit_limit":     h.serverCfg.FreeCheckLimit,
-				"reset_at":             resetAtUnix,
-				"is_premium":           false,
-				"is_authenticated":     true,
-			})
-			return
-		}
-
-		purchasedBalance := user.Balance
+		// Authenticated user - get purchased balance
+		purchasedBalance, _ := h.repo.GetUserBalance(c.Request.Context(), walletAddress.(string), chainStr)
 		isPremium := purchasedBalance > 0
 
+		// Calculate total: IP + purchased (only if has purchased)
+		totalBalance := ipRemaining
+		source := "ip"
+		if isPremium {
+			totalBalance += purchasedBalance
+			source = "mixed"
+		}
+
+		// Get user data
+		user, _ := h.authService.GetUserByWallet(walletAddress.(string), chainStr)
+
 		// Add rate limit headers
-		c.Header("X-RateLimit-Limit", fmt.Sprintf("%d", h.serverCfg.FreeCheckLimit))
-		c.Header("X-RateLimit-Remaining", fmt.Sprintf("%d", rateLimitRemaining))
+		c.Header("X-RateLimit-Limit", fmt.Sprintf("%d", totalBalance))
+		c.Header("X-RateLimit-Remaining", fmt.Sprintf("%d", totalBalance))
 		c.Header("X-RateLimit-Used", fmt.Sprintf("%d", rateLimitUsed))
 		c.Header("X-RateLimit-Reset", fmt.Sprintf("%d", resetAtUnix))
-		c.Header("X-RateLimit-Source", "balance")
-		c.Header("X-Balance-Available", fmt.Sprintf("%d", purchasedBalance))
+		c.Header("X-RateLimit-Source", source)
+		if isPremium {
+			c.Header("X-Balance-Available", fmt.Sprintf("%d", purchasedBalance))
+			c.Header("X-IP-Remaining", fmt.Sprintf("%d", ipRemaining))
+		}
 
-		c.JSON(http.StatusOK, gin.H{
-			"wallet_address":       user.WalletAddress,
-			"chain":                user.Chain,
-			"balance":              purchasedBalance,
+		resp := gin.H{
+			"wallet_address":       walletAddress.(string),
+			"chain":                chainStr,
+			"balance":              totalBalance,
 			"purchased_balance":    purchasedBalance,
-			"rate_limit_remaining": rateLimitRemaining,
+			"ip_remaining":         ipRemaining,
+			"rate_limit_remaining": ipRemaining,
 			"rate_limit_used":      rateLimitUsed,
 			"rate_limit_limit":     h.serverCfg.FreeCheckLimit,
 			"reset_at":             resetAtUnix,
 			"is_premium":           isPremium,
 			"is_authenticated":     true,
-			"created_at":           user.CreatedAt,
-			"last_login_at":        user.LastLoginAt,
-		})
+		}
+		if user != nil {
+			resp["created_at"] = user.CreatedAt
+			resp["last_login_at"] = user.LastLoginAt
+		}
+		c.JSON(http.StatusOK, resp)
 		return
 	}
 
-	// Anonymous user
-	c.Header("X-RateLimit-Limit", fmt.Sprintf("%d", h.serverCfg.FreeCheckLimit))
-	c.Header("X-RateLimit-Remaining", fmt.Sprintf("%d", rateLimitRemaining))
+	// Anonymous user - only IP-based checks
+	c.Header("X-RateLimit-Limit", fmt.Sprintf("%d", ipRemaining))
+	c.Header("X-RateLimit-Remaining", fmt.Sprintf("%d", ipRemaining))
 	c.Header("X-RateLimit-Used", fmt.Sprintf("%d", rateLimitUsed))
 	c.Header("X-RateLimit-Reset", fmt.Sprintf("%d", resetAtUnix))
 	c.Header("X-RateLimit-Source", "ip")
@@ -685,9 +686,10 @@ func (h *Handler) GetMe(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"wallet_address":       nil,
 		"chain":                nil,
-		"balance":              rateLimitRemaining,
+		"balance":              ipRemaining,
 		"purchased_balance":    0,
-		"rate_limit_remaining": rateLimitRemaining,
+		"ip_remaining":         ipRemaining,
+		"rate_limit_remaining": ipRemaining,
 		"rate_limit_used":      rateLimitUsed,
 		"rate_limit_limit":     h.serverCfg.FreeCheckLimit,
 		"reset_at":             resetAtUnix,
@@ -706,11 +708,11 @@ func (h *Handler) GetBalance(c *gin.Context) {
 	// Get rate limit remaining using FreeCheckLimit (per IP free check limit)
 	ip := c.ClientIP()
 	rateLimit, _ := h.repo.GetRateLimit(c.Request.Context(), ip)
-	rateLimitRemaining := h.serverCfg.FreeCheckLimit
+	ipRemaining := h.serverCfg.FreeCheckLimit
 	if rateLimit != nil {
-		rateLimitRemaining = h.serverCfg.FreeCheckLimit - rateLimit.Count
-		if rateLimitRemaining < 0 {
-			rateLimitRemaining = 0
+		ipRemaining = h.serverCfg.FreeCheckLimit - rateLimit.Count
+		if ipRemaining < 0 {
+			ipRemaining = 0
 		}
 	}
 
@@ -726,21 +728,23 @@ func (h *Handler) GetBalance(c *gin.Context) {
 			return
 		}
 
-		// If user has purchased checks, show purchased balance
-		// Otherwise, show rate limit remaining (free checks for authenticated users)
+		// If user has purchased checks: total = IP + purchased
+		// Otherwise: only IP-based checks available
 		if purchasedBalance > 0 {
 			c.JSON(http.StatusOK, gin.H{
-				"balance":              purchasedBalance,
+				"balance":              ipRemaining + purchasedBalance,
 				"purchased_balance":    purchasedBalance,
-				"rate_limit_remaining": rateLimitRemaining,
-				"source":               "purchased",
+				"ip_remaining":         ipRemaining,
+				"rate_limit_remaining": ipRemaining,
+				"source":               "mixed",
 			})
 		} else {
 			c.JSON(http.StatusOK, gin.H{
-				"balance":              rateLimitRemaining,
+				"balance":              ipRemaining,
 				"purchased_balance":    0,
-				"rate_limit_remaining": rateLimitRemaining,
-				"source":               "rate_limit",
+				"ip_remaining":         ipRemaining,
+				"rate_limit_remaining": ipRemaining,
+				"source":               "ip",
 			})
 		}
 		return
@@ -748,10 +752,11 @@ func (h *Handler) GetBalance(c *gin.Context) {
 
 	// Anonymous user - return IP-based rate limit remaining only
 	c.JSON(http.StatusOK, gin.H{
-		"balance":              rateLimitRemaining,
+		"balance":              ipRemaining,
 		"purchased_balance":    0,
-		"rate_limit_remaining": rateLimitRemaining,
-		"source":               "rate_limit",
+		"ip_remaining":         ipRemaining,
+		"rate_limit_remaining": ipRemaining,
+		"source":               "ip",
 	})
 }
 
