@@ -51,6 +51,11 @@ func main() {
 	orderService.Start()
 	defer orderService.Stop()
 
+	// Start rate limit reset service for daily reset at 00:00 UTC
+	rateLimitResetService := services.NewRateLimitResetService(repo)
+	rateLimitResetService.Start()
+	defer rateLimitResetService.Stop()
+
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(gin.Recovery())
