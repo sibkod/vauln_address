@@ -1,6 +1,6 @@
 # VaulnAddress Backend (V/Veb)
 
-Vlang backend for the VaulnAddress service using Veb framework and SQLite.
+Vlang backend for the VaulnAddress service using Veb framework and SQLite. Full feature parity with Go backend.
 
 ## Requirements
 
@@ -21,16 +21,55 @@ vbackend/
 
 ## API Endpoints
 
+### Health & Info
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/health` | Health check |
 | GET | `/api/chains` | List supported chains |
 | GET | `/api/pricing` | Get pricing info |
+| GET | `/api/packages` | Get pricing packages |
 | GET | `/api/stats` | Get wallet statistics |
-| POST | `/api/check/:chain/:address` | Check if wallet is registered |
+
+### Authentication
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/auth/nonce` | Generate authentication nonce |
+| POST | `/api/auth/login` | Authenticate with wallet signature |
+| GET | `/api/me` | Get current user info |
+| GET | `/api/user/profile` | Get user profile |
+| GET | `/api/user/balance` | Get user balance |
+| GET | `/api/user/purchases` | Get purchase history |
+
+### Wallet Check
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/check` | Check wallet vulnerability |
+| GET | `/api/recent` | Get recent checks |
+| GET | `/api/checks` | Get check history |
+
+### Orders
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/orders` | Create order |
+| POST | `/api/orders/:id/cancel` | Cancel order |
+| POST | `/api/orders/:id/confirm` | Confirm order |
+| GET | `/api/orders/verify` | Verify payment |
+| POST | `/api/payment/status/:signature` | Get payment status |
+
+### API Keys
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/api-keys` | List API keys |
+| POST | `/api/api-keys` | Create API key |
+| DELETE | `/api/api-keys/:id` | Delete API key |
+| POST | `/api/api-keys/revoke/:id` | Revoke API key |
+| POST | `/api/api-keys/renew` | Renew API key |
+
+### Admin & Contact
+| Method | Endpoint | Description |
+|--------|----------|-------------|
 | POST | `/api/wallets` | Add wallet(s) to database |
-| POST | `/api/order` | Create order |
-| POST | `/contact` | Contact form |
+| POST | `/contact` | Submit contact form |
 
 ## Configuration
 
@@ -62,21 +101,37 @@ curl http://localhost:8080/api/chains
 # Get pricing
 curl http://localhost:8080/api/pricing
 
+# Get packages
+curl http://localhost:8080/api/packages
+
 # Get stats
 curl http://localhost:8080/api/stats
 
-# Check wallet (EVM)
-curl -X POST http://localhost:8080/api/check/evm/0x123...
+# Generate auth nonce
+curl "http://localhost:8080/api/auth/nonce?address=0x123&chain=evm"
+
+# Authenticate
+curl -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"address":"0x123","chain":"evm","signature":"sig","message":"msg"}'
+
+# Check wallet
+curl -X POST http://localhost:8080/api/check \
+  -H "Content-Type: application/json" \
+  -d '{"address":"0x123","chain":"evm"}'
+
+# Recent checks
+curl "http://localhost:8080/api/recent?limit=10"
+
+# Create order
+curl -X POST http://localhost:8080/api/orders \
+  -H "Content-Type: application/json" \
+  -d '{"chain":"evm","wallet_address":"0x123","checks":5}'
 
 # Add wallet
 curl -X POST http://localhost:8080/api/wallets \
   -H "Content-Type: application/json" \
-  -d '{"addresses":{"evm":"0x123..."},"status":"clean","reason":"manual","source":"api"}'
-
-# Create order
-curl -X POST http://localhost:8080/api/order \
-  -H "Content-Type: application/json" \
-  -d '{"chain":"evm","address":"0x123...","checks_count":5,"currency":"usd"}'
+  -d '{"addresses":{"evm":"0x123"},"status":"hacked","reason":"manual","source":"api"}'
 ```
 
 ## Development
@@ -93,3 +148,4 @@ SQLite database is automatically created on first run with tables:
 - `users` - User accounts with balance tracking  
 - `orders` - Order records
 - `check_history` - Historical check records
+- `api_keys` - API key storage
