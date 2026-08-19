@@ -33,15 +33,17 @@ type Handler struct {
 	authService  *auth.AuthService
 	serverCfg    *config.Config
 	priceService *services.PriceService
+	walletQueue  *services.WalletQueue
 	packages     []gin.H
 }
 
-func New(repo *repository.Repository, serverCfg *config.Config, priceService *services.PriceService) *Handler {
+func New(repo *repository.Repository, serverCfg *config.Config, priceService *services.PriceService, walletQueue *services.WalletQueue) *Handler {
 	h := &Handler{
 		repo:         repo,
 		authService:  auth.NewAuthService(repo),
 		serverCfg:    serverCfg,
 		priceService: priceService,
+		walletQueue:  walletQueue,
 		packages:     loadPackages(serverCfg),
 	}
 	return h
@@ -1466,8 +1468,10 @@ func decodeJSON(r io.Reader, v interface{}) error {
 
 // ==================== Admin Handlers ====================
 
-// AddWallet adds a wallet (or wallets) to the database
-func (h *Handler) AddWallet(c *gin.Context) {
+// parseAddWalletRequest validates the request body shared by the sync and
+// async wallet import endpoints. It writes the error response and returns
+// false when the request is invalid.
+func parseAddWalletRequest(c *gin.Context) (models.AddWalletRequest, bool) {
 	var req models.AddWalletRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
@@ -1475,7 +1479,7 @@ func (h *Handler) AddWallet(c *gin.Context) {
 			Code:    "INVALID_REQUEST",
 			Details: err.Error(),
 		})
-		return
+		return req, false
 	}
 
 	if len(req.Addresses) == 0 {
@@ -1483,123 +1487,107 @@ func (h *Handler) AddWallet(c *gin.Context) {
 			Error: "at least one address is required",
 			Code:  "NO_ADDRESSES",
 		})
-		return
+		return req, false
 	}
 
-	// Validate status
 	if !models.IsValidStatus(string(req.Status)) {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
 			Error:   "invalid status",
 			Code:    "INVALID_STATUS",
 			Details: "valid statuses: hacked, vulnerable, safe, hacker, drained",
 		})
+		return req, false
+	}
+
+	return req, true
+}
+
+func (h *Handler) enqueueWalletJob(c *gin.Context, req models.AddWalletRequest) *services.WalletJob {
+	job, err := h.walletQueue.Enqueue(req)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, models.ErrorResponse{
+			Error:   "wallet import queue is full, retry later or use fewer parallel requests",
+			Code:    "QUEUE_FULL",
+			Details: err.Error(),
+		})
+		return nil
+	}
+	return job
+}
+
+// AddWallet queues a wallet import and waits for the batch worker to process
+// it. If processing takes too long, it falls back to a 202 response with a
+// job ID that can be polled via GET /api/admin/wallets/jobs/:id.
+func (h *Handler) AddWallet(c *gin.Context) {
+	req, ok := parseAddWalletRequest(c)
+	if !ok {
 		return
 	}
 
-	ctx := c.Request.Context()
+	job := h.enqueueWalletJob(c, req)
+	if job == nil {
+		return
+	}
 
-	// Save seed phrase if provided (with duplicate check)
-	var seedID *int64
-	seedSkipped := false
-	var walletIDs []int64
-	var skippedWallets []models.SkippedWallet
-
-	if req.SeedPhrase != "" {
-		id, isNew, err := h.repo.SaveSeed(ctx, req.SeedPhrase)
-		if err != nil {
+	wait := time.Duration(h.serverCfg.WalletSyncWaitSeconds) * time.Second
+	select {
+	case <-job.Done():
+		if job.Status == models.WalletJobFailed {
+			log.Printf("Wallet import job %s failed: %s", job.ID, job.Error)
 			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-				Error: "failed to save seed phrase",
-				Code:  "DB_ERROR",
+				Error:   "failed to import wallets",
+				Code:    "DB_ERROR",
+				Details: job.Error,
 			})
 			return
 		}
-		seedID = &id
-		seedSkipped = !isNew
+		c.JSON(http.StatusOK, job.Result)
+	case <-time.After(wait):
+		h.respondJobAccepted(c, job)
+	case <-c.Request.Context().Done():
+		// Client disconnected; the job keeps running in the background
+	}
+}
+
+// AddWalletAsync queues a wallet import and returns immediately with a job ID
+func (h *Handler) AddWalletAsync(c *gin.Context) {
+	req, ok := parseAddWalletRequest(c)
+	if !ok {
+		return
 	}
 
-	// Add each address as a wallet (with duplicate check)
-	for chain, address := range req.Addresses {
-		address = strings.TrimSpace(address)
-		chain = strings.ToLower(strings.TrimSpace(chain))
-
-		if !models.IsValidChain(chain) {
-			skippedWallets = append(skippedWallets, models.SkippedWallet{
-				Address: address,
-				Chain:   chain,
-				Reason:  "invalid chain",
-			})
-			continue // Skip invalid chains
-		}
-
-		// Validate address format
-		valid, _ := validators.ValidateAddress(chain, address)
-		if !valid {
-			skippedWallets = append(skippedWallets, models.SkippedWallet{
-				Address: address,
-				Chain:   chain,
-				Reason:  "invalid address format",
-			})
-			continue // Skip invalid addresses
-		}
-
-		// Check if wallet already exists
-		existingID, exists, err := h.repo.GetWalletByAddressAndChain(ctx, address, chain)
-		if err != nil {
-			log.Printf("Failed to check wallet %s/%s: %v", chain, address, err)
-			skippedWallets = append(skippedWallets, models.SkippedWallet{
-				Address: address,
-				Chain:   chain,
-				Reason:  "database error",
-			})
-			continue
-		}
-		if exists {
-			log.Printf("Wallet already exists: %s/%s (id=%d)", chain, address, existingID)
-			skippedWallets = append(skippedWallets, models.SkippedWallet{
-				Address: address,
-				Chain:   chain,
-				Reason:  "duplicate wallet",
-			})
-			continue
-		}
-
-		var walletID int64
-		var errCreate error
-
-		if seedID != nil {
-			walletID, errCreate = h.repo.CreateWalletWithSeed(ctx, address, chain, req.Status, *seedID, req.Reason, req.Source)
-		} else {
-			walletID, errCreate = h.repo.CreateWallet(ctx, address, chain, req.Status, req.Reason, req.Source)
-		}
-
-		if errCreate != nil {
-			log.Printf("Failed to create wallet %s/%s: %v", chain, address, errCreate)
-			skippedWallets = append(skippedWallets, models.SkippedWallet{
-				Address: address,
-				Chain:   chain,
-				Reason:  "failed to create",
-			})
-			continue
-		}
-
-		// Update stats table
-		if err := h.repo.IncrementWalletCount(ctx, chain); err != nil {
-			log.Printf("Failed to update stats for chain %s: %v", chain, err)
-		}
-
-		walletIDs = append(walletIDs, walletID)
+	job := h.enqueueWalletJob(c, req)
+	if job == nil {
+		return
 	}
 
-	response := models.AddWalletResponse{
-		Success:        len(walletIDs) > 0,
-		WalletsAdded:   len(walletIDs),
-		WalletsSkipped: len(skippedWallets),
-		WalletIDs:      walletIDs,
-		SkippedWallets: skippedWallets,
-		SeedID:         seedID,
-		SeedSkipped:    seedSkipped,
-		Message:        fmt.Sprintf("Added %d wallet(s), skipped %d", len(walletIDs), len(skippedWallets)),
+	h.respondJobAccepted(c, job)
+}
+
+// GetWalletJob returns the status and result of a queued wallet import
+func (h *Handler) GetWalletJob(c *gin.Context) {
+	job, ok := h.walletQueue.GetJob(c.Param("id"))
+	if !ok {
+		c.JSON(http.StatusNotFound, models.ErrorResponse{
+			Error: "job not found or expired",
+			Code:  "JOB_NOT_FOUND",
+		})
+		return
 	}
 
-	c.JSON(http.StatusOK, response)
+	c.JSON(http.StatusOK, models.AddWalletJobResponse{
+		JobID:     job.ID,
+		Status:    job.Status,
+		Result:    job.Result,
+		Error:     job.Error,
+		CreatedAt: job.CreatedAt,
+	})
+}
+
+func (h *Handler) respondJobAccepted(c *gin.Context, job *services.WalletJob) {
+	c.JSON(http.StatusAccepted, models.AddWalletJobResponse{
+		JobID:     job.ID,
+		Status:    job.Status,
+		CreatedAt: job.CreatedAt,
+	})
 }

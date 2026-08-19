@@ -52,16 +52,16 @@ type User struct {
 
 // Web3 Auth Request/Response
 type AuthRequest struct {
-	Address string `json:"address" binding:"required"`
-	Chain   string `json:"chain" binding:"required"`
+	Address   string `json:"address" binding:"required"`
+	Chain     string `json:"chain" binding:"required"`
 	Signature string `json:"signature" binding:"required"`
-	Message  string `json:"message" binding:"required"`
+	Message   string `json:"message" binding:"required"`
 }
 
 type AuthResponse struct {
-	Token    string `json:"token"`
-	User     *UserPublic `json:"user"`
-	ExpiresIn int    `json:"expires_in"`
+	Token     string      `json:"token"`
+	User      *UserPublic `json:"user"`
+	ExpiresIn int         `json:"expires_in"`
 }
 
 type UserPublic struct {
@@ -81,10 +81,10 @@ type NonceResponse struct {
 type PaymentCurrency string
 
 const (
-	CurrencySUI     PaymentCurrency = "sui"
-	CurrencyUSDC    PaymentCurrency = "usdc"
-	CurrencyUSDT    PaymentCurrency = "usdt"
-	CurrencyETH     PaymentCurrency = "eth"
+	CurrencySUI  PaymentCurrency = "sui"
+	CurrencyUSDC PaymentCurrency = "usdc"
+	CurrencyUSDT PaymentCurrency = "usdt"
+	CurrencyETH  PaymentCurrency = "eth"
 )
 
 type Pricing struct {
@@ -100,8 +100,8 @@ type PaymentMethod struct {
 	Currency      PaymentCurrency `json:"currency"`
 	PriceUSD      float64         `json:"price_usd"`
 	TokenAmount   float64         `json:"token_amount,omitempty"` // For crypto payments
-	HasDiscount   bool             `json:"has_discount"`
-	DiscountLabel string           `json:"discount_label,omitempty"`
+	HasDiscount   bool            `json:"has_discount"`
+	DiscountLabel string          `json:"discount_label,omitempty"`
 }
 
 type PurchaseRequest struct {
@@ -114,7 +114,7 @@ type PurchaseResponse struct {
 	OrderID        string    `json:"order_id"`
 	ChecksCount    int       `json:"checks_count"`
 	TotalUSD       float64   `json:"total_usd"`
-	Amount         string    `json:"amount"`        // SOL amount for payment
+	Amount         string    `json:"amount"` // SOL amount for payment
 	PaymentAddress string    `json:"payment_address"`
 	DueDate        time.Time `json:"due_date,omitempty"`
 	Status         string    `json:"status"`
@@ -132,32 +132,32 @@ const (
 )
 
 type Order struct {
-	OrderUUID       string     `json:"order_uuid"`
-	WalletAddress   string     `json:"wallet_address"`
-	Chain           string     `json:"chain"`
-	ChecksCount     int        `json:"checks_count"`
-	TotalUSD        float64    `json:"total_usd"`
-	Currency        string     `json:"currency"`
-	TokenAmount     float64    `json:"token_amount"`
-	PaymentAddress  string     `json:"payment_address"`
-	Status          string     `json:"status"`
-	TxHash          string     `json:"tx_hash,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
-	CompletedAt     *time.Time `json:"completed_at,omitempty"`
+	OrderUUID      string     `json:"order_uuid"`
+	WalletAddress  string     `json:"wallet_address"`
+	Chain          string     `json:"chain"`
+	ChecksCount    int        `json:"checks_count"`
+	TotalUSD       float64    `json:"total_usd"`
+	Currency       string     `json:"currency"`
+	TokenAmount    float64    `json:"token_amount"`
+	PaymentAddress string     `json:"payment_address"`
+	Status         string     `json:"status"`
+	TxHash         string     `json:"tx_hash,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	CompletedAt    *time.Time `json:"completed_at,omitempty"`
 }
 
 // ==================== Existing Models ====================
 
 type Wallet struct {
-	ID        int64       `json:"id"`
-	Address   string      `json:"address"`
-	Chain     Chain       `json:"chain"`
+	ID        int64        `json:"id"`
+	Address   string       `json:"address"`
+	Chain     Chain        `json:"chain"`
 	Status    WalletStatus `json:"status"`
-	HasPK     bool        `json:"has_pk"`
-	HasSeed   bool        `json:"has_seed"`
-	CreatedAt time.Time   `json:"created_at"`
-	UpdatedAt time.Time   `json:"updated_at"`
+	HasPK     bool         `json:"has_pk"`
+	HasSeed   bool         `json:"has_seed"`
+	CreatedAt time.Time    `json:"created_at"`
+	UpdatedAt time.Time    `json:"updated_at"`
 }
 
 type ContactMessage struct {
@@ -169,9 +169,9 @@ type ContactMessage struct {
 }
 
 type RateLimit struct {
-	ID        int64     `json:"id"`
-	IPAddress string    `json:"ip_address"`
-	Count     int       `json:"count"`
+	ID          int64     `json:"id"`
+	IPAddress   string    `json:"ip_address"`
+	Count       int       `json:"count"`
 	WindowStart time.Time `json:"window_start"`
 }
 
@@ -181,13 +181,13 @@ type CheckRequest struct {
 }
 
 type CheckResponse struct {
-	Address     string      `json:"address"`
-	Chain       string      `json:"chain"`
-	Status      string      `json:"status"`
-	HasPK       bool        `json:"has_pk"`
-	HasSeed     bool        `json:"has_seed"`
-	Found       bool        `json:"found"`
-	BalanceLeft int         `json:"balance_left,omitempty"`
+	Address     string `json:"address"`
+	Chain       string `json:"chain"`
+	Status      string `json:"status"`
+	HasPK       bool   `json:"has_pk"`
+	HasSeed     bool   `json:"has_seed"`
+	Found       bool   `json:"found"`
+	BalanceLeft int    `json:"balance_left,omitempty"`
 }
 
 type ContactRequest struct {
@@ -213,16 +213,16 @@ type ErrorResponse struct {
 // ==================== API Keys ====================
 
 type APIKey struct {
-	ID            int64     `json:"id"`
-	WalletAddress string    `json:"wallet_address"`
-	KeyHash       string    `json:"-"`           // SHA-256 hash of the key (never exposed)
-	KeyPrefix     string    `json:"key_prefix"`  // First 8 chars for identification
-	Name          string    `json:"name"`        // User-defined name
+	ID            int64      `json:"id"`
+	WalletAddress string     `json:"wallet_address"`
+	KeyHash       string     `json:"-"`          // SHA-256 hash of the key (never exposed)
+	KeyPrefix     string     `json:"key_prefix"` // First 8 chars for identification
+	Name          string     `json:"name"`       // User-defined name
 	LastUsedAt    *time.Time `json:"last_used_at,omitempty"`
 	ExpiresAt     *time.Time `json:"expires_at,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
+	CreatedAt     time.Time  `json:"created_at"`
 	RevokedAt     *time.Time `json:"revoked_at,omitempty"`
-	IsRevoked     bool      `json:"is_revoked"`
+	IsRevoked     bool       `json:"is_revoked"`
 }
 
 type CreateAPIKeyRequest struct {
@@ -231,11 +231,11 @@ type CreateAPIKeyRequest struct {
 }
 
 type APIKeyResponse struct {
-	Key         string    `json:"key"`          // Full key shown only once!
-	KeyPrefix   string    `json:"key_prefix"`
-	Name        string    `json:"name"`
-	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
+	Key       string     `json:"key"` // Full key shown only once!
+	KeyPrefix string     `json:"key_prefix"`
+	Name      string     `json:"name"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
 }
 
 type APIKeyListResponse struct {
@@ -257,19 +257,19 @@ type RenewAPIKeyRequest struct {
 const (
 	// Token discount
 	SUIDiscountPercent = 50 // 50% discount for SUI token payments
-	
+
 	// SUI token price estimate (mock - should be fetched from oracle)
 	SUIUSDPrice = 1.50 // ~$1.50 per SUI
 
 	// API Key settings
-	APIKeyLength     = 32       // 32 bytes = 64 hex characters
-	APIKeyPrefix     = "vkn_"   // vauln-key prefix for identification
+	APIKeyLength = 32     // 32 bytes = 64 hex characters
+	APIKeyPrefix = "vkn_" // vauln-key prefix for identification
 )
 
 // GetPricing returns pricing for different currencies
 func GetPricing(checksCount int, pricePerCheck float64) []PaymentMethod {
 	basePrice := float64(checksCount) * pricePerCheck
-	
+
 	return []PaymentMethod{
 		{
 			Currency:      CurrencyUSDC,
@@ -313,14 +313,14 @@ type AddWalletRequest struct {
 
 // AddWalletResponse is the response for adding wallets
 type AddWalletResponse struct {
-	Success         bool            `json:"success"`
-	WalletsAdded    int             `json:"wallets_added"`
-	WalletsSkipped  int             `json:"wallets_skipped"`
-	WalletIDs       []int64         `json:"wallet_ids"`
-	SkippedWallets  []SkippedWallet `json:"skipped_wallets,omitempty"`
-	SeedID          *int64          `json:"seed_id,omitempty"`
-	SeedSkipped     bool            `json:"seed_skipped,omitempty"`
-	Message         string          `json:"message"`
+	Success        bool            `json:"success"`
+	WalletsAdded   int             `json:"wallets_added"`
+	WalletsSkipped int             `json:"wallets_skipped"`
+	WalletIDs      []int64         `json:"wallet_ids"`
+	SkippedWallets []SkippedWallet `json:"skipped_wallets,omitempty"`
+	SeedID         *int64          `json:"seed_id,omitempty"`
+	SeedSkipped    bool            `json:"seed_skipped,omitempty"`
+	Message        string          `json:"message"`
 }
 
 // SkippedWallet contains info about skipped duplicate wallet
@@ -328,4 +328,21 @@ type SkippedWallet struct {
 	Address string `json:"address"`
 	Chain   string `json:"chain"`
 	Reason  string `json:"reason"`
+}
+
+// Wallet job statuses for the async import queue
+const (
+	WalletJobPending    = "pending"
+	WalletJobProcessing = "processing"
+	WalletJobDone       = "done"
+	WalletJobFailed     = "failed"
+)
+
+// AddWalletJobResponse describes a queued wallet import job
+type AddWalletJobResponse struct {
+	JobID     string             `json:"job_id"`
+	Status    string             `json:"status"`
+	Result    *AddWalletResponse `json:"result,omitempty"`
+	Error     string             `json:"error,omitempty"`
+	CreatedAt time.Time          `json:"created_at"`
 }

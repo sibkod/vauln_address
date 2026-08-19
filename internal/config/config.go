@@ -36,19 +36,24 @@ type Config struct {
 	SolanaUseDevnet   bool
 	AdminAPIKey       string
 	// Price settings
-	SolanaPriceUSD    float64
-	PricePerCheckUSD  float64
+	SolanaPriceUSD   float64
+	PricePerCheckUSD float64
+	// Wallet import queue settings
+	WalletQueueSize       int
+	WalletBatchSize       int
+	WalletFlushIntervalMs int
+	WalletSyncWaitSeconds int
 }
 
 func Load() *Config {
 	godotenv.Load()
 
 	dbType := DBType(getEnv("DB_TYPE", "postgres"))
-	
+
 	// Solana configuration - easy 1-line switch between devnet and mainnet
 	// Set SOLANA_USE_DEVNET=false for mainnet
 	solanaUseDevnet := getEnv("SOLANA_USE_DEVNET", "true") == "true"
-	
+
 	// Default RPC URLs
 	solanaRPCURL := getEnv("SOLANA_RPC_URL", "")
 	if solanaRPCURL == "" {
@@ -60,26 +65,30 @@ func Load() *Config {
 	}
 
 	return &Config{
-		DBType:            dbType,
-		DBHost:            getEnv("DB_HOST", "localhost"),
-		DBPort:            getEnvInt("DB_PORT", 5432),
-		DBUser:            getEnv("DB_USER", "postgres"),
-		DBPassword:        getEnv("DB_PASSWORD", "postgres"),
-		DBName:            getEnv("DB_NAME", "vauln_address"),
-		DBSSLMode:         getEnv("DB_SSLMODE", "disable"),
-		DBCharset:         getEnv("DB_CHARSET", "utf8mb4"),
-		DBUnixSocket:      getEnv("DB_UNIX_SOCKET", ""),
-		SQLitePath:        getEnv("SQLITE_PATH", "./data/vauln_address.db"),
-		ServerPort:        getEnv("SERVER_PORT", "9111"),
-		RateLimitRequests: getEnvInt("RATE_LIMIT_REQUESTS", 10),
-		RateLimitHours:    getEnvInt("RATE_LIMIT_WINDOW_HOURS", 24),
-		FreeCheckLimit:    getEnvInt("FREE_CHECK_LIMIT", 3),
-		SolanaPaymentAddr: getEnv("SOLANA_PAYMENT_ADDR", ""),
-		SolanaRPCURL:      solanaRPCURL,
-		SolanaUseDevnet:   solanaUseDevnet,
-		AdminAPIKey:       getEnv("ADMIN_API_KEY", ""),
-		SolanaPriceUSD:    getEnvFloat("SOLANA_PRICE_USD", 150.0),
-		PricePerCheckUSD:  getEnvFloat("PRICE_PER_CHECK_USD", 0.10),
+		DBType:                dbType,
+		DBHost:                getEnv("DB_HOST", "localhost"),
+		DBPort:                getEnvInt("DB_PORT", 5432),
+		DBUser:                getEnv("DB_USER", "postgres"),
+		DBPassword:            getEnv("DB_PASSWORD", "postgres"),
+		DBName:                getEnv("DB_NAME", "vauln_address"),
+		DBSSLMode:             getEnv("DB_SSLMODE", "disable"),
+		DBCharset:             getEnv("DB_CHARSET", "utf8mb4"),
+		DBUnixSocket:          getEnv("DB_UNIX_SOCKET", ""),
+		SQLitePath:            getEnv("SQLITE_PATH", "./data/vauln_address.db"),
+		ServerPort:            getEnv("SERVER_PORT", "9111"),
+		RateLimitRequests:     getEnvInt("RATE_LIMIT_REQUESTS", 10),
+		RateLimitHours:        getEnvInt("RATE_LIMIT_WINDOW_HOURS", 24),
+		FreeCheckLimit:        getEnvInt("FREE_CHECK_LIMIT", 3),
+		SolanaPaymentAddr:     getEnv("SOLANA_PAYMENT_ADDR", ""),
+		SolanaRPCURL:          solanaRPCURL,
+		SolanaUseDevnet:       solanaUseDevnet,
+		AdminAPIKey:           getEnv("ADMIN_API_KEY", ""),
+		SolanaPriceUSD:        getEnvFloat("SOLANA_PRICE_USD", 150.0),
+		PricePerCheckUSD:      getEnvFloat("PRICE_PER_CHECK_USD", 0.10),
+		WalletQueueSize:       getEnvInt("WALLET_QUEUE_SIZE", 10000),
+		WalletBatchSize:       getEnvInt("WALLET_BATCH_SIZE", 100),
+		WalletFlushIntervalMs: getEnvInt("WALLET_FLUSH_INTERVAL_MS", 200),
+		WalletSyncWaitSeconds: getEnvInt("WALLET_SYNC_WAIT_SECONDS", 10),
 	}
 }
 
