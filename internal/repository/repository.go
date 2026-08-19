@@ -46,7 +46,14 @@ func New(cfg *config.Config) (*Repository, error) {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return nil, fmt.Errorf("failed to create directory for SQLite: %w", err)
 		}
+		// busy_timeout makes concurrent writers wait instead of failing
+		// with "database is locked"; WAL allows readers alongside the writer
 		dsn = cfg.SQLitePath
+		sep := "?"
+		if strings.Contains(dsn, "?") {
+			sep = "&"
+		}
+		dsn += sep + "_busy_timeout=5000&_journal_mode=WAL"
 
 	default: // PostgreSQL
 		driverName = "postgres"
@@ -1106,12 +1113,12 @@ func (r *Repository) CreateAPIKey(ctx context.Context, walletAddress, keyHash, k
 	return &models.APIKey{
 		ID:            id,
 		WalletAddress: walletAddress,
-		KeyHash:      keyHash,
-		KeyPrefix:    keyPrefix,
-		Name:         name,
-		ExpiresAt:    expiresAt,
-		CreatedAt:    time.Now(),
-		IsRevoked:    false,
+		KeyHash:       keyHash,
+		KeyPrefix:     keyPrefix,
+		Name:          name,
+		ExpiresAt:     expiresAt,
+		CreatedAt:     time.Now(),
+		IsRevoked:     false,
 	}, nil
 }
 
@@ -1340,6 +1347,130 @@ func (r *Repository) UpdateWalletSeed(ctx context.Context, walletID int64, seedI
 		seedID, now, walletID,
 	)
 	return err
+}
+
+// BatchWalletItem is a single wallet to insert as part of a batch
+type BatchWalletItem struct {
+	Address    string
+	Chain      string
+	Status     models.WalletStatus
+	SeedPhrase string // empty = no seed
+	Reason     string
+	Source     string
+}
+
+// BatchWalletResult is the per-item outcome of BatchAddWallets
+type BatchWalletResult struct {
+	WalletID   int64
+	Skipped    bool
+	SkipReason string
+}
+
+// BatchSeedInfo describes how a seed phrase was resolved in a batch
+type BatchSeedInfo struct {
+	ID      int64
+	Existed bool // true if the phrase was already stored before the batch
+}
+
+// BatchAddWallets inserts seeds and wallets for many requests in a single
+// transaction. It returns the resolved seed info per phrase and one result
+// per item, in the same order as the input slice. Because all writes go
+// through the queue worker, the check-then-insert pattern is race-free here.
+func (r *Repository) BatchAddWallets(ctx context.Context, items []BatchWalletItem) (map[string]BatchSeedInfo, []BatchWalletResult, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer tx.Rollback()
+
+	// Resolve distinct seed phrases, inserting the ones not stored yet
+	seeds := make(map[string]BatchSeedInfo)
+	for _, item := range items {
+		phrase := item.SeedPhrase
+		if phrase == "" {
+			continue
+		}
+		if _, ok := seeds[phrase]; ok {
+			continue
+		}
+		var id int64
+		err := tx.QueryRowContext(ctx,
+			`SELECT id FROM seeds WHERE seed_phrase = ?`, phrase,
+		).Scan(&id)
+		if err == sql.ErrNoRows {
+			res, err := tx.ExecContext(ctx,
+				`INSERT INTO seeds (seed_phrase) VALUES (?)`, phrase)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to insert seed: %w", err)
+			}
+			id, err = res.LastInsertId()
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to get seed id: %w", err)
+			}
+			seeds[phrase] = BatchSeedInfo{ID: id}
+		} else if err != nil {
+			return nil, nil, fmt.Errorf("failed to query seed: %w", err)
+		} else {
+			seeds[phrase] = BatchSeedInfo{ID: id, Existed: true}
+		}
+	}
+
+	now := time.Now()
+	results := make([]BatchWalletResult, len(items))
+	chainCounts := make(map[string]int)
+
+	for i, item := range items {
+		var existingID int64
+		err := tx.QueryRowContext(ctx,
+			`SELECT id FROM wallets WHERE address = ? AND chain = ?`,
+			item.Address, item.Chain,
+		).Scan(&existingID)
+		if err != nil && err != sql.ErrNoRows {
+			return nil, nil, fmt.Errorf("failed to check wallet %s/%s: %w", item.Chain, item.Address, err)
+		}
+		if err == nil {
+			results[i] = BatchWalletResult{Skipped: true, SkipReason: "duplicate wallet"}
+			continue
+		}
+
+		seedID := seeds[item.SeedPhrase].ID
+		res, err := tx.ExecContext(ctx,
+			`INSERT INTO wallets (address, chain, status, has_pk, has_seed, seed_id, reason, source, created_at, updated_at)
+			VALUES (?, ?, ?, false, ?, ?, ?, ?, ?, ?)`,
+			item.Address, item.Chain, item.Status, seedID > 0, seedID, item.Reason, item.Source, now, now,
+		)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to insert wallet %s/%s: %w", item.Chain, item.Address, err)
+		}
+		walletID, err := res.LastInsertId()
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get wallet id: %w", err)
+		}
+		results[i] = BatchWalletResult{WalletID: walletID}
+		chainCounts[item.Chain]++
+	}
+
+	// Update stats once per chain instead of once per wallet
+	for chain, count := range chainCounts {
+		var insertSQL string
+		if r.dbType == config.DBTypeSQLite {
+			insertSQL = `INSERT OR IGNORE INTO wallet_stats (chain, count) VALUES (?, 0)`
+		} else {
+			insertSQL = `INSERT IGNORE INTO wallet_stats (chain, count) VALUES (?, 0)`
+		}
+		if _, err := tx.ExecContext(ctx, insertSQL, chain); err != nil {
+			return nil, nil, fmt.Errorf("failed to init stats for chain %s: %w", chain, err)
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE wallet_stats SET count = count + ? WHERE chain = ?`, count, chain); err != nil {
+			return nil, nil, fmt.Errorf("failed to update stats for chain %s: %w", chain, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, nil, fmt.Errorf("failed to commit batch: %w", err)
+	}
+	return seeds, results, nil
 }
 
 // GetExpiredOrders returns pending orders older than the specified duration

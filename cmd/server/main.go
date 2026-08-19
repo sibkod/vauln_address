@@ -56,13 +56,20 @@ func main() {
 	rateLimitResetService.Start()
 	defer rateLimitResetService.Stop()
 
+	// Start wallet import queue: a single background worker that writes
+	// accumulated requests to the database in batched transactions
+	walletQueue := services.NewWalletQueue(repo, cfg.WalletBatchSize,
+		time.Duration(cfg.WalletFlushIntervalMs)*time.Millisecond, cfg.WalletQueueSize)
+	walletQueue.Start()
+	defer walletQueue.Stop()
+
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(middleware.CORS())
 
 	rateLimiter := middleware.NewRateLimiter(repo, cfg)
-	h := handlers.New(repo, cfg, priceService)
+	h := handlers.New(repo, cfg, priceService, walletQueue)
 	authService := h.GetAuthService()
 	router.Use(middleware.AuthMiddleware(authService))
 
@@ -80,7 +87,7 @@ func main() {
 	api.POST("/auth/login", h.Authenticate)
 	api.GET("/user/profile", middleware.RequireAuth(), h.GetUserProfile)
 	api.GET("/user/balance", middleware.AuthMiddleware(authService), h.GetBalance) // Returns purchased balance for auth users, rate limit for anonymous
-	api.GET("/me", middleware.AuthMiddleware(authService), h.GetMe)              // Comprehensive user info with balance and rate limits
+	api.GET("/me", middleware.AuthMiddleware(authService), h.GetMe)                // Comprehensive user info with balance and rate limits
 	api.GET("/user/purchases", middleware.RequireAuth(), h.GetPurchaseHistory)
 	api.POST("/orders", middleware.RequireAuth(), h.CreateOrder)
 	api.POST("/orders/:id/cancel", middleware.RequireAuth(), h.CancelOrder)
@@ -99,6 +106,8 @@ func main() {
 	admin := api.Group("/admin")
 	admin.Use(middleware.AdminMiddleware(cfg.AdminAPIKey))
 	admin.POST("/wallets", h.AddWallet)
+	admin.POST("/wallets/async", h.AddWalletAsync)
+	admin.GET("/wallets/jobs/:id", h.GetWalletJob)
 
 	server := &http.Server{Addr: ":" + cfg.ServerPort, Handler: router, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 
