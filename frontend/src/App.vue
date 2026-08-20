@@ -51,10 +51,24 @@ const walletOptions = [
 ]
 
 // Provide auth state and wallet modal control to all components
-provide('wallet', { connected, walletAddress, walletChain, userBalance, authToken, refreshBalance, fetchPurchaseHistory, fetchMe, openWalletModal, phantomNetwork })
+provide('wallet', { connected, walletAddress, walletChain, userBalance, authToken, refreshBalance, fetchPurchaseHistory, fetchMe, openWalletModal, phantomNetwork, handleUnauthorized })
 provide('network', { isMainnet: IS_MAINNET, solanaNetwork: SOLANA_NETWORK })
 provide('rateLimitInfo', rateLimitInfo)
 provide('apiBase', API_BASE)
+
+// Handle expired/invalid token: clear stored auth state
+function handleUnauthorized(res: Response): boolean {
+  if (res.status !== 401 || !authToken.value) return false
+  console.warn('[Auth] Token rejected (401), clearing stored auth state')
+  authToken.value = ''
+  connected.value = false
+  walletAddress.value = ''
+  localStorage.removeItem('authToken')
+  localStorage.removeItem('walletAddress')
+  localStorage.removeItem('walletChain')
+  localStorage.removeItem('userBalance')
+  return true
+}
 
 // Fetch comprehensive user info from /api/me endpoint
 async function fetchMe() {
@@ -64,7 +78,8 @@ async function fetchMe() {
       headers['Authorization'] = `Bearer ${authToken.value}`
     }
     const res = await fetch(apiUrl('/api/me'), { headers })
-    
+    if (handleUnauthorized(res)) return
+
     if (res.ok) {
       const data = await res.json()
       
@@ -135,6 +150,7 @@ async function refreshBalance() {
       headers['Authorization'] = `Bearer ${authToken.value}`
     }
     const res = await fetch(apiUrl('/api/user/balance'), { headers })
+    if (handleUnauthorized(res)) return
     if (res.ok) {
       const data = await res.json()
       userBalance.value = data.balance
@@ -155,6 +171,7 @@ async function fetchPurchaseHistory(limit = 5) {
     const res = await fetch(apiUrl(`/api/user/purchases?limit=${limit}`), {
       headers: { 'Authorization': `Bearer ${authToken.value}` }
     })
+    if (handleUnauthorized(res)) return []
     if (res.ok) {
       const data = await res.json()
       recentPurchases.value = data.orders || []
