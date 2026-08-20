@@ -295,14 +295,20 @@ func AuthMiddleware(authService *auth.AuthService) gin.HandlerFunc {
 		// Extract token from "Bearer <token>"
 		parts := strings.SplitN(authHeader, " ", 2)
 		if len(parts) != 2 || parts[0] != "Bearer" {
-			c.Next()
+			c.AbortWithStatusJSON(http.StatusUnauthorized, models.ErrorResponse{
+				Error: "invalid authorization header",
+				Code:  "INVALID_TOKEN",
+			})
 			return
 		}
 
 		tokenString := parts[1]
 		claims, err := authService.ValidateToken(tokenString)
 		if err != nil {
-			c.Next()
+			c.AbortWithStatusJSON(http.StatusUnauthorized, models.ErrorResponse{
+				Error: "invalid or expired token",
+				Code:  "INVALID_TOKEN",
+			})
 			return
 		}
 

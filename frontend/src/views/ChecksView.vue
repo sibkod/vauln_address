@@ -40,7 +40,11 @@ async function fetchChecks(offset: number = 0) {
     const res = await fetch(apiUrl(`/api/checks?limit=${perPage.value}&offset=${offset}`), {
       headers: { 'Authorization': `Bearer ${wallet.authToken.value}` }
     })
-    
+
+    if (res.status === 401) {
+      wallet?.handleUnauthorized?.(res)
+      throw new Error('Session expired. Please reconnect your wallet')
+    }
     if (!res.ok) {
       throw new Error('Failed to fetch checks')
     }
