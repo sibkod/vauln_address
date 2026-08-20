@@ -897,6 +897,13 @@ func (h *Handler) CheckWallet(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+func maskAddress(addr string) string {
+	if len(addr) <= 10 {
+		return addr
+	}
+	return addr[:6] + "..." + addr[len(addr)-4:]
+}
+
 func maxInt(a, b int) int {
 	if a > b {
 		return a
@@ -961,6 +968,12 @@ func (h *Handler) GetRecentChecks(c *gin.Context) {
 		checks = []models.RecentCheck{}
 	}
 
+	// Public /api/recent listing exposes only truncated addresses
+	if strings.HasSuffix(c.FullPath(), "/recent") {
+		for i := range checks {
+			checks[i].Address = maskAddress(checks[i].Address)
+		}
+	}
 	response := gin.H{
 		"checks": checks,
 		"count":  len(checks),
