@@ -123,6 +123,7 @@ func (h *Handler) assembleReport(c *gin.Context, address, chain string) (*models
 	}
 	report.Leaks = leaks
 	report.Details = buildReportDetails(report, leaks)
+	report.Evidence = h.buildStatusEvidence(c, report)
 	report.Transactions = h.buildTxTree(c, address, chain)
 	return report, http.StatusOK
 }

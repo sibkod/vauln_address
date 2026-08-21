@@ -103,6 +103,10 @@ func main() {
 	api.GET("/report", h.GetReport)
 	api.GET("/report/shared/:id", h.GetSharedReport)
 	api.POST("/report/share", middleware.RequireAuth(), h.ShareReport)
+	api.GET("/monitor/findings", h.GetMonitorFindings)
+	api.GET("/monitor/stats", h.GetMonitorStats)
+	api.GET("/captcha", h.GetCaptcha)
+	api.POST("/drainer-reports", h.SubmitDrainerReport)
 	api.POST("/contact", h.SubmitContact)
 	api.GET("/api-keys", middleware.RequireAuth(), h.ListAPIKeys)
 	api.POST("/api-keys", middleware.RequireAuth(), h.CreateAPIKey)
@@ -116,6 +120,7 @@ func main() {
 	admin.POST("/wallets", h.AddWallet)
 	admin.POST("/wallets/async", h.AddWalletAsync)
 	admin.GET("/wallets/jobs/:id", h.GetWalletJob)
+	admin.POST("/scanner/findings", h.IngestScanFinding)
 
 	server := &http.Server{Addr: ":" + cfg.ServerPort, Handler: router, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 

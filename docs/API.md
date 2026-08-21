@@ -259,6 +259,92 @@ address no longer in the database.
 
 ---
 
+## Drainer Scanner & Monitoring
+
+The Solana drainer scanner (`solana_scan.py`) reports every detection to the
+backend; findings feed the live monitoring page and the report evidence chain.
+
+### Ingest Scan Finding (admin)
+
+**POST** `/api/admin/scanner/findings`
+
+Headers: `X-Admin-Key: <ADMIN_API_KEY>`.
+
+```json
+{
+  "chain": "solana",
+  "signature": "5Kd4...",
+  "slot": 123456789,
+  "verdict": "DRAINER",
+  "indicators": ["P2_FULL_BALANCE_SWEEP", "P3_UNKNOWN_PROGRAM"],
+  "victim_address": "VictimWallet...",
+  "hacker_address": "HackerWallet...",
+  "amount_sol": 1.5,
+  "programs": ["EtrnLzg..."],
+  "source": "watch"
+}
+```
+
+Stores the finding (deduplicated by `signature`). For `DRAINER` verdicts the
+victim is registered in the wallets table as `drained` and the hacker as
+`hacker` (source `solana_scan`), unless already present.
+
+**Response:** `{ "id": 1, "inserted": true, "victim_added": true, "hacker_added": true }`
+
+### Monitor Findings
+
+**GET** `/api/monitor/findings?limit=20&after_id=0`
+
+Public live feed of scanner findings. Without `after_id` returns the latest
+rows newest-first; with `after_id` returns only newer rows ascending (used by
+the live page for incremental polling).
+
+### Monitor Stats
+
+**GET** `/api/monitor/stats`
+
+Aggregate counters: total findings, DRAINER/SUSPICIOUS counts, distinct
+victim/hacker counts and total swept SOL.
+
+### Get Captcha
+
+**GET** `/api/captcha`
+
+Issues a one-time captcha challenge for the drainer report form:
+`{ "captcha_id": "...", "image": "data:image/svg+xml;base64,..." }`.
+Challenges live in memory for 10 minutes and are single-use.
+
+### Submit Drainer Report
+
+**POST** `/api/drainer-reports`
+
+Public (no auth) user report about a drainer theft; a valid captcha is
+mandatory. The report is stored and forwarded to the team Telegram bot
+(`TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`).
+
+```json
+{
+  "tx_signature": "5Kd4...",
+  "chain": "solana",
+  "site_url": "https://scam-site.example",
+  "description": "what happened",
+  "captcha_id": "uuid from GET /api/captcha",
+  "captcha_answer": "ABCDE"
+}
+```
+
+**Errors:** `403 CAPTCHA_INVALID` - wrong/expired/reused captcha answer (fetch
+a new one); `400 INVALID_REQUEST` / `400 INVALID_CHAIN`.
+
+### Report evidence chain
+
+`GET /api/report` (and shared reports) now include an `evidence` array: an
+ordered list of reasons the wallet carries its status - registry listing, key
+leaks and scanner indicators (P1..P5) with the transaction each indicator was
+detected in, the counterparty and the swept amount.
+
+---
+
 ## Authentication Endpoints
 
 ### Get Nonce

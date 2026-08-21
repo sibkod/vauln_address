@@ -379,20 +379,21 @@ type ReportTxNode struct {
 
 // ReportResponse is the full report payload for a found address.
 type ReportResponse struct {
-	Address      string          `json:"address"`
-	Chain        string          `json:"chain"`
-	Found        bool            `json:"found"`
-	Status       string          `json:"status"`
-	Reason       string          `json:"reason,omitempty"`
-	Details      string          `json:"details"`
-	Source       string          `json:"source,omitempty"`
-	HasPK        bool            `json:"has_pk"`
-	HasSeed      bool            `json:"has_seed"`
-	Leaks        []LeakedKeyInfo `json:"leaks,omitempty"`
-	Transactions *ReportTxNode   `json:"transactions,omitempty"`
-	ExpiresAt    *time.Time      `json:"expires_at,omitempty"`
-	Public       bool            `json:"public,omitempty"`
-	CreatedAt    time.Time       `json:"created_at"`
+	Address      string           `json:"address"`
+	Chain        string           `json:"chain"`
+	Found        bool             `json:"found"`
+	Status       string           `json:"status"`
+	Reason       string           `json:"reason,omitempty"`
+	Details      string           `json:"details"`
+	Source       string           `json:"source,omitempty"`
+	HasPK        bool             `json:"has_pk"`
+	HasSeed      bool             `json:"has_seed"`
+	Leaks        []LeakedKeyInfo  `json:"leaks,omitempty"`
+	Evidence     []StatusEvidence `json:"evidence,omitempty"`
+	Transactions *ReportTxNode    `json:"transactions,omitempty"`
+	ExpiresAt    *time.Time       `json:"expires_at,omitempty"`
+	Public       bool             `json:"public,omitempty"`
+	CreatedAt    time.Time        `json:"created_at"`
 }
 
 // ShareReportRequest asks to make a report public (authenticated users only).
@@ -405,4 +406,100 @@ type ShareReportRequest struct {
 type ShareReportResponse struct {
 	ShareID  string `json:"share_id"`
 	ShareURL string `json:"share_url"` // frontend path, e.g. /report/<uuid>
+}
+
+// ==================== Drainer scanner (solana_scan.py) ====================
+
+// Scanner verdicts produced by solana_scan.py.
+const (
+	ScanVerdictDrainer    = "DRAINER"
+	ScanVerdictSuspicious = "SUSPICIOUS"
+)
+
+// ScanFinding is one drainer-pattern detection reported by solana_scan.py.
+// VictimAddress is the drained/hijacked wallet, HackerAddress is the sweep
+// destination or the program that took over the account.
+type ScanFinding struct {
+	ID            int64     `json:"id"`
+	Chain         string    `json:"chain"`
+	Signature     string    `json:"signature"`
+	Slot          int64     `json:"slot"`
+	Verdict       string    `json:"verdict"`
+	Indicators    []string  `json:"indicators"`
+	VictimAddress string    `json:"victim_address,omitempty"`
+	HackerAddress string    `json:"hacker_address,omitempty"`
+	AmountSOL     float64   `json:"amount_sol"`
+	Programs      []string  `json:"programs,omitempty"`
+	Source        string    `json:"source"` // scanner mode: watch / scan-wallet
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+// ScanFindingRequest is the ingest payload sent by solana_scan.py.
+type ScanFindingRequest struct {
+	Chain         string   `json:"chain"`
+	Signature     string   `json:"signature" binding:"required"`
+	Slot          int64    `json:"slot"`
+	Verdict       string   `json:"verdict" binding:"required"`
+	Indicators    []string `json:"indicators"`
+	VictimAddress string   `json:"victim_address"`
+	HackerAddress string   `json:"hacker_address"`
+	AmountSOL     float64  `json:"amount_sol"`
+	Programs      []string `json:"programs"`
+	Source        string   `json:"source"`
+}
+
+// ScanStats are aggregate counters for the live monitoring page.
+type ScanStats struct {
+	TotalFindings int64   `json:"total_findings"`
+	DrainerCount  int64   `json:"drainer_count"`
+	SuspectCount  int64   `json:"suspicious_count"`
+	VictimCount   int64   `json:"victim_count"`
+	HackerCount   int64   `json:"hacker_count"`
+	StolenSOL     float64 `json:"stolen_sol"`
+}
+
+// ==================== User drainer reports ====================
+
+// DrainerReport is a user-submitted report about a drainer theft.
+type DrainerReport struct {
+	ID           int64     `json:"id"`
+	TxSignature  string    `json:"tx_signature"`
+	Chain        string    `json:"chain"`
+	SiteURL      string    `json:"site_url,omitempty"`
+	Description  string    `json:"description,omitempty"`
+	Reporter     string    `json:"-"` // wallet address or "ip:<ip>"
+	Status       string    `json:"status"`
+	TelegramSent bool      `json:"telegram_sent"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// DrainerReportRequest is the public submission payload. A valid captcha
+// answer is required to protect the endpoint from bots.
+type DrainerReportRequest struct {
+	TxSignature   string `json:"tx_signature" binding:"required,min=40,max=120"`
+	Chain         string `json:"chain"`
+	SiteURL       string `json:"site_url" binding:"omitempty,max=300"`
+	Description   string `json:"description" binding:"omitempty,max=2000"`
+	CaptchaID     string `json:"captcha_id" binding:"required"`
+	CaptchaAnswer string `json:"captcha_answer" binding:"required"`
+}
+
+// CaptchaResponse carries a one-time captcha challenge for the report form.
+type CaptchaResponse struct {
+	CaptchaID string `json:"captcha_id"`
+	Image     string `json:"image"` // data URI with the captcha SVG
+}
+
+// ==================== Status evidence chain ====================
+
+// StatusEvidence is one step of the chain explaining why a wallet has its
+// status: registry listing, key leak, or a scanner indicator (P1..P5).
+type StatusEvidence struct {
+	Code         string    `json:"code"`
+	Title        string    `json:"title"`
+	Description  string    `json:"description"`
+	TxSignature  string    `json:"tx_signature,omitempty"`
+	Counterparty string    `json:"counterparty,omitempty"`
+	AmountSOL    float64   `json:"amount_sol,omitempty"`
+	DetectedAt   time.Time `json:"detected_at,omitempty"`
 }

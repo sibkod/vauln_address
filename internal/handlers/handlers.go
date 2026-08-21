@@ -34,6 +34,8 @@ type Handler struct {
 	serverCfg    *config.Config
 	priceService *services.PriceService
 	walletQueue  *services.WalletQueue
+	captcha      *services.CaptchaService
+	telegram     *services.TelegramService
 	packages     []gin.H
 }
 
@@ -44,6 +46,8 @@ func New(repo *repository.Repository, serverCfg *config.Config, priceService *se
 		serverCfg:    serverCfg,
 		priceService: priceService,
 		walletQueue:  walletQueue,
+		captcha:      services.NewCaptchaService(),
+		telegram:     services.NewTelegramService(serverCfg.TelegramBotToken, serverCfg.TelegramChatID),
 		packages:     loadPackages(serverCfg),
 	}
 	return h
