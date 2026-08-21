@@ -147,6 +147,7 @@ onMounted(() => {
             <th>Address</th>
             <th>Chain</th>
             <th>Status</th>
+            <th>Report</th>
           </tr>
         </thead>
         <tbody>
@@ -162,6 +163,13 @@ onMounted(() => {
               <span :class="['status-badge', getStatusClass(check.status)]">
                 {{ getStatusIcon(check.status) }} {{ check.status }}
               </span>
+            </td>
+            <td>
+              <RouterLink
+                :to="{ path: '/report', query: { address: check.address, chain: check.chain } }"
+                class="report-btn"
+                title="Open report"
+              >📄</RouterLink>
             </td>
           </tr>
         </tbody>
@@ -448,5 +456,20 @@ onMounted(() => {
 
 .retry-btn:hover {
   background: #5568d3;
+}
+
+.report-btn {
+  display: inline-flex;
+  padding: 0.3rem 0.5rem;
+  background: #151a24;
+  border: 1px solid #2a3548;
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}
+
+.report-btn:hover {
+  border-color: #667eea;
 }
 </style>

@@ -885,10 +885,14 @@ func (h *Handler) CheckWallet(c *gin.Context) {
 		response.Status = "not_found"
 	}
 
-	// Record check in history
+	// Record check in history. Anonymous users are stored as "ip:<ip>" so
+	// their reports stay accessible for 24 hours and can then be deleted.
 	userAddr := ""
 	if ua, exists := c.Get("userAddress"); exists {
 		userAddr = ua.(string)
+	}
+	if userAddr == "" {
+		userAddr = repository.AnonymousRequesterPrefix + c.ClientIP()
 	}
 	go func() {
 		h.repo.RecordCheck(context.Background(), userAddr, req.Address, req.Chain, status)

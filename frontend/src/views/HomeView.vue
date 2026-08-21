@@ -282,6 +282,13 @@ function getResultClass() {
       Found in database · {{ chain.toUpperCase() }}
     </div>
     <div class="result-chain" v-if="result && !result.message && !result.error">🔗 {{ chain.toUpperCase() }}</div>
+    <RouterLink
+      v-if="result && !result.message && !result.error && result.found && address"
+      :to="{ path: '/report', query: { address: address.trim(), chain } }"
+      class="detail-link"
+    >
+      📄 Full report →
+    </RouterLink>
   </div>
 
   <!-- Recent Checks -->

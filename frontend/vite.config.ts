@@ -21,6 +21,9 @@ export default defineConfig({
       }
     }
   },
+  preview: {
+    allowedHosts: true
+  },
   define: {
     'process.env': {},
     global: 'globalThis'
