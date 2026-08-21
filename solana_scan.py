@@ -13,10 +13,11 @@ drainer_analyzer.py — детектор Solana-дрейнеров и анали
   P3  вызов неизвестной программы (не в белом списке) в той же транзакции
   P4  создание "контрольного" аккаунта (createAccount, owner=программа, space=0)
   P5  пересечение с базой известных дрейнер-программ
-  P6  полный снос SPL-токенов подписанта (preTokenBalances>0, post=0)
+  P6  снос ВСЕХ SPL-токенов подписанта без компенсации (>=2 mint'ов в ноль,
+      SOL не вырос) — отсекает легитимные полные свапы одного токена
 
 Вердикты: CLEAN (нет индикаторов), SUSPICIOUS (частичное совпадение),
-DRAINER (P1, или P5+(P2|P6), или (P2|P6)+P3 вместе).
+DRAINER (P1 — захват управления, или P5+(P2|P6) — watchlist + увод средств).
 
 Белый список известных программ (~300 programId: DEX, лендинг, NFT,
 инфраструктура) подгружается из solana_programs.json рядом со скриптом
@@ -329,15 +330,16 @@ def detect_patterns(tx, watch_programs=None):
     post = meta.get("postBalances") or []
     key_list = account_keys(tx)
 
-    # P6: полный снос SPL-токенов подписанта — классика дрейнера.
-    # Суммируем pre/postTokenBalances по owner; если у подписанта все
-    # токены ушли в ноль, при этом какие-то токены были — это sweep.
-    pre_tok_by_owner, post_tok_by_owner = {}, {}
+    # P6: снос ВСЕХ SPL-токенов подписанта без компенсации — классика дрейнера.
+    # Один токен, ушедший в ноль (продали через свап), — норма, не флагаем:
+    # требуем >=2 разных mint'ов и что подписант не получил SOL взамен.
+    pre_tok_by_owner, post_tok_by_owner, pre_mints_by_owner = {}, {}, {}
     for b in (meta.get("preTokenBalances") or []):
         owner = b.get("owner")
         ui = (b.get("uiTokenAmount") or {}).get("uiAmount") or 0
         if owner and ui:
             pre_tok_by_owner[owner] = pre_tok_by_owner.get(owner, 0) + ui
+            pre_mints_by_owner.setdefault(owner, set()).add(b.get("mint"))
     for b in (meta.get("postTokenBalances") or []):
         owner = b.get("owner")
         ui = (b.get("uiTokenAmount") or {}).get("uiAmount") or 0
@@ -346,10 +348,22 @@ def detect_patterns(tx, watch_programs=None):
 
     signer_set = set(signers(tx))
     for owner, pre_ui in pre_tok_by_owner.items():
-        if owner in signer_set and post_tok_by_owner.get(owner, 0) == 0:
-            details["token_sweeps"].append({
-                "owner": owner,
-                "tokens_before": round(pre_ui, 6)})
+        if owner not in signer_set or post_tok_by_owner.get(owner, 0) != 0:
+            continue
+        mints = pre_mints_by_owner.get(owner) or set()
+        if len(mints) < 2:
+            continue  # полный свап одного токена — легитимная операция
+        sol_delta = None
+        if owner in key_list:
+            i = key_list.index(owner)
+            if i < len(pre) and i < len(post):
+                sol_delta = post[i] - pre[i]
+        if sol_delta is not None and sol_delta > 20_000_000:  # получил >0.02 SOL — это свап
+            continue
+        details["token_sweeps"].append({
+            "owner": owner,
+            "tokens_before": round(pre_ui, 6),
+            "mints_swept": len(mints)})
 
     for ix in iter_instructions(tx):
         if ix.get("program") == "system":
@@ -416,12 +430,11 @@ def detect_patterns(tx, watch_programs=None):
             and ("P2_FULL_BALANCE_SWEEP" in indicators or "P6_TOKEN_SWEEP" in indicators)):
         # P5 + sweep: программа из watchlist + деньги ушли — почти наверняка дрейн
         verdict = "DRAINER"
-    elif (("P2_FULL_BALANCE_SWEEP" in indicators or "P6_TOKEN_SWEEP" in indicators)
-            and "P3_UNKNOWN_PROGRAM" in indicators):
-        verdict = "DRAINER"
     elif ("P2_FULL_BALANCE_SWEEP" in indicators or "P6_TOKEN_SWEEP" in indicators
           or "P4_CONTROL_ACCOUNT" in indicators
           or "P5_KNOWN_DRAINER_PROGRAM" in indicators):
+        # (P2|P6)+P3 тоже здесь: sweep без захвата управления может быть
+        # легитимным переводом/продажей — помечаем SUSPICIOUS, не DRAINER
         verdict = "SUSPICIOUS"
     else:
         # одиночный P3 (неизвестная программа) — слишком шумный, не флагаем
