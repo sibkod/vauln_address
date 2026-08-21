@@ -40,6 +40,55 @@ import time
 import urllib.request
 from collections import Counter, defaultdict
 
+# PyNaCl — проверка Ed25519 (on-curve). libsodium crypto_core_ed25519_is_valid_point
+# отвергает точки в малой подгруппе (y<8), тогда как Solana findProgramAddress их
+# пропускает. Поэтому используем libsodium, но для y<8 (малая подгруппа) считаем
+# адрес on-curve — в точности как on-curve в Solana.
+try:
+    import nacl.bindings as _nb
+except ImportError:
+    _nb = None
+
+
+def _b58decode(s):
+    """Base58 -> bytes. Для Solana-адресов (32 байта) результат всегда 32 байта."""
+    alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+    n = 0
+    for c in s:
+        n = n * 58 + alphabet.index(c)
+    body = n.to_bytes(max((n.bit_length() + 7) // 8, 1), "big") if s else b""
+    # body может быть короче 32 (лидирующие нули) или длиннее (не 32-байтный адрес)
+    pad = len(s) - len(s.lstrip("1"))
+    out = b"\x00" * pad + body
+    # Solana адрес — ровно 32 байта; обрезаем/дополняем
+    return out[-32:].rjust(32, b"\x00")
+
+
+def is_on_curve(addr):
+    """True, если base58-адрес — точка на Ed25519 (реальный кошелёк с ключом).
+
+    PDA-аккаунты программ лежат ВНЕ кривой — у них нет приватного ключа,
+    это служебные адреса (пулы, эскроу). Участие off-curve адреса в sweep
+    означает маршрутизацию ликвидности, а не кражу у кошелька.
+    """
+    if _nb is None:
+        return True  # без PyNaCl фильтр отключён
+    try:
+        p = _b58decode(addr)
+    except (ValueError, IndexError):
+        return False
+    if len(p) != 32:
+        return False
+    y = int.from_bytes(p, "little") & ((1 << 255) - 1)
+    if y >= 2 ** 255 - 19:
+        return False
+    if y < 8:
+        return True  # малая подгруппа — Solana считает on-curve
+    try:
+        return bool(_nb.crypto_core_ed25519_is_valid_point(p))
+    except Exception:
+        return False
+
 RPC_ENDPOINTS = [
     "https://api.mainnet-beta.solana.com",
     "https://solana-rpc.publicnode.com",
@@ -386,17 +435,20 @@ def detect_patterns(tx, watch_programs=None):
                 details["created_control_accounts"].append(
                     {"account": info.get("newAccount"), "owner": info.get("owner")})
 
-            # P2: перевод >=90% баланса, остаток <0.01 SOL
+            # P2: перевод >=90% баланса, остаток <0.01 SOL.
+            # Off-curve участник (PDA: пул, эскроу, служебный аккаунт
+            # программы) — это маршрутизация ликвидности, не кража.
             if itype == "transfer":
                 src = info.get("source")
+                dst = info.get("destination")
                 lamports = int(info.get("lamports") or 0)
-                if src in key_list:
+                if src in key_list and is_on_curve(src) and is_on_curve(dst):
                     idx = key_list.index(src)
                     if idx < len(pre) and idx < len(post) and pre[idx] > 0:
                         ratio = lamports / pre[idx]
                         if ratio >= 0.9 and post[idx] < 10_000_000 and lamports > 1_000_000:
                             details["drain_transfers"].append({
-                                "from": src, "to": info.get("destination"),
+                                "from": src, "to": dst,
                                 "amount_sol": lamports / 1e9,
                                 "left_sol": post[idx] / 1e9,
                                 "ratio": round(ratio, 4)})
