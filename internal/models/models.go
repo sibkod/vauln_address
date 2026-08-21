@@ -346,3 +346,63 @@ type AddWalletJobResponse struct {
 	Error     string             `json:"error,omitempty"`
 	CreatedAt time.Time          `json:"created_at"`
 }
+
+// ==================== Reports ====================
+
+// Statuses used inside the report transaction tree. Unlike wallet statuses
+// these are derived heuristics, not stored in the wallets table.
+const (
+	TreeStatusUnknown         = "unknown"
+	TreeStatusPotentialHacker = "potential_hacker"
+)
+
+// AnonymousReportTTL is how long a report stays available for
+// non-authenticated users before it is deleted.
+const AnonymousReportTTL = 24 * time.Hour
+
+// LeakedKeyInfo describes a leaked credential without exposing its value.
+type LeakedKeyInfo struct {
+	KeyType      string    `json:"key_type"` // "seed" or "private_key"
+	Source       string    `json:"source"`
+	DiscoveredAt time.Time `json:"discovered_at"`
+}
+
+// ReportTxNode is a node of the outgoing transaction tree of a wallet.
+type ReportTxNode struct {
+	Address  string          `json:"address"`
+	TxCount  int             `json:"tx_count"`
+	Amount   float64         `json:"amount"`
+	Currency string          `json:"currency"`
+	Status   string          `json:"status"`
+	Children []*ReportTxNode `json:"children,omitempty"`
+}
+
+// ReportResponse is the full report payload for a found address.
+type ReportResponse struct {
+	Address      string          `json:"address"`
+	Chain        string          `json:"chain"`
+	Found        bool            `json:"found"`
+	Status       string          `json:"status"`
+	Reason       string          `json:"reason,omitempty"`
+	Details      string          `json:"details"`
+	Source       string          `json:"source,omitempty"`
+	HasPK        bool            `json:"has_pk"`
+	HasSeed      bool            `json:"has_seed"`
+	Leaks        []LeakedKeyInfo `json:"leaks,omitempty"`
+	Transactions *ReportTxNode   `json:"transactions,omitempty"`
+	ExpiresAt    *time.Time      `json:"expires_at,omitempty"`
+	Public       bool            `json:"public,omitempty"`
+	CreatedAt    time.Time       `json:"created_at"`
+}
+
+// ShareReportRequest asks to make a report public (authenticated users only).
+type ShareReportRequest struct {
+	Address string `json:"address" binding:"required"`
+	Chain   string `json:"chain" binding:"required"`
+}
+
+// ShareReportResponse carries the public share link of a report.
+type ShareReportResponse struct {
+	ShareID  string `json:"share_id"`
+	ShareURL string `json:"share_url"` // frontend path, e.g. /report/<uuid>
+}

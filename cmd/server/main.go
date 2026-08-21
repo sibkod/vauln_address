@@ -56,6 +56,11 @@ func main() {
 	rateLimitResetService.Start()
 	defer rateLimitResetService.Stop()
 
+	// Start report cleanup service - deletes anonymous reports after 24h
+	reportCleanupService := services.NewReportCleanupService(repo)
+	reportCleanupService.Start()
+	defer reportCleanupService.Stop()
+
 	// Start wallet import queue: a single background worker that writes
 	// accumulated requests to the database in batched transactions
 	walletQueue := services.NewWalletQueue(repo, cfg.WalletBatchSize,
@@ -95,6 +100,9 @@ func main() {
 	api.GET("/orders/verify", middleware.RequireAuth(), h.VerifyPayment)
 	api.POST("/payment/status/:signature", middleware.RequireAuth(), h.GetPaymentStatus)
 	api.POST("/check", rateLimiter.Limit(), h.CheckWallet)
+	api.GET("/report", h.GetReport)
+	api.GET("/report/shared/:id", h.GetSharedReport)
+	api.POST("/report/share", middleware.RequireAuth(), h.ShareReport)
 	api.POST("/contact", h.SubmitContact)
 	api.GET("/api-keys", middleware.RequireAuth(), h.ListAPIKeys)
 	api.POST("/api-keys", middleware.RequireAuth(), h.CreateAPIKey)

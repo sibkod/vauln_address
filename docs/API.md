@@ -165,6 +165,100 @@ Returns recent wallet checks (public feed).
 
 ---
 
+### Get Wallet Report
+
+**GET** `/api/report?address={address}&chain={chain}`
+
+Detailed report for an address **found in the database**. Access is granted only
+after the same requester checks the address via `POST /api/check`:
+
+- **Authenticated users** (JWT, checked from their wallet address) keep reports forever.
+- **Anonymous users** (identified by IP) can open the report for **24 hours** after
+  the check; after that the report is deleted and the endpoint returns `REPORT_EXPIRED`.
+
+**Response (found, 200):**
+```json
+{
+  "address": "0x742d35Cc6634C0532925a3b844Bc9e7595f5B2a1",
+  "chain": "evm",
+  "found": true,
+  "status": "hacked",
+  "reason": "leaked private key",
+  "details": "The private key of this wallet is publicly available to everyone. ...",
+  "source": "github",
+  "has_pk": true,
+  "has_seed": false,
+  "leaks": [
+    { "key_type": "private_key", "source": "github_leak", "discovered_at": "2024-01-01T00:00:00Z" }
+  ],
+  "transactions": {
+    "address": "0x742d35...",
+    "tx_count": 12,
+    "amount": 96.7142,
+    "currency": "ETH",
+    "status": "hacked",
+    "children": [ { "address": "0x6dd8...", "tx_count": 1, "amount": 54.5901, "currency": "ETH", "status": "unknown" } ]
+  },
+  "expires_at": "2024-01-02T00:00:00Z",
+  "created_at": "2024-01-01T00:00:00Z"
+}
+```
+
+`transactions` is a deterministic tree of outgoing transfers. Child wallet
+statuses are resolved against the database; addresses not present in it are
+classified as `unknown` or `potential_hacker`. `expires_at` is only present
+for anonymous requests.
+
+**Errors:**
+- `400 INVALID_REQUEST / INVALID_CHAIN / INVALID_ADDRESS` - missing or invalid params
+- `403 REPORT_NOT_AVAILABLE` - check the address first
+- `403 REPORT_EXPIRED` - anonymous report is older than 24 hours
+- `404 NOT_FOUND` - address not found in the database
+
+---
+
+### Make Report Public
+
+**POST** `/api/report/share` 🔒 (authentication required)
+
+Mints a public share link for a report. Only **authenticated users** can make
+reports public - anonymous users receive `401`. The user must have checked the
+address before.
+
+**Request:**
+```json
+{ "address": "0x742d35Cc6634C0532925a3b844Bc9e7595f5B2a1", "chain": "evm" }
+```
+
+**Response:**
+```json
+{
+  "share_id": "00000000-1a2b-3c4d-9e8f-a1b2c3d4e5f6",
+  "share_url": "/report/00000000-1a2b-3c4d-9e8f-a1b2c3d4e5f6"
+}
+```
+
+The `share_id` is a UUID-like token bound to the user's check record (HMAC-signed,
+no extra storage). Anyone holding the link can open the report.
+
+**Errors:** `401 UNAUTHORIZED` - not authenticated; `403 REPORT_NOT_AVAILABLE`;
+`404 NOT_FOUND`.
+
+---
+
+### Get Shared Report
+
+**GET** `/api/report/shared/:id`
+
+Opens a publicly shared report by its UUID token. No authentication, no 24h
+expiry - the link itself is the capability. Response is the same as
+`GET /api/report` plus `"public": true` and without `expires_at`.
+
+**Errors:** `404 INVALID_SHARE` - invalid or unknown token; `404 NOT_FOUND` -
+address no longer in the database.
+
+---
+
 ## Authentication Endpoints
 
 ### Get Nonce

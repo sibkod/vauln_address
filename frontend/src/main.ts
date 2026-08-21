@@ -14,6 +14,8 @@ const router = createRouter({
     { path: '/support', name: 'support', component: () => import('./views/SupportView.vue') },
     { path: '/purchases', name: 'purchases', component: () => import('./views/PurchasesView.vue') },
     { path: '/checks', name: 'checks', component: () => import('./views/ChecksView.vue') },
+    { path: '/report/:id', name: 'report-shared', component: () => import('./views/ReportView.vue') },
+    { path: '/report', name: 'report', component: () => import('./views/ReportView.vue') },
     { path: '/backend-error', name: 'backend-error', component: () => import('./views/BackendErrorView.vue') },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('./views/NotFoundView.vue') }
   ]
