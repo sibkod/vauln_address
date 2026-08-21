@@ -638,8 +638,11 @@ def mode_watch(rpc, watch_programs, full_blocks=False, out_file=None,
                     stats["candidates"] += 1
                     sig = (tx.get("transaction", {}).get("signatures") or [""])[0]
                     verdict, indicators, details = detect_patterns(tx, watch_programs)
-                    if verdict != "CLEAN":
-                        stats["drainer" if verdict == "DRAINER" else "suspicious"] += 1
+                    # В живом мониторинге показываем только DRAINER (P1 —
+                    # полный захват аккаунта). SUSPICIOUS (sweeps без
+                    # захвата) — скипаем: это обычные свапы/переводы.
+                    if verdict == "DRAINER":
+                        stats["drainer"] += 1
                         victim, hacker = extract_parties(details, signers(tx))
                         record_finding(slot, {
                             "slot": slot, "signature": sig, "verdict": verdict,
