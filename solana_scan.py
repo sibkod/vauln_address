@@ -16,8 +16,9 @@ drainer_analyzer.py — детектор Solana-дрейнеров и анали
   P6  снос ВСЕХ SPL-токенов подписанта без компенсации (>=2 mint'ов в ноль,
       SOL не вырос) — отсекает легитимные полные свапы одного токена
 
-Вердикты: CLEAN (нет индикаторов), SUSPICIOUS (частичное совпадение),
-DRAINER (P1 — захват управления, или P5+(P2|P6) — watchlist + увод средств).
+Вердикты: CLEAN (нет индикаторов), SUSPICIOUS (P2..P6 без захвата — контекст,
+может быть легитимным переводом/депозитом/свапом), DRAINER (только P1 —
+захват on-curve кошелька неизвестной программой).
 
 Белый список известных программ (~300 programId: DEX, лендинг, NFT,
 инфраструктура) подгружается из solana_programs.json рядом со скриптом
@@ -420,11 +421,13 @@ def detect_patterns(tx, watch_programs=None):
             info = p.get("info") or {}
             itype = p.get("type")
 
-            # P1: захват аккаунта — assign на НЕИЗВЕСТНУЮ программу.
-            # assign на Token Program / pump.fun — легитимные операции, не захват.
+            # P1: захват кошелька — assign РЕАЛЬНОГО (on-curve) аккаунта на
+            # НЕИЗВЕСТНУЮ программу. PDA (off-curve) назначают программам
+            # постоянно (Helium TukTuk и т.п.) — это не захват кошелька.
             if (itype == "assign"
                     and info.get("owner") != SYSTEM_PROGRAM
-                    and info.get("owner") not in KNOWN_PROGRAMS):
+                    and info.get("owner") not in KNOWN_PROGRAMS
+                    and is_on_curve(info.get("account") or "")):
                 details["takeovers"].append(
                     {"account": info.get("account"), "new_owner": info.get("owner")})
 
@@ -478,18 +481,13 @@ def detect_patterns(tx, watch_programs=None):
 
     if "P1_ACCOUNT_TAKEOVER" in indicators:
         verdict = "DRAINER"
-    elif ("P5_KNOWN_DRAINER_PROGRAM" in indicators
-            and ("P2_FULL_BALANCE_SWEEP" in indicators or "P6_TOKEN_SWEEP" in indicators)):
-        # P5 + sweep: программа из watchlist + деньги ушли — почти наверняка дрейн
-        verdict = "DRAINER"
-    elif ("P2_FULL_BALANCE_SWEEP" in indicators or "P6_TOKEN_SWEEP" in indicators
-          or "P4_CONTROL_ACCOUNT" in indicators
-          or "P5_KNOWN_DRAINER_PROGRAM" in indicators):
-        # (P2|P6)+P3 тоже здесь: sweep без захвата управления может быть
-        # легитимным переводом/продажей — помечаем SUSPICIOUS, не DRAINER
+    elif any(i in indicators for i in
+             ("P2_FULL_BALANCE_SWEEP", "P4_CONTROL_ACCOUNT",
+              "P5_KNOWN_DRAINER_PROGRAM", "P6_TOKEN_SWEEP")):
+        # sweep/контрольный аккаунт/watchlist без захвата — контекст,
+        # не доказательство; одиночный P3 (неизвестная программа) — шум
         verdict = "SUSPICIOUS"
     else:
-        # одиночный P3 (неизвестная программа) — слишком шумный, не флагаем
         verdict = "CLEAN"
     return verdict, indicators, details
 
