@@ -207,6 +207,36 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 		);
 		CREATE INDEX idx_api_keys_wallet ON api_keys(wallet_address);
 		CREATE INDEX idx_api_keys_hash ON api_keys(key_hash);
+		CREATE TABLE IF NOT EXISTS scan_findings (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			chain VARCHAR(20) NOT NULL DEFAULT 'solana',
+			signature VARCHAR(120) NOT NULL,
+			slot BIGINT DEFAULT 0,
+			verdict VARCHAR(20) NOT NULL,
+			indicators TEXT,
+			victim_address VARCHAR(100),
+			hacker_address VARCHAR(100),
+			amount_sol DECIMAL(20, 9) DEFAULT 0,
+			programs TEXT,
+			source VARCHAR(20),
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE KEY uk_scan_signature (signature)
+		);
+		CREATE INDEX idx_scan_findings_created ON scan_findings(created_at);
+		CREATE INDEX idx_scan_findings_victim ON scan_findings(victim_address);
+		CREATE INDEX idx_scan_findings_hacker ON scan_findings(hacker_address);
+		CREATE TABLE IF NOT EXISTS drainer_reports (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			tx_signature VARCHAR(120) NOT NULL,
+			chain VARCHAR(20) NOT NULL DEFAULT 'solana',
+			site_url VARCHAR(300),
+			description TEXT,
+			reporter VARCHAR(100) DEFAULT '',
+			status VARCHAR(20) DEFAULT 'new',
+			telegram_sent TINYINT(1) DEFAULT 0,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE INDEX idx_drainer_reports_created ON drainer_reports(created_at);
 		`
 
 	case config.DBTypeSQLite:
@@ -302,6 +332,37 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 		);
 		CREATE INDEX IF NOT EXISTS idx_api_keys_wallet ON api_keys(wallet_address);
 		CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash);
+
+		CREATE TABLE IF NOT EXISTS scan_findings (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			chain TEXT NOT NULL DEFAULT 'solana',
+			signature TEXT NOT NULL UNIQUE,
+			slot INTEGER DEFAULT 0,
+			verdict TEXT NOT NULL,
+			indicators TEXT,
+			victim_address TEXT,
+			hacker_address TEXT,
+			amount_sol REAL DEFAULT 0,
+			programs TEXT,
+			source TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE INDEX IF NOT EXISTS idx_scan_findings_created ON scan_findings(created_at);
+		CREATE INDEX IF NOT EXISTS idx_scan_findings_victim ON scan_findings(victim_address);
+		CREATE INDEX IF NOT EXISTS idx_scan_findings_hacker ON scan_findings(hacker_address);
+
+		CREATE TABLE IF NOT EXISTS drainer_reports (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			tx_signature TEXT NOT NULL,
+			chain TEXT NOT NULL DEFAULT 'solana',
+			site_url TEXT,
+			description TEXT,
+			reporter TEXT DEFAULT '',
+			status TEXT DEFAULT 'new',
+			telegram_sent INTEGER DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE INDEX IF NOT EXISTS idx_drainer_reports_created ON drainer_reports(created_at);
 		`
 
 	default: // PostgreSQL
@@ -397,6 +458,37 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 		);
 		CREATE INDEX IF NOT EXISTS idx_api_keys_wallet ON api_keys(wallet_address);
 		CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash);
+
+		CREATE TABLE IF NOT EXISTS scan_findings (
+			id BIGSERIAL PRIMARY KEY,
+			chain VARCHAR(20) NOT NULL DEFAULT 'solana',
+			signature VARCHAR(120) NOT NULL UNIQUE,
+			slot BIGINT DEFAULT 0,
+			verdict VARCHAR(20) NOT NULL,
+			indicators TEXT,
+			victim_address VARCHAR(100),
+			hacker_address VARCHAR(100),
+			amount_sol DECIMAL(20, 9) DEFAULT 0,
+			programs TEXT,
+			source VARCHAR(20),
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+		);
+		CREATE INDEX IF NOT EXISTS idx_scan_findings_created ON scan_findings(created_at);
+		CREATE INDEX IF NOT EXISTS idx_scan_findings_victim ON scan_findings(victim_address);
+		CREATE INDEX IF NOT EXISTS idx_scan_findings_hacker ON scan_findings(hacker_address);
+
+		CREATE TABLE IF NOT EXISTS drainer_reports (
+			id BIGSERIAL PRIMARY KEY,
+			tx_signature VARCHAR(120) NOT NULL,
+			chain VARCHAR(20) NOT NULL DEFAULT 'solana',
+			site_url VARCHAR(300),
+			description TEXT,
+			reporter VARCHAR(100) DEFAULT '',
+			status VARCHAR(20) DEFAULT 'new',
+			telegram_sent BOOLEAN DEFAULT FALSE,
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+		);
+		CREATE INDEX IF NOT EXISTS idx_drainer_reports_created ON drainer_reports(created_at);
 		`
 	}
 

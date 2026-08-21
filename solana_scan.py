@@ -13,9 +13,19 @@ drainer_analyzer.py — детектор Solana-дрейнеров и анали
   P3  вызов неизвестной программы (не в белом списке) в той же транзакции
   P4  создание "контрольного" аккаунта (createAccount, owner=программа, space=0)
   P5  пересечение с базой известных дрейнер-программ
+  P6  полный снос SPL-токенов подписанта (preTokenBalances>0, post=0)
 
 Вердикты: CLEAN (нет индикаторов), SUSPICIOUS (частичное совпадение),
-DRAINER (P1, P5, или P2+P3 вместе).
+DRAINER (P1, P5, или (P2 или P6)+P3 вместе).
+
+Белый список известных программ (~300 programId: DEX, лендинг, NFT,
+инфраструктура) подгружается из solana_programs.json рядом со скриптом
+(флаг --programs-file / env SOLANA_PROGRAMS_FILE) — без него P3 шумит.
+
+Режимы watch и scan-wallet с флагом --api-url (env VAULN_API_URL) отправляют
+каждую находку (victim + hacker) в БД через API бэкенда
+(POST /api/admin/scanner/findings, заголовок X-Admin-Key = --api-key /
+env ADMIN_API_KEY). Находки видны на странице живого мониторинга.
 
 Только stdlib. Кэширует транзакции в <cache_dir>/<address>.json
 """
@@ -77,6 +87,98 @@ KNOWN_BAD_PROGRAMS = {
 # Дрейнерный стиль: ровно 2 инструкции ComputeBudget + неизвестная программа.
 # На миллионах реальных транзакций это редкая комбинация, а у дрейнера — постоянная.
 COMPUTE_BUDGET = "ComputeBudget111111111111111111111111111111"
+
+
+DEFAULT_PROGRAMS_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "solana_programs.json")
+
+
+def load_known_programs(path):
+    """Догружает белый список известных программ из JSON (address -> name).
+
+    solana_programs.json содержит ~300 programId известных сервисов
+    (DEX, лендинг, NFT-маркетплейсы, инфраструктура) — без него
+    P3_UNKNOWN_PROGRAM даёт много ложных срабатываний.
+    """
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        programs = data.get("programs", data)
+        added = 0
+        for addr in programs:
+            addr = addr.strip()
+            if addr and addr not in KNOWN_PROGRAMS:
+                KNOWN_PROGRAMS.add(addr)
+                added += 1
+        print(f"[i] белый список программ: {len(KNOWN_PROGRAMS)} "
+              f"(+{added} из {path})")
+    except FileNotFoundError:
+        print(f"[!] файл белого списка не найден: {path} "
+              f"(используется встроенный, {len(KNOWN_PROGRAMS)} программ)",
+              file=sys.stderr)
+    except Exception as e:
+        print(f"[!] ошибка загрузки {path}: {e}", file=sys.stderr)
+
+
+# ---------------------------------------------------------- API integration
+
+def extract_parties(details, signer_list):
+    """Извлекает (victim, hacker) из результата detect_patterns.
+
+    victim  — аккаунт, захваченный assign, либо источник sweep-перевода.
+    hacker  — назначение sweep-перевода, новый владелец аккаунта (программа),
+              либо подписант транзакции, не совпадающий с жертвой.
+    """
+    victim, hacker = "", ""
+    if details["takeovers"]:
+        victim = details["takeovers"][0].get("account") or ""
+    if details["drain_transfers"]:
+        sweep = details["drain_transfers"][0]
+        if not victim:
+            victim = sweep.get("from") or ""
+        hacker = sweep.get("to") or ""
+    if not hacker and details["takeovers"]:
+        hacker = details["takeovers"][0].get("new_owner") or ""
+    if not hacker:
+        for s in signer_list:
+            if s and s != victim:
+                hacker = s
+                break
+    return victim, hacker
+
+
+def post_finding(api_url, api_key, payload):
+    """Отправляет находку в API бэкенда (/api/admin/scanner/findings)."""
+    url = api_url.rstrip("/") + "/api/admin/scanner/findings"
+    headers = dict(HEADERS)
+    if api_key:
+        headers["X-Admin-Key"] = api_key
+    try:
+        req = urllib.request.Request(
+            url, data=json.dumps(payload).encode(), headers=headers)
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.load(resp)
+    except Exception as e:  # noqa: BLE001
+        print(f"  !! не удалось отправить находку в API: {e}", flush=True)
+        return None
+
+
+def make_finding_payload(signature, slot, verdict, indicators, details,
+                         signer_list, source):
+    victim, hacker = extract_parties(details, signer_list)
+    return {
+        "chain": "solana",
+        "signature": signature,
+        "slot": slot,
+        "verdict": verdict,
+        "indicators": indicators,
+        "victim_address": victim,
+        "hacker_address": hacker,
+        "amount_sol": round(sum(d.get("amount_sol") or 0
+                                for d in details["drain_transfers"]), 9),
+        "programs": details["unknown_programs"],
+        "source": source,
+    }
 
 
 class Rpc:
@@ -217,12 +319,35 @@ def detect_patterns(tx, watch_programs=None):
 
     indicators = []
     details = {"takeovers": [], "drain_transfers": [], "unknown_programs": [],
-               "created_control_accounts": [], "bad_program_hits": []}
+               "created_control_accounts": [], "bad_program_hits": [],
+               "token_sweeps": []}
 
     meta = tx.get("meta") or {}
     pre = meta.get("preBalances") or []
     post = meta.get("postBalances") or []
     key_list = account_keys(tx)
+
+    # P6: полный снос SPL-токенов подписанта — классика дрейнера.
+    # Суммируем pre/postTokenBalances по owner; если у подписанта все
+    # токены ушли в ноль, при этом какие-то токены были — это sweep.
+    pre_tok_by_owner, post_tok_by_owner = {}, {}
+    for b in (meta.get("preTokenBalances") or []):
+        owner = b.get("owner")
+        ui = (b.get("uiTokenAmount") or {}).get("uiAmount") or 0
+        if owner and ui:
+            pre_tok_by_owner[owner] = pre_tok_by_owner.get(owner, 0) + ui
+    for b in (meta.get("postTokenBalances") or []):
+        owner = b.get("owner")
+        ui = (b.get("uiTokenAmount") or {}).get("uiAmount") or 0
+        if owner:
+            post_tok_by_owner[owner] = post_tok_by_owner.get(owner, 0) + ui
+
+    signer_set = set(signers(tx))
+    for owner, pre_ui in pre_tok_by_owner.items():
+        if owner in signer_set and post_tok_by_owner.get(owner, 0) == 0:
+            details["token_sweeps"].append({
+                "owner": owner,
+                "tokens_before": round(pre_ui, 6)})
 
     for ix in iter_instructions(tx):
         if ix.get("program") == "system":
@@ -280,12 +405,16 @@ def detect_patterns(tx, watch_programs=None):
         indicators.append("P4_CONTROL_ACCOUNT")
     if details["bad_program_hits"]:
         indicators.append("P5_KNOWN_DRAINER_PROGRAM")
+    if details["token_sweeps"]:
+        indicators.append("P6_TOKEN_SWEEP")
 
     if "P1_ACCOUNT_TAKEOVER" in indicators or "P5_KNOWN_DRAINER_PROGRAM" in indicators:
         verdict = "DRAINER"
-    elif "P2_FULL_BALANCE_SWEEP" in indicators and "P3_UNKNOWN_PROGRAM" in indicators:
+    elif (("P2_FULL_BALANCE_SWEEP" in indicators or "P6_TOKEN_SWEEP" in indicators)
+            and "P3_UNKNOWN_PROGRAM" in indicators):
         verdict = "DRAINER"
-    elif "P2_FULL_BALANCE_SWEEP" in indicators or "P4_CONTROL_ACCOUNT" in indicators:
+    elif ("P2_FULL_BALANCE_SWEEP" in indicators or "P6_TOKEN_SWEEP" in indicators
+          or "P4_CONTROL_ACCOUNT" in indicators):
         verdict = "SUSPICIOUS"
     else:
         # одиночный P3 (неизвестная программа) — слишком шумный, не флагаем
@@ -344,7 +473,7 @@ def prefilter_block_tx(tx, watch_programs):
 
 
 def mode_watch(rpc, watch_programs, full_blocks=False, out_file=None,
-               stats_every=20, start_slot=None):
+               stats_every=20, start_slot=None, api_url=None, api_key=None):
     """Живой мониторинг блоков Solana на паттерн дрейнера.
 
     Стратегия по умолчанию (лёгкая):
@@ -352,6 +481,7 @@ def mode_watch(rpc, watch_programs, full_blocks=False, out_file=None,
       2. getTransaction — полный разбор только подозрительных
     С --full-blocks: getBlock(full) — анализ всех транзакций сразу
       (нужно ~0.5 блока/сек на эндпоинт, публичные RPC на пределе).
+    С --api-url: каждая находка отправляется в БД через API бэкенда.
     """
     watch = dict(KNOWN_BAD_PROGRAMS)
     for p in (watch_programs or []):
@@ -362,6 +492,8 @@ def mode_watch(rpc, watch_programs, full_blocks=False, out_file=None,
     print(f"  стратегия: {'FULL blocks (все транзакции)' if full_blocks else 'prefilter (signatures->tx)'}")
     if out_file:
         print(f"  находки пишем в: {out_file}")
+    if api_url:
+        print(f"  находки отправляем в API: {api_url}")
     print("  Ctrl+C для остановки.\n")
 
     slot = start_slot or (rpc.get_slot() - 100)  # RPC не отдаёт свежие блоки сразу
@@ -383,6 +515,23 @@ def mode_watch(rpc, watch_programs, full_blocks=False, out_file=None,
             print(f"      TAKEOVER: {t['account']} -> {t['new_owner']}")
         for d in entry.get("sweeps", []):
             print(f"      SWEEP: {d['from']} -> {d['to']} {d['amount_sol']:.6f} SOL")
+        if api_url:
+            resp = post_finding(api_url, api_key, {
+                "chain": "solana",
+                "signature": entry["signature"],
+                "slot": slot_,
+                "verdict": entry["verdict"],
+                "indicators": entry["indicators"],
+                "victim_address": entry.get("victim", ""),
+                "hacker_address": entry.get("hacker", ""),
+                "amount_sol": round(sum(d.get("amount_sol") or 0
+                                        for d in entry.get("sweeps", [])), 9),
+                "programs": entry.get("unknown_programs", []),
+                "source": "watch",
+            })
+            if resp is not None:
+                print(f"      API: id={resp.get('id')} victim={entry.get('victim', '')[:12]}..."
+                      f" hacker={entry.get('hacker', '')[:12]}...")
 
     try:
         while True:
@@ -421,9 +570,11 @@ def mode_watch(rpc, watch_programs, full_blocks=False, out_file=None,
                     verdict, indicators, details = detect_patterns(tx, watch_programs)
                     if verdict != "CLEAN":
                         stats["drainer" if verdict == "DRAINER" else "suspicious"] += 1
+                        victim, hacker = extract_parties(details, signers(tx))
                         record_finding(slot, {
                             "slot": slot, "signature": sig, "verdict": verdict,
                             "indicators": indicators,
+                            "victim": victim, "hacker": hacker,
                             "takeovers": details["takeovers"],
                             "sweeps": details["drain_transfers"],
                             "unknown_programs": details["unknown_programs"]})
@@ -470,7 +621,8 @@ def mode_quick_scan(rpc, address, limit, watch_programs=None):
     return flagged
 
 
-def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None):
+def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
+                     api_url=None, api_key=None):
     os.makedirs(cache_dir, exist_ok=True)
     cache_path = os.path.join(cache_dir, f"{address}.json")
     cache = json.load(open(cache_path)) if os.path.exists(cache_path) else {}
@@ -582,6 +734,32 @@ def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None)
         print(f"    {d_['address']}  {d_['sol']:.6f} SOL ({d_['txs']} tx){mark}")
     print(f"\n  Полный отчёт: {out_path}")
     print(f"  Кэш транзакций: {cache_path}")
+
+    # Отправляем находки в БД: жертвы — захваченные аккаунты,
+    # хакер — сканируемый кошелёк (оператор, собирающий средства).
+    if api_url:
+        sent = 0
+        for item in report["hijacked_accounts"]:
+            tx = cache.get(item["tx"])
+            if not tx:
+                continue
+            verdict, indicators, details = detect_patterns(tx, watch_programs)
+            resp = post_finding(api_url, api_key, {
+                "chain": "solana",
+                "signature": item["tx"],
+                "slot": tx.get("slot") or 0,
+                "verdict": verdict,
+                "indicators": indicators,
+                "victim_address": item["address"],
+                "hacker_address": address,
+                "amount_sol": round(sum(d.get("amount_sol") or 0
+                                        for d in details["drain_transfers"]), 9),
+                "programs": details["unknown_programs"],
+                "source": "scan-wallet",
+            })
+            if resp is not None:
+                sent += 1
+        print(f"  Отправлено находок в API: {sent}/{len(report['hijacked_accounts'])}")
     return report
 
 
@@ -620,8 +798,23 @@ def main():
     for p in (p_tx, p_qs, p_sw, p_w):
         p.add_argument("--watch-program", action="append", default=[],
                        help="добавить programId в список вредоносных")
+        p.add_argument("--programs-file",
+                       default=os.environ.get("SOLANA_PROGRAMS_FILE",
+                                              DEFAULT_PROGRAMS_FILE),
+                       help="JSON со списком известных программ "
+                            "(по умолчанию solana_programs.json рядом со скриптом)")
+
+    # отправка находок в БД через API бэкенда (watch и scan-wallet)
+    for p in (p_sw, p_w):
+        p.add_argument("--api-url", default=os.environ.get("VAULN_API_URL"),
+                       help="URL бэкенда для записи находок в БД "
+                            "(env VAULN_API_URL)")
+        p.add_argument("--api-key", default=os.environ.get("ADMIN_API_KEY"),
+                       help="admin API key бэкенда (env ADMIN_API_KEY)")
 
     args = ap.parse_args()
+    if args.programs_file:
+        load_known_programs(args.programs_file)
     rpc = Rpc()
 
     if args.mode == "check-tx":
@@ -630,11 +823,13 @@ def main():
         mode_quick_scan(rpc, args.address, args.limit, args.watch_program)
     elif args.mode == "scan-wallet":
         mode_scan_wallet(rpc, args.address, args.cache_dir,
-                         args.watch_program, args.max_txs)
+                         args.watch_program, args.max_txs,
+                         api_url=args.api_url, api_key=args.api_key)
     elif args.mode == "watch":
         mode_watch(rpc, args.watch_program, full_blocks=args.full_blocks,
                    out_file=args.out, stats_every=args.stats_every,
-                   start_slot=args.start_slot)
+                   start_slot=args.start_slot,
+                   api_url=args.api_url, api_key=args.api_key)
 
 
 if __name__ == "__main__":

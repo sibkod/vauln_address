@@ -9,6 +9,16 @@ interface LeakInfo {
   discovered_at: string
 }
 
+interface StatusEvidence {
+  code: string
+  title: string
+  description: string
+  tx_signature?: string
+  counterparty?: string
+  amount_sol?: number
+  detected_at?: string
+}
+
 interface Report {
   address: string
   chain: string
@@ -20,6 +30,7 @@ interface Report {
   has_pk: boolean
   has_seed: boolean
   leaks?: LeakInfo[]
+  evidence?: StatusEvidence[]
   transactions?: TxNode
   expires_at?: string
   public?: boolean
@@ -188,6 +199,41 @@ function exposureText(r: Report): string[] {
   }
   return out
 }
+
+// ---- Evidence chain ----
+
+const evidenceMeta: Record<string, { icon: string; cls: string }> = {
+  registry: { icon: '📋', cls: 'registry' },
+  key_leak: { icon: '🔑', cls: 'leak' },
+  P1_ACCOUNT_TAKEOVER: { icon: '🎯', cls: 'scanner' },
+  P2_FULL_BALANCE_SWEEP: { icon: '🧹', cls: 'scanner' },
+  P3_UNKNOWN_PROGRAM: { icon: '❓', cls: 'scanner' },
+  P4_CONTROL_ACCOUNT: { icon: '🕹️', cls: 'scanner' },
+  P5_KNOWN_DRAINER_PROGRAM: { icon: '💀', cls: 'scanner' },
+  P6_TOKEN_SWEEP: { icon: '🪙', cls: 'scanner' }
+}
+
+function evidenceIcon(code: string): string {
+  return evidenceMeta[code]?.icon || '🔎'
+}
+
+function evidenceCls(code: string): string {
+  return evidenceMeta[code]?.cls || 'scanner'
+}
+
+function shortAddr(addr: string): string {
+  return addr.length <= 16 ? addr : `${addr.slice(0, 6)}…${addr.slice(-6)}`
+}
+
+function solscanTx(sig: string): string {
+  return `https://solscan.io/tx/${sig}`
+}
+
+function evidenceDate(e: StatusEvidence): string {
+  if (!e.detected_at) return ''
+  const d = new Date(e.detected_at)
+  return isNaN(d.getTime()) ? '' : d.toLocaleDateString()
+}
 </script>
 
 <template>
@@ -263,6 +309,31 @@ function exposureText(r: Report): string[] {
         <div v-if="exposureText(report).length" class="exposure">
           Exposed data: {{ exposureText(report).join(' and ') }} — publicly available
         </div>
+      </div>
+
+      <!-- Evidence chain -->
+      <div v-if="report.evidence && report.evidence.length" class="section">
+        <h2>Evidence chain</h2>
+        <p class="tree-hint">Why this wallet has the {{ meta.label }} status — step by step</p>
+        <ol class="evidence-chain">
+          <li v-for="(e, i) in report.evidence" :key="i" class="evidence-item" :class="evidenceCls(e.code)">
+            <span class="evidence-icon">{{ evidenceIcon(e.code) }}</span>
+            <div class="evidence-body">
+              <div class="evidence-title">
+                {{ e.title }}
+                <span v-if="evidenceDate(e)" class="evidence-date">{{ evidenceDate(e) }}</span>
+              </div>
+              <div class="evidence-desc">{{ e.description }}</div>
+              <div class="evidence-meta">
+                <a v-if="e.tx_signature" :href="solscanTx(e.tx_signature)" target="_blank" rel="noopener" class="evidence-link">
+                  tx {{ shortAddr(e.tx_signature) }} ↗
+                </a>
+                <span v-if="e.counterparty" class="evidence-counterparty">with {{ shortAddr(e.counterparty) }}</span>
+                <span v-if="e.amount_sol" class="evidence-amount">-{{ e.amount_sol.toFixed(4) }} SOL</span>
+              </div>
+            </div>
+          </li>
+        </ol>
       </div>
 
       <!-- Leaks -->
@@ -608,6 +679,111 @@ function exposureText(r: Report): string[] {
   color: #6b7a9e;
   font-size: 0.8rem;
   margin: 0 0 0.75rem;
+}
+
+.evidence-chain {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  position: relative;
+}
+
+.evidence-chain::before {
+  content: '';
+  position: absolute;
+  left: 15px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: #2a3548;
+}
+
+.evidence-item {
+  position: relative;
+  display: flex;
+  gap: 0.85rem;
+  padding: 0.65rem 0;
+}
+
+.evidence-icon {
+  position: relative;
+  z-index: 1;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #12182a;
+  border: 1px solid #2a3548;
+  border-radius: 50%;
+  font-size: 0.95rem;
+}
+
+.evidence-item.leak .evidence-icon {
+  border-color: rgba(255, 107, 107, 0.5);
+}
+
+.evidence-item.scanner .evidence-icon {
+  border-color: rgba(255, 179, 71, 0.5);
+}
+
+.evidence-item.registry .evidence-icon {
+  border-color: rgba(102, 126, 234, 0.5);
+}
+
+.evidence-body {
+  min-width: 0;
+}
+
+.evidence-title {
+  color: #e7ecf5;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.evidence-date {
+  color: #4c5a7a;
+  font-size: 0.75rem;
+  font-weight: 400;
+  margin-left: 0.5rem;
+}
+
+.evidence-desc {
+  color: #98a8ce;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  margin-top: 0.15rem;
+}
+
+.evidence-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-top: 0.3rem;
+  font-size: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.evidence-link {
+  color: #7ea2ff;
+  font-family: monospace;
+  text-decoration: none;
+}
+
+.evidence-link:hover {
+  text-decoration: underline;
+}
+
+.evidence-counterparty {
+  color: #6b7a9e;
+  font-family: monospace;
+}
+
+.evidence-amount {
+  color: #ff6b6b;
+  font-family: monospace;
+  font-weight: 700;
 }
 
 .footer-note {

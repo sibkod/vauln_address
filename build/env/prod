@@ -1,0 +1,30 @@
+# ================= PROD — боевой сервер (pwnd.info) =================
+# Фронт отдаётся nginx с того же домена, API — api.pwnd.info.
+VITE_API_URL="https://api.pwnd.info"
+VITE_SOLANA_CLUSTER=mainnet
+VITE_SOLANA_RPC="https://api.mainnet-beta.solana.com"
+
+# Backend
+APP_NAME=vauln-prod
+DB_TYPE=postgres
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASSWORD=CHANGE_ME
+DB_NAME=vauln_address
+DB_SSLMODE=disable
+SERVER_PORT=9111
+FREE_CHECK_LIMIT=3
+SOLANA_USE_DEVNET=false
+SOLANA_PAYMENT_ADDR=
+
+# Secrets — заполнить перед сборкой
+ADMIN_API_KEY=
+JWT_SECRET=
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
+
+# Target platform for the Go binary
+GOOS=linux
+GOARCH=amd64
+CGO_ENABLED=1

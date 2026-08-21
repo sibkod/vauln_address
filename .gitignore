@@ -19,3 +19,4 @@ data/
 frontend/node_modules/
 frontend/.vite/
 *.local
+build/dist/
