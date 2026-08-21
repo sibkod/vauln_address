@@ -28,3 +28,6 @@
 - Report endpoint includes `evidence` chain (models.StatusEvidence): registry listing, key leaks, scanner indicators P1..P6 with tx/counterparty/amount. Meta for P-codes lives in handlers/scanner.go (scanIndicatorMeta) — mirror of detect_patterns in solana_scan.py.
 - solana_scan.py whitelist: `solana_programs.json` (~290 known program IDs, sources in file header) auto-loaded at startup (`--programs-file` / env `SOLANA_PROGRAMS_FILE`); embedded KNOWN_PROGRAMS is the fallback. Detectors: P1 account takeover, P2 ≥90% SOL sweep, P3 unknown program, P4 control account, P5 drainer watchlist, P6 signer token sweep (preTokenBalances→0). Verdict DRAINER = P1 | P5 | (P2|P6)+P3; never whitelist addresses from KNOWN_BAD_PROGRAMS.
 - Tests: internal/handlers/scanner_test.go reuses setupReportTest (real SQLite); scanner.go holds all new handlers.
+
+## Build variants
+- `./build.sh local|dev|prod [--env-file F] [--skip-frontend] [--skip-backend]`: sources values from build/env/<variant>, inlines VITE_API_URL/VITE_SOLANA_CLUSTER into the frontend bundle, cross-compiles cmd/server (GOOS/GOARCH), and assembles build/dist/<variant>/ (frontend, server, generated .env, solana_scan.py + solana_programs.json, migrations). build/dist/ is gitignored; build/env files hold empty secret placeholders � fill before building.

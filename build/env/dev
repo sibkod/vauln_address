@@ -1,0 +1,25 @@
+# ================= DEV — dev-сервер (staging) =================
+# Отдельный домен dev, API на api-поддомене.
+VITE_API_URL="https://api.dev.example.com"
+VITE_SOLANA_CLUSTER=devnet
+VITE_SOLANA_RPC="https://api.devnet.solana.com"
+
+# Backend
+APP_NAME=vauln-dev
+DB_TYPE=sqlite
+SQLITE_PATH=./data/vauln_address.db
+SERVER_PORT=9111
+FREE_CHECK_LIMIT=10
+SOLANA_USE_DEVNET=true
+SOLANA_PAYMENT_ADDR=
+
+# Secrets — заполнить перед сборкой
+ADMIN_API_KEY=
+JWT_SECRET=
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
+
+# Target platform for the Go binary
+GOOS=linux
+GOARCH=amd64
+CGO_ENABLED=1
