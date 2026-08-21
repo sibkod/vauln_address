@@ -16,7 +16,7 @@ drainer_analyzer.py — детектор Solana-дрейнеров и анали
   P6  полный снос SPL-токенов подписанта (preTokenBalances>0, post=0)
 
 Вердикты: CLEAN (нет индикаторов), SUSPICIOUS (частичное совпадение),
-DRAINER (P1, P5, или (P2 или P6)+P3 вместе).
+DRAINER (P1, или P5+(P2|P6), или (P2|P6)+P3 вместе).
 
 Белый список известных программ (~300 programId: DEX, лендинг, NFT,
 инфраструктура) подгружается из solana_programs.json рядом со скриптом
@@ -80,8 +80,10 @@ KNOWN_PROGRAMS = {
 KNOWN_BAD_PROGRAMS = {
     "3wRre6bqgqBFfNUbdTaUGQSJ4vWFnbwe6QiWJgqzHiu7": "drainer-core (case 9ML9o4nY)",
     "syspv6Qe5BbK8GPEjLbMnmF9hZy7juAuePbuspciCFP": "account-takeover (case 9ML9o4nY)",
-    "EtrnLzgbS7nMMy5fbD42kXiUzGg8XQzJ972Xtk1cjWih": "drainer (live-detected 2026-08-21)",
 }
+# EtrnLzgbS7nMMy5fbD42kXiUzGg8XQzJ972Xtk1cjWih убрана: это активный легитимный
+# сервис/бот (не содержит takeover/transfer, балансы не меняются), попавший
+# в watchlist по ошибке. P5 теперь требует подтверждения другим индикатором.
 
 
 # Дрейнерный стиль: ровно 2 инструкции ComputeBudget + неизвестная программа.
@@ -408,13 +410,18 @@ def detect_patterns(tx, watch_programs=None):
     if details["token_sweeps"]:
         indicators.append("P6_TOKEN_SWEEP")
 
-    if "P1_ACCOUNT_TAKEOVER" in indicators or "P5_KNOWN_DRAINER_PROGRAM" in indicators:
+    if "P1_ACCOUNT_TAKEOVER" in indicators:
+        verdict = "DRAINER"
+    elif ("P5_KNOWN_DRAINER_PROGRAM" in indicators
+            and ("P2_FULL_BALANCE_SWEEP" in indicators or "P6_TOKEN_SWEEP" in indicators)):
+        # P5 + sweep: программа из watchlist + деньги ушли — почти наверняка дрейн
         verdict = "DRAINER"
     elif (("P2_FULL_BALANCE_SWEEP" in indicators or "P6_TOKEN_SWEEP" in indicators)
             and "P3_UNKNOWN_PROGRAM" in indicators):
         verdict = "DRAINER"
     elif ("P2_FULL_BALANCE_SWEEP" in indicators or "P6_TOKEN_SWEEP" in indicators
-          or "P4_CONTROL_ACCOUNT" in indicators):
+          or "P4_CONTROL_ACCOUNT" in indicators
+          or "P5_KNOWN_DRAINER_PROGRAM" in indicators):
         verdict = "SUSPICIOUS"
     else:
         # одиночный P3 (неизвестная программа) — слишком шумный, не флагаем
