@@ -17,17 +17,21 @@ const AnonymousRequesterPrefix = "ip:"
 // reason/source columns (migration 004). Returns nil when not found.
 func (r *Repository) GetWalletReport(ctx context.Context, address, chain string) (*models.ReportResponse, error) {
 	var (
-		status         string
-		hasPK, hasSeed bool
-		reason, source sql.NullString
-		createdAt      time.Time
+		status           string
+		hasPK, hasSeed   bool
+		associatedHacker bool
+		reason, source   sql.NullString
+		associatedReason sql.NullString
+		createdAt        time.Time
 	)
 	err := r.db.QueryRowContext(ctx,
-		`SELECT status, has_pk, has_seed, reason, source, created_at
+		`SELECT status, has_pk, has_seed, reason, source, created_at,
+			COALESCE(associated_hacker, false), COALESCE(associated_reason, '')
 			FROM wallets
 			WHERE address = ? AND chain = ?`,
 		address, chain,
-	).Scan(&status, &hasPK, &hasSeed, &reason, &source, &createdAt)
+	).Scan(&status, &hasPK, &hasSeed, &reason, &source, &createdAt,
+		&associatedHacker, &associatedReason)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -37,15 +41,17 @@ func (r *Repository) GetWalletReport(ctx context.Context, address, chain string)
 	}
 
 	return &models.ReportResponse{
-		Address:   address,
-		Chain:     chain,
-		Found:     true,
-		Status:    status,
-		Reason:    reason.String,
-		Source:    source.String,
-		HasPK:     hasPK,
-		HasSeed:   hasSeed,
-		CreatedAt: createdAt,
+		Address:          address,
+		Chain:            chain,
+		Found:            true,
+		Status:           status,
+		Reason:           reason.String,
+		Source:           source.String,
+		HasPK:            hasPK,
+		HasSeed:          hasSeed,
+		AssociatedHacker: associatedHacker,
+		AssociatedReason: associatedReason.String,
+		CreatedAt:        createdAt,
 	}, nil
 }
 
@@ -95,6 +101,20 @@ func (r *Repository) GetWalletStatus(ctx context.Context, address, chain string)
 		return "", err
 	}
 	return status, nil
+}
+
+// GetWalletAssociation returns whether the address is flagged as associated
+// with a hacker operator. False when the address is not in the database.
+func (r *Repository) GetWalletAssociation(ctx context.Context, address, chain string) bool {
+	var flag bool
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COALESCE(associated_hacker, false) FROM wallets WHERE address = ? AND chain = ?`,
+		address, chain,
+	).Scan(&flag)
+	if err != nil {
+		return false
+	}
+	return flag
 }
 
 // GetLastReportAccess returns when the requester last checked the address.

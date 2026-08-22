@@ -9,10 +9,11 @@
 - `internal/handlers`: TestCreateOrder_InvalidRequest/negative_checks expects 400 for negative checks but the handler returns 200 (validation bug in CreateOrder).
 
 ## Wallet statuses
-- Single source of truth: `statusCatalog` in internal/models/models.go (12 statuses: hacked, vulnerable, safe, hacker, drained, phishing, scam, mixer, sanctioned, exchange, suspicious, frozen) with label, severity (danger/warning/info) and description. `IsValidStatus`/`ValidStatusNames`/`StatusDescription` derive from it; report details and the admin import error use these helpers.
+- Single source of truth: `statusCatalog` in internal/models/models.go (13 statuses: hacked, vulnerable, safe, hacker, drained, phishing, scam, mixer, sanctioned, exchange, suspicious, frozen, unknown) with label, severity (danger/warning/info) and description. `IsValidStatus`/`ValidStatusNames`/`StatusDescription` derive from it; report details and the admin import error use these helpers.
 - Public catalog endpoint: `GET /api/statuses` (handlers.GetStatuses). Frontend mirrors the catalog in HomeView/ReportView/ChecksView statusMeta maps and global CSS (`.dot.danger|vulnerable|success`, `.alert-status.<status>` in style.css).
 - Scanner ingest: DRAINER → victim `drained` + hacker `hacker`; SUSPICIOUS → counterparty `suspicious`.
-- Tests: internal/models/models_test.go validates catalog/validation sync.
+- Hacker association (migration 006): `wallets.associated_hacker` + `associated_reason` flag wallets that sent funds INCOMING to a hacker/drainer address. Scanner findings carry `exposed_addresses`; IngestScanFinding calls `repository.MarkAssociatedHacker` — unknown senders are inserted with status `unknown`, existing statuses are never overridden (association is a flag, not a danger verdict). Report response and tx-tree nodes expose the flag; frontend shows a 🕸️ badge (TxTreeNode) and a banner (ReportView).
+- Tests: internal/models/models_test.go validates catalog/validation sync; internal/handlers/scanner_test.go TestIngestScanFinding_MarksAssociated covers the association flow.
 
 ## Data conventions
 - DB access supports postgres/mysql/sqlite; all queries use `?` placeholders and per-dialect upserts (see UpsertUserNonce).
@@ -28,7 +29,7 @@
 - Go toolchain in this sandbox may be missing; install to /tmp/go and export PATH=/tmp/go/bin, GOPATH=$HOME/gopath.
 
 ## Drainer scanner (solana_scan.py) integration
-- Scanner posts findings to `POST /api/admin/scanner/findings` (X-Admin-Key = ADMIN_API_KEY, or flags `--api-url/--api-key`, env `VAULN_API_URL`/`ADMIN_API_KEY`). Findings stored in `scan_findings` (unique `signature`); DRAINER findings auto-register victim as `drained` and hacker as `hacker` in wallets (source `solana_scan`).
+- Scanner posts findings to `POST /api/admin/scanner/findings` (X-Admin-Key = ADMIN_API_KEY, or flags `--api-url/--api-key`, env `VAULN_API_URL`/`ADMIN_API_KEY`). Findings stored in `scan_findings` (unique `signature`); DRAINER findings auto-register victim as `drained` and hacker as `hacker` in wallets (source `solana_scan`), and flag every `exposed_addresses` entry (senders funding the operator) as `associated_hacker` via MarkAssociatedHacker.
 - Live monitoring: public `GET /api/monitor/findings?limit&after_id` (after_id = incremental ascending polling) and `GET /api/monitor/stats`; frontend page `/monitor` (MonitorView.vue) polls every 4s.
 - User drainer reports: `POST /api/drainer-reports` requires a one-time SVG captcha from `GET /api/captcha` (services.CaptchaService, in-memory, 10min TTL; `Answer(id)` is a test hook). Stored in `drainer_reports`, forwarded to Telegram via services.TelegramService (TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID); delivery flag `telegram_sent`. Frontend page `/report-drainer` (ReportDrainerView.vue).
 - Report endpoint includes `evidence` chain (models.StatusEvidence): registry listing, key leaks, scanner indicators P1..P6 with tx/counterparty/amount. Meta for P-codes lives in handlers/scanner.go (scanIndicatorMeta) — mirror of detect_patterns in solana_scan.py.

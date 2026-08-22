@@ -215,10 +215,11 @@ func (h *Handler) fillTxNode(c *gin.Context, node *models.ReportTxNode, chain st
 		remaining -= amount
 
 		child := &models.ReportTxNode{
-			Address:  childAddr,
-			Currency: node.Currency,
-			Amount:   amount,
-			Status:   h.treeNodeStatus(c, node.Address, chain, childAddr),
+			Address:          childAddr,
+			Currency:         node.Currency,
+			Amount:           amount,
+			Status:           h.treeNodeStatus(c, node.Address, chain, childAddr),
+			AssociatedHacker: h.repo.GetWalletAssociation(c.Request.Context(), childAddr, chain),
 		}
 		node.Children = append(node.Children, child)
 		h.fillTxNode(c, child, chain, depth+1, visited, nodes)

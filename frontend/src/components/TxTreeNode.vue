@@ -7,6 +7,7 @@ export interface TxNode {
   amount: number
   currency: string
   status: string
+  associated_hacker?: boolean
   children?: TxNode[]
 }
 
@@ -64,6 +65,7 @@ const statusIcons: Record<string, string> = {
   <div class="tx-node">
     <div class="tx-card" :class="statusClass(props.node.status)">
       <span class="tx-icon">{{ statusIcons[props.node.status] || '❓' }}</span>
+      <span v-if="props.node.associated_hacker" class="tx-assoc" title="Transferred funds to a known hacker operator">🕸️</span>
       <span class="tx-addr" :title="props.node.address">{{ short(props.node.address) }}</span>
       <span class="tx-badge">{{ (props.node.status || 'unknown').replace('_', ' ') }}</span>
       <span class="tx-meta">{{ props.node.tx_count }} tx</span>
@@ -91,6 +93,10 @@ const statusIcons: Record<string, string> = {
 .tx-card.danger { border-color: rgba(255, 107, 107, 0.5); }
 .tx-card.warn { border-color: rgba(255, 179, 71, 0.5); }
 .tx-card.safe { border-color: rgba(75, 201, 160, 0.4); }
+
+.tx-assoc {
+  font-size: 0.8rem;
+}
 
 .tx-addr {
   color: #98a8ce;

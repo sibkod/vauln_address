@@ -214,7 +214,8 @@ const statusMeta: Record<string, { icon: string; label: string; desc: string; cl
   frozen: { icon: '🧊', label: 'FROZEN', desc: 'assets frozen by issuer or court', cls: 'vulnerable' },
   exchange: { icon: '🏦', label: 'EXCHANGE', desc: 'verified service deposit address', cls: 'success' },
   safe: { icon: '✅', label: 'SAFE', desc: 'not found in database', cls: 'success' },
-  not_found: { icon: '✅', label: 'SAFE', desc: 'not found in database', cls: 'success' }
+  not_found: { icon: '✅', label: 'SAFE', desc: 'not found in database', cls: 'success' },
+  unknown: { icon: '❓', label: 'UNKNOWN', desc: 'no verdict yet — linked to a known hacker', cls: 'vulnerable' }
 }
 
 const legendItems = ['hacked', 'hacker', 'drained', 'phishing', 'vulnerable', 'suspicious', 'exchange', 'safe']

@@ -523,6 +523,9 @@ func (r *Repository) runMigrations(ctx context.Context) error {
 	// Migration 004: Create seeds table and add columns to wallets
 	r.migration004(ctx)
 
+	// Migration 006: associated-with-hacker flags on wallets
+	r.migration006(ctx)
+
 	return nil
 }
 
@@ -582,6 +585,36 @@ func (r *Repository) migration004(ctx context.Context) {
 		if err != nil && !strings.Contains(err.Error(), "Duplicate column") && !strings.Contains(err.Error(), "no such column") {
 			log.Printf("Migration note (wallets column): %v", err)
 		}
+	}
+}
+
+// migration006 adds the associated_hacker / associated_reason columns that
+// flag wallets which transferred funds to a known hacker operator.
+func (r *Repository) migration006(ctx context.Context) {
+	var sqls []string
+	switch r.dbType {
+	case config.DBTypeSQLite:
+		sqls = []string{
+			"ALTER TABLE wallets ADD COLUMN associated_hacker INTEGER DEFAULT 0",
+			"ALTER TABLE wallets ADD COLUMN associated_reason TEXT",
+		}
+	default: // PostgreSQL / MySQL
+		sqls = []string{
+			"ALTER TABLE wallets ADD COLUMN associated_hacker BOOLEAN DEFAULT FALSE",
+			"ALTER TABLE wallets ADD COLUMN associated_reason VARCHAR(255)",
+		}
+	}
+	for _, q := range sqls {
+		_, err := r.db.ExecContext(ctx, q)
+		if err != nil && !strings.Contains(err.Error(), "Duplicate column") &&
+			!strings.Contains(err.Error(), "duplicate column") &&
+			!strings.Contains(err.Error(), "no such column") {
+			log.Printf("Migration note (wallets association): %v", err)
+		}
+	}
+	if _, err := r.db.ExecContext(ctx,
+		"CREATE INDEX IF NOT EXISTS idx_wallets_associated_hacker ON wallets(associated_hacker)"); err != nil {
+		log.Printf("Migration note (wallets association index): %v", err)
 	}
 }
 
@@ -953,12 +986,16 @@ func (r *Repository) GetOrdersByWalletPaginated(ctx context.Context, walletAddre
 func (r *Repository) GetWallet(ctx context.Context, address string, chain string) (*models.Wallet, error) {
 	var wallet models.Wallet
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, address, chain, status, has_pk, has_seed, created_at, updated_at 
-		FROM wallets 
+		`SELECT id, address, chain, status, has_pk, has_seed,
+			COALESCE(associated_hacker, false), COALESCE(associated_reason, ''),
+			created_at, updated_at
+		FROM wallets
 		WHERE address = ? AND chain = ?`,
 		address, chain,
 	).Scan(&wallet.ID, &wallet.Address, &wallet.Chain, &wallet.Status,
-		&wallet.HasPK, &wallet.HasSeed, &wallet.CreatedAt, &wallet.UpdatedAt)
+		&wallet.HasPK, &wallet.HasSeed,
+		&wallet.AssociatedHacker, &wallet.AssociatedReason,
+		&wallet.CreatedAt, &wallet.UpdatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -1429,6 +1466,34 @@ func (r *Repository) CreateWallet(ctx context.Context, address, chain string, st
 		return 0, err
 	}
 	return result.LastInsertId()
+}
+
+// MarkAssociatedHacker flags a wallet as linked to a known hacker operator:
+// existing wallets only get the association fields (status stays untouched),
+// unseen ones are registered with status "unknown".
+func (r *Repository) MarkAssociatedHacker(ctx context.Context, address, chain, reason string) error {
+	now := time.Now()
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE wallets SET associated_hacker = true, associated_reason = ?, updated_at = ?
+		WHERE address = ? AND chain = ?`,
+		reason, now, address, chain,
+	)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected > 0 {
+		return nil
+	}
+	_, err = r.db.ExecContext(ctx,
+		`INSERT INTO wallets (address, chain, status, has_pk, has_seed, associated_hacker, associated_reason, reason, source, created_at, updated_at)
+		VALUES (?, ?, ?, false, false, true, ?, ?, 'solana_scan', ?, ?)`,
+		address, chain, models.StatusUnknown, reason, reason, now, now,
+	)
+	return err
 }
 
 // UpdateWalletSeed updates a wallet's seed reference

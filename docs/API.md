@@ -325,6 +325,7 @@ Headers: `X-Admin-Key: <ADMIN_API_KEY>`.
   "hacker_address": "HackerWallet...",
   "amount_sol": 1.5,
   "programs": ["EtrnLzg..."],
+  "exposed_addresses": ["SenderWallet1...", "SenderWallet2..."],
   "source": "watch"
 }
 ```
@@ -334,7 +335,14 @@ victim is registered in the wallets table as `drained` and the hacker as
 `hacker`; for `SUSPICIOUS` verdicts the counterparty is registered as
 `suspicious` (source `solana_scan`), unless already present.
 
-**Response:** `{ "id": 1, "inserted": true, "victim_added": true, "hacker_added": true }`
+`exposed_addresses` (optional, `DRAINER` only): wallets that sent funds to
+the hacker address in the drainer transaction. Each gets
+`associated_hacker = true` plus an explanatory `associated_reason`
+(see `GET /api/report`). Addresses absent from the wallets table are
+registered with status `unknown`; an existing status is never overridden.
+The hacker address itself and duplicates are skipped.
+
+**Response:** `{ "id": 1, "inserted": true, "victim_added": true, "hacker_added": true, "associated": 2 }`
 
 ### Monitor Findings
 

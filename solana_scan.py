@@ -586,6 +586,10 @@ def mode_watch(rpc, watch_programs, full_blocks=False, out_file=None,
         for d in entry.get("sweeps", []):
             print(f"      SWEEP: {d['from']} -> {d['to']} {d['amount_sol']:.6f} SOL")
         if api_url:
+            hacker = entry.get("hacker", "")
+            exposed = sorted({d["from"] for d in entry.get("sweeps", [])
+                              if hacker and d.get("to") == hacker} |
+                             {t["account"] for t in entry.get("takeovers", [])})
             resp = post_finding(api_url, api_key, {
                 "chain": "solana",
                 "signature": entry["signature"],
@@ -593,10 +597,11 @@ def mode_watch(rpc, watch_programs, full_blocks=False, out_file=None,
                 "verdict": entry["verdict"],
                 "indicators": entry["indicators"],
                 "victim_address": entry.get("victim", ""),
-                "hacker_address": entry.get("hacker", ""),
+                "hacker_address": hacker,
                 "amount_sol": round(sum(d.get("amount_sol") or 0
                                         for d in entry.get("sweeps", [])), 9),
                 "programs": entry.get("unknown_programs", []),
+                "exposed_addresses": exposed,
                 "source": "watch",
             })
             if resp is not None:
@@ -720,6 +725,7 @@ def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
     in_cnt = Counter()
     monthly = defaultdict(float)
     takeover_victims, takeover_details = set(), {}
+    drainer_sources = {}  # signature -> set of senders funding the operator
     unknown_progs = Counter()
     drainer_tx_count = 0
 
@@ -730,6 +736,11 @@ def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
         verdict, indicators, details = detect_patterns(tx, watch_programs)
         if verdict == "DRAINER":
             drainer_tx_count += 1
+            sources = {d["from"] for d in details["drain_transfers"]
+                       if d.get("to") == address}
+            sources |= {t["account"] for t in details["takeovers"]}
+            if sources:
+                drainer_sources[s["signature"]] = sorted(sources)
         for t in details["takeovers"]:
             takeover_victims.add(t["account"])
             takeover_details[t["account"]] = {"tx": s["signature"],
@@ -828,6 +839,7 @@ def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
                 "amount_sol": round(sum(d.get("amount_sol") or 0
                                         for d in details["drain_transfers"]), 9),
                 "programs": details["unknown_programs"],
+                "exposed_addresses": drainer_sources.get(item["tx"], []),
                 "source": "scan-wallet",
             })
             if resp is not None:

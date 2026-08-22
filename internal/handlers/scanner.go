@@ -75,11 +75,32 @@ func (h *Handler) IngestScanFinding(c *gin.Context) {
 		}
 	}
 
+	// Wallets that sent funds to the operator are flagged as associated with
+	// a hacker, but their status is never escalated automatically: unknown
+	// ones are registered as "unknown", existing statuses stay untouched.
+	associated := 0
+	if req.Verdict == models.ScanVerdictDrainer && req.HackerAddress != "" {
+		reason := "transferred funds to known drainer operator " + req.HackerAddress
+		seen := map[string]bool{req.HackerAddress: true}
+		for _, addr := range req.ExposedAddresses {
+			if addr == "" || seen[addr] {
+				continue
+			}
+			seen[addr] = true
+			if err := h.repo.MarkAssociatedHacker(c.Request.Context(), addr, req.Chain, reason); err != nil {
+				log.Printf("scanner: failed to mark association %s: %v", addr, err)
+				continue
+			}
+			associated++
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"id":           id,
 		"inserted":     inserted,
 		"victim_added": victimAdded,
 		"hacker_added": hackerAdded,
+		"associated":   associated,
 	})
 }
 

@@ -73,11 +73,12 @@ function formatAddress(addr: string) {
 
 // Mirror of the backend wallet status catalog (/api/statuses).
 const dangerStatuses = ['hacked', 'compromised', 'hacker', 'drained', 'phishing', 'scam', 'sanctioned', 'danger']
-const warningStatuses = ['vulnerable', 'suspicious', 'mixer', 'frozen', 'warning']
+const warningStatuses = ['vulnerable', 'suspicious', 'mixer', 'frozen', 'warning', 'unknown']
 const statusIcons: Record<string, string> = {
   hacked: '🚨', compromised: '🚨', hacker: '💀', drained: '🏴',
   phishing: '🎣', scam: '🕳️', sanctioned: '⛔',
   vulnerable: '⚠️', suspicious: '🔍', mixer: '🌀', frozen: '🧊', warning: '⚠️', danger: '🚨',
+  unknown: '❓',
   safe: '✅', not_found: '✅', exchange: '🏦'
 }
 

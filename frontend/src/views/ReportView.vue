@@ -29,6 +29,8 @@ interface Report {
   source?: string
   has_pk: boolean
   has_seed: boolean
+  associated_hacker?: boolean
+  associated_reason?: string
   leaks?: LeakInfo[]
   evidence?: StatusEvidence[]
   transactions?: TxNode
@@ -191,7 +193,8 @@ const statusMeta: Record<string, { icon: string; label: string; cls: string }> =
   frozen: { icon: '🧊', label: 'FROZEN', cls: 'warn' },
   exchange: { icon: '🏦', label: 'EXCHANGE', cls: 'safe' },
   safe: { icon: '✅', label: 'SAFE', cls: 'safe' },
-  not_found: { icon: '✅', label: 'SAFE', cls: 'safe' }
+  not_found: { icon: '✅', label: 'SAFE', cls: 'safe' },
+  unknown: { icon: '❓', label: 'UNKNOWN', cls: 'warn' }
 }
 
 const meta = computed(() => statusMeta[report.value?.status || ''] || { icon: '❓', label: (report.value?.status || 'unknown').toUpperCase(), cls: '' })
@@ -313,6 +316,10 @@ function evidenceDate(e: StatusEvidence): string {
         <h2>Why it was flagged</h2>
         <p v-if="report.reason" class="reason">Reason: {{ report.reason }}<span v-if="report.source"> (source: {{ report.source }})</span></p>
         <p class="details">{{ report.details }}</p>
+        <div v-if="report.associated_hacker" class="assoc-banner">
+          🕸️ Associated with a hacker — this wallet transferred funds to a known drainer operator.
+          <span v-if="report.associated_reason" class="assoc-reason">{{ report.associated_reason }}</span>
+        </div>
         <div v-if="exposureText(report).length" class="exposure">
           Exposed data: {{ exposureText(report).join(' and ') }} — publicly available
         </div>
@@ -660,6 +667,23 @@ function evidenceDate(e: StatusEvidence): string {
   border-radius: 8px;
   color: #ff6b6b;
   font-size: 0.85rem;
+}
+
+.assoc-banner {
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  background: rgba(255, 179, 71, 0.08);
+  border: 1px solid rgba(255, 179, 71, 0.35);
+  border-radius: 8px;
+  color: #ffb347;
+  font-size: 0.85rem;
+}
+
+.assoc-reason {
+  display: block;
+  margin-top: 0.25rem;
+  color: #98a8ce;
+  font-size: 0.8rem;
 }
 
 .leaks-table {
