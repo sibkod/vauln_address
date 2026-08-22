@@ -132,13 +132,67 @@ func (h *Handler) IngestScanFinding(c *gin.Context) {
 		}
 	}
 
+	// A finding that matched a drainer pattern but hit no known drainer
+	// program (no P5) came through an unknown program: forward it to the
+	// analysts for review so the watchlist can be extended. Sent only once
+	// per finding (on first insert), best-effort and non-blocking.
+	needsReview := inserted && !hasIndicator(req.Indicators, "P5_KNOWN_DRAINER_PROGRAM")
+	if needsReview {
+		go h.forwardFindingForReview(req)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"id":           id,
 		"inserted":     inserted,
 		"victim_added": victimAdded,
 		"hacker_added": hackerAdded,
 		"associated":   associated,
+		"needs_review": needsReview,
 	})
+}
+
+// hasIndicator reports whether the finding carries the given indicator code.
+func hasIndicator(indicators []string, code string) bool {
+	for _, ind := range indicators {
+		if ind == code {
+			return true
+		}
+	}
+	return false
+}
+
+// forwardFindingForReview sends a scanner finding to the team chat when the
+// drainer pattern fired on a program that is not in the watchlist yet.
+// Failures are logged, never fatal to the ingest request.
+func (h *Handler) forwardFindingForReview(req models.ScanFindingRequest) {
+	text := fmt.Sprintf(
+		"🔍 <b>Scanner review: drainer pattern on an unknown program</b>\n"+
+			"Verdict: <b>%s</b>\n"+
+			"Chain: <b>%s</b>\n"+
+			"TX: <code>%s</code>\n"+
+			"Indicators: %s\n"+
+			"Victim: <code>%s</code>\n"+
+			"Hacker: <code>%s</code>\n"+
+			"Programs: <code>%s</code>\n"+
+			"Amount: %.4f SOL\n"+
+			"The program is not in the drainer watchlist — review the transaction and add it if confirmed.",
+		html.EscapeString(req.Verdict),
+		html.EscapeString(strings.ToUpper(req.Chain)),
+		html.EscapeString(req.Signature),
+		html.EscapeString(strings.Join(req.Indicators, ", ")),
+		html.EscapeString(orDash(req.VictimAddress)),
+		html.EscapeString(orDash(req.HackerAddress)),
+		html.EscapeString(orDash(strings.Join(req.Programs, ", "))),
+		req.AmountSOL,
+	)
+
+	if err := h.telegram.Send(context.Background(), text); err != nil {
+		if err == services.ErrTelegramNotConfigured {
+			log.Printf("scanner review: telegram bot not configured, finding %s not forwarded", req.Signature)
+		} else {
+			log.Printf("scanner review: telegram send failed for %s: %v", req.Signature, err)
+		}
+	}
 }
 
 // registerScanWallet adds a wallet discovered by the scanner to the main

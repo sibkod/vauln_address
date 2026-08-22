@@ -565,3 +565,46 @@ func TestIngestScanFinding_ProgramNotRegisteredAsHacker(t *testing.T) {
 		t.Errorf("program %s must stay out of the wallets table, got status %q", scanAddrSender3, wlt.Status)
 	}
 }
+
+// TestIngestScanFinding_ReviewForwarding: a finding that matched the drainer
+// pattern on a program that is not in the watchlist (no P5 indicator) is
+// flagged for analyst review; known-program findings and duplicate
+// re-submissions are not.
+func TestIngestScanFinding_ReviewForwarding(t *testing.T) {
+	env := setupReportTest(t)
+	router := setupScannerRouter(env)
+
+	decode := func(w *httptest.ResponseRecorder) (bool, bool) {
+		var resp struct {
+			Inserted    bool `json:"inserted"`
+			NeedsReview bool `json:"needs_review"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		return resp.Inserted, resp.NeedsReview
+	}
+
+	// pattern-only finding (unknown program) -> review
+	w := postFinding(t, router, scanTestAdminKey, sampleFinding("sig-review-1", scanAddrVictim, scanAddrHacker))
+	inserted, review := decode(w)
+	if !inserted || !review {
+		t.Errorf("pattern finding without P5 must need review, inserted=%v review=%v", inserted, review)
+	}
+
+	// duplicate re-submission -> no review, no second telegram message
+	w = postFinding(t, router, scanTestAdminKey, sampleFinding("sig-review-1", scanAddrVictim, scanAddrHacker))
+	inserted, review = decode(w)
+	if inserted || review {
+		t.Errorf("duplicate finding must not need review, inserted=%v review=%v", inserted, review)
+	}
+
+	// finding that hit a known drainer program (P5) -> no review
+	known := sampleFinding("sig-review-2", scanAddrSender1, scanAddrHacker)
+	known.Indicators = append(known.Indicators, "P5_KNOWN_DRAINER_PROGRAM")
+	w = postFinding(t, router, scanTestAdminKey, known)
+	inserted, review = decode(w)
+	if !inserted || review {
+		t.Errorf("P5 finding must not need review, inserted=%v review=%v", inserted, review)
+	}
+}
