@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { ref, inject, onMounted, onUnmounted } from 'vue'
+import ChainLogo from '../components/ChainLogo.vue'
+import { getChainMeta } from '../chains'
 
 interface Finding {
   id: number
@@ -14,6 +16,34 @@ interface Finding {
   programs?: string[]
   source: string
   created_at: string
+}
+
+interface OperationType {
+  key: string
+  label: string
+  icon: string
+  from: string
+  to: string
+  danger: boolean
+}
+
+// Derives a human-readable operation type from the scanner verdict and
+// indicator codes (mirrors scanIndicatorMeta on the backend).
+function operationType(f: Finding): OperationType {
+  const ind = f.indicators || []
+  if (ind.includes('P1_ACCOUNT_TAKEOVER')) {
+    return { key: 'takeover', label: 'Account takeover', icon: '🔑', from: 'Victim', to: 'Hacker', danger: true }
+  }
+  if (ind.includes('F2_REPEAT_DOWNSTREAM')) {
+    return { key: 'distribution', label: 'Hacker moving funds', icon: '🔀', from: 'Operator', to: 'Recipient', danger: true }
+  }
+  if (ind.includes('F1_DOWNSTREAM_TRANSFER')) {
+    return { key: 'downstream', label: 'Downstream transfer', icon: '↪️', from: 'Operator', to: 'Recipient', danger: false }
+  }
+  if (f.verdict === 'DRAINER') {
+    return { key: 'drained', label: 'Wallet drained', icon: '💀', from: 'Victim', to: 'Hacker', danger: true }
+  }
+  return { key: 'suspicious', label: 'Suspicious activity', icon: '⚠️', from: 'Wallet', to: 'Counterparty', danger: false }
 }
 
 const apiBase = inject<string>('apiBase', '')
@@ -62,12 +92,12 @@ function shortAddr(addr?: string): string {
   return addr.length <= 16 ? addr : `${addr.slice(0, 6)}…${addr.slice(-6)}`
 }
 
-function solscanTx(sig: string): string {
-  return `https://solscan.io/tx/${sig}`
+function txUrl(f: Finding): string {
+  return getChainMeta(f.chain).txUrl(f.signature)
 }
 
-function solscanAccount(addr: string): string {
-  return `https://solscan.io/account/${addr}`
+function accountUrl(f: Finding, addr: string): string {
+  return getChainMeta(f.chain).addrUrl(addr)
 }
 
 function timeAgo(ts: string): string {
@@ -99,7 +129,7 @@ onUnmounted(() => {
   <div class="monitor-page">
     <div class="monitor-header">
       <h1>Live Drainer Monitor</h1>
-      <p class="subtitle">Real-time detections from our Solana drainer scanner</p>
+      <p class="subtitle">Real-time detections from our multi-chain drainer scanner</p>
       <div class="live-controls">
         <span class="live-badge" :class="{ paused: !live }">
           <span class="pulse-dot"></span>
@@ -120,31 +150,37 @@ onUnmounted(() => {
     <div v-else-if="!findings.length" class="empty-state">
       <div class="empty-icon">🛰️</div>
       <h2>No detections yet</h2>
-      <p>The scanner is watching the chain. New drainer detections will appear here in real time.</p>
+      <p>The scanner is watching the chains. New drainer detections will appear here in real time.</p>
     </div>
 
     <div v-else class="feed">
-      <div v-for="f in findings" :key="f.id" class="finding-card" :class="f.verdict === 'DRAINER' ? 'drainer' : 'suspicious'">
+      <div v-for="f in findings" :key="f.id" class="finding-card" :class="operationType(f).danger ? 'drainer' : 'suspicious'">
         <div class="finding-top">
-          <span class="verdict-badge" :class="f.verdict === 'DRAINER' ? 'drainer' : 'suspicious'">
-            {{ f.verdict === 'DRAINER' ? '💀 DRAINER' : '⚠️ SUSPICIOUS' }}
+          <span class="chain-badge">
+            <ChainLogo :chain="f.chain" :size="16" />
+            {{ getChainMeta(f.chain).name }}
           </span>
-          <span v-if="f.amount_sol > 0" class="amount">-{{ f.amount_sol.toFixed(4) }} SOL</span>
+          <span class="op-badge" :class="operationType(f).danger ? 'drainer' : 'suspicious'">
+            {{ operationType(f).icon }} {{ operationType(f).label }}
+          </span>
+          <span v-if="f.amount_sol > 0" class="amount">
+            -{{ f.amount_sol.toFixed(getChainMeta(f.chain).decimals) }} {{ getChainMeta(f.chain).symbol }}
+          </span>
           <span class="time">{{ timeAgo(f.created_at) }}</span>
         </div>
 
         <div class="parties">
           <div class="party">
-            <span class="party-label">Victim</span>
-            <a v-if="f.victim_address" :href="solscanAccount(f.victim_address)" target="_blank" rel="noopener" class="addr victim">
+            <span class="party-label">{{ operationType(f).from }}</span>
+            <a v-if="f.victim_address" :href="accountUrl(f, f.victim_address)" target="_blank" rel="noopener" class="addr victim">
               {{ shortAddr(f.victim_address) }}
             </a>
             <span v-else class="addr none">—</span>
           </div>
           <span class="party-arrow">→</span>
           <div class="party">
-            <span class="party-label">Hacker</span>
-            <a v-if="f.hacker_address" :href="solscanAccount(f.hacker_address)" target="_blank" rel="noopener" class="addr hacker">
+            <span class="party-label">{{ operationType(f).to }}</span>
+            <a v-if="f.hacker_address" :href="accountUrl(f, f.hacker_address)" target="_blank" rel="noopener" class="addr hacker">
               {{ shortAddr(f.hacker_address) }}
             </a>
             <span v-else class="addr none">—</span>
@@ -152,10 +188,10 @@ onUnmounted(() => {
         </div>
 
         <div class="finding-footer">
-          <a :href="solscanTx(f.signature)" target="_blank" rel="noopener" class="tx-link">
+          <a :href="txUrl(f)" target="_blank" rel="noopener" class="tx-link">
             {{ shortAddr(f.signature) }} ↗
           </a>
-          <span class="slot">slot {{ f.slot }}</span>
+          <span v-if="f.slot" class="slot">{{ getChainMeta(f.chain).blockLabel }} {{ f.slot }}</span>
           <span class="source">{{ f.source }}</span>
         </div>
       </div>
@@ -314,19 +350,32 @@ onUnmounted(() => {
   margin-bottom: 0.6rem;
 }
 
-.verdict-badge {
+.chain-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #8fa1c4;
+  background: rgba(138, 148, 176, 0.08);
+  border: 1px solid #2a3548;
+  padding: 0.2rem 0.55rem;
+  border-radius: 6px;
+}
+
+.op-badge {
   font-size: 0.72rem;
   font-weight: 700;
   padding: 0.2rem 0.6rem;
   border-radius: 6px;
 }
 
-.verdict-badge.drainer {
+.op-badge.drainer {
   background: rgba(255, 107, 107, 0.12);
   color: #ff6b6b;
 }
 
-.verdict-badge.suspicious {
+.op-badge.suspicious {
   background: rgba(255, 179, 71, 0.12);
   color: #ffb347;
 }
