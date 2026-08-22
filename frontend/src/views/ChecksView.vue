@@ -71,34 +71,25 @@ function formatAddress(addr: string) {
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`
 }
 
+// Mirror of the backend wallet status catalog (/api/statuses).
+const dangerStatuses = ['hacked', 'compromised', 'hacker', 'drained', 'phishing', 'scam', 'sanctioned', 'danger']
+const warningStatuses = ['vulnerable', 'suspicious', 'mixer', 'frozen', 'warning']
+const statusIcons: Record<string, string> = {
+  hacked: '🚨', compromised: '🚨', hacker: '💀', drained: '🏴',
+  phishing: '🎣', scam: '🕳️', sanctioned: '⛔',
+  vulnerable: '⚠️', suspicious: '🔍', mixer: '🌀', frozen: '🧊', warning: '⚠️', danger: '🚨',
+  safe: '✅', not_found: '✅', exchange: '🏦'
+}
+
 function getStatusClass(status: string) {
-  switch (status) {
-    case 'vulnerable':
-    case 'danger':
-      return 'danger'
-    case 'warning':
-      return 'warning'
-    case 'safe':
-    case 'not_found':
-      return 'safe'
-    default:
-      return ''
-  }
+  if (dangerStatuses.includes(status)) return 'danger'
+  if (warningStatuses.includes(status)) return 'warning'
+  if (status === 'safe' || status === 'not_found' || status === 'exchange') return 'safe'
+  return ''
 }
 
 function getStatusIcon(status: string) {
-  switch (status) {
-    case 'vulnerable':
-    case 'danger':
-      return '🚨'
-    case 'warning':
-      return '⚠️'
-    case 'safe':
-    case 'not_found':
-      return '✅'
-    default:
-      return '❓'
-  }
+  return statusIcons[status] || '❓'
 }
 
 function goToPage(page: number) {

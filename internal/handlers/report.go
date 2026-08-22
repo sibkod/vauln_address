@@ -161,23 +161,13 @@ func buildReportDetails(report *models.ReportResponse, leaks []models.LeakedKeyI
 	}
 	exposedList := strings.Join(exposed, " and ")
 
-	switch report.Status {
-	case string(models.StatusHacked):
-		if exposedList != "" {
-			return fmt.Sprintf("The %s of this wallet is publicly available to everyone. Anyone can import the wallet and steal all funds. Do not use this address.", exposedList)
-		}
-		return "This wallet is compromised and controlled by third parties. Do not use this address."
-	case string(models.StatusVulnerable):
-		return "Wallet data was exposed, but the funds have not been stolen yet. Move all assets to a new wallet immediately."
-	case string(models.StatusHacker):
-		return "This address belongs to a known hacker and is linked to theft of funds. Never send assets to it."
-	case string(models.StatusDrained):
-		return "The wallet was compromised and all funds were withdrawn from it."
-	case string(models.StatusSafe):
-		return "This address is listed in the database as safe: no leaks or malicious activity detected."
-	default:
-		return fmt.Sprintf("Wallet status: %s.", report.Status)
+	if report.Status == string(models.StatusHacked) && exposedList != "" {
+		return fmt.Sprintf("The %s of this wallet is publicly available to everyone. Anyone can import the wallet and steal all funds. Do not use this address.", exposedList)
 	}
+	if desc, ok := models.StatusDescription(models.WalletStatus(report.Status)); ok {
+		return desc
+	}
+	return fmt.Sprintf("Wallet status: %s.", report.Status)
 }
 
 // ==================== Transaction tree ====================

@@ -187,9 +187,9 @@ body.light .network-badge.mainnet {
 .status-legend { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-bottom: 1.5rem; background: rgba(10, 14, 22, 0.35); border-radius: 1rem; padding: 0.6rem 0.8rem; border: 1px solid rgba(255, 255, 255, 0.02); }
 .status-legend .legend-item { display: flex; align-items: center; gap: 0.5rem; font-size: 0.7rem; color: #98a8ce; padding: 0.2rem 0.3rem; border-radius: 0.5rem; }
 .status-legend .legend-item .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-.dot.hacked { background: #e15a5a; box-shadow: 0 0 8px #e15a5a40; }
+.dot.hacked, .dot.danger { background: #e15a5a; box-shadow: 0 0 8px #e15a5a40; }
 .dot.vulnerable { background: #d9a24b; box-shadow: 0 0 8px #d9a24b40; }
-.dot.safe { background: #4bc9a0; box-shadow: 0 0 8px #4bc9a040; }
+.dot.safe, .dot.success { background: #4bc9a0; box-shadow: 0 0 8px #4bc9a040; }
 .status-legend .label { font-weight: 500; color: #cdd7ec; }
 .status-legend .desc { font-size: 0.6rem; color: #6a7ba0; display: block; }
 
@@ -250,9 +250,13 @@ body.light .network-badge.mainnet {
 .alert-item .alert-icon { font-size: 1rem; flex-shrink: 0; }
 .alert-item .alert-addr { color: #c8d2ea; font-family: monospace; font-weight: 500; }
 .alert-item .alert-status { padding: 0.05rem 0.6rem; border-radius: 30px; font-size: 0.6rem; font-weight: 600; text-transform: uppercase; flex-shrink: 0; }
-.alert-item .alert-status.hacked { background: #d15a5a20; color: #e8a0a0; border: 1px solid #d15a5a20; }
-.alert-item .alert-status.vulnerable { background: #d9a24b20; color: #e8c87a; border: 1px solid #d9a24b30; }
-.alert-item .alert-status.safe { background: #4bc9a020; color: #7ed7b8; border: 1px solid #4bc9a020; }
+.alert-item .alert-status.hacked, .alert-item .alert-status.compromised,
+.alert-item .alert-status.hacker, .alert-item .alert-status.drained,
+.alert-item .alert-status.phishing, .alert-item .alert-status.scam,
+.alert-item .alert-status.sanctioned { background: #d15a5a20; color: #e8a0a0; border: 1px solid #d15a5a20; }
+.alert-item .alert-status.vulnerable, .alert-item .alert-status.suspicious,
+.alert-item .alert-status.mixer, .alert-item .alert-status.frozen { background: #d9a24b20; color: #e8c87a; border: 1px solid #d9a24b30; }
+.alert-item .alert-status.safe, .alert-item .alert-status.exchange { background: #4bc9a020; color: #7ed7b8; border: 1px solid #4bc9a020; }
 .alert-item .alert-chain { color: #6a7ba0; font-size: 0.55rem; background: #181f30; padding: 0.05rem 0.4rem; border-radius: 30px; flex-shrink: 0; }
 .alert-item .alert-time { color: #58688e; font-size: 0.6rem; margin-left: auto; flex-shrink: 0; }
 .alert-item .alert-user { color: #6a7ba0; font-size: 0.65rem; background: #181f30; padding: 0.05rem 0.5rem; border-radius: 30px; flex-shrink: 0; }

@@ -21,12 +21,20 @@ function statusClass(status: string) {
   switch (status) {
     case 'hacked':
     case 'hacker':
+    case 'drained':
+    case 'phishing':
+    case 'scam':
+    case 'sanctioned':
       return 'danger'
     case 'potential_hacker':
     case 'vulnerable':
+    case 'suspicious':
+    case 'mixer':
+    case 'frozen':
       return 'warn'
     case 'safe':
     case 'not_found':
+    case 'exchange':
       return 'safe'
     default:
       return 'muted'
@@ -40,6 +48,13 @@ const statusIcons: Record<string, string> = {
   vulnerable: '⚠️',
   safe: '✅',
   drained: '🏴',
+  phishing: '🎣',
+  scam: '🕳️',
+  mixer: '🌀',
+  sanctioned: '⛔',
+  suspicious: '🔍',
+  frozen: '🧊',
+  exchange: '🏦',
   unknown: '❓',
   not_found: '✅'
 }

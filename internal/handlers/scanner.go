@@ -20,8 +20,9 @@ import (
 
 // IngestScanFinding accepts findings from solana_scan.py (admin key required).
 // Besides storing the finding it adds the involved wallets to the database:
-// the victim as "drained" and the hacker as "hacker", so they show up in
-// checks and reports.
+// for DRAINER the victim as "drained" and the hacker as "hacker", for
+// SUSPICIOUS the counterparty as "suspicious", so they show up in checks
+// and reports.
 func (h *Handler) IngestScanFinding(c *gin.Context) {
 	var req models.ScanFindingRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -61,11 +62,17 @@ func (h *Handler) IngestScanFinding(c *gin.Context) {
 	}
 
 	victimAdded, hackerAdded := false, false
-	if inserted && req.Verdict == models.ScanVerdictDrainer {
-		victimAdded = h.registerScanWallet(c, req.VictimAddress, req.Chain,
-			models.StatusDrained, "drainer victim: funds swept by drainer transaction")
-		hackerAdded = h.registerScanWallet(c, req.HackerAddress, req.Chain,
-			models.StatusHacker, "drainer operator: received stolen funds or hijacked accounts")
+	if inserted {
+		switch req.Verdict {
+		case models.ScanVerdictDrainer:
+			victimAdded = h.registerScanWallet(c, req.VictimAddress, req.Chain,
+				models.StatusDrained, "drainer victim: funds swept by drainer transaction")
+			hackerAdded = h.registerScanWallet(c, req.HackerAddress, req.Chain,
+				models.StatusHacker, "drainer operator: received stolen funds or hijacked accounts")
+		case models.ScanVerdictSuspicious:
+			hackerAdded = h.registerScanWallet(c, req.HackerAddress, req.Chain,
+				models.StatusSuspicious, "suspicious drainer-like transaction, not yet confirmed as malicious")
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{

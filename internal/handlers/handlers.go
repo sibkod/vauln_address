@@ -1046,6 +1046,12 @@ func (h *Handler) GetSupportedChains(c *gin.Context) {
 	})
 }
 
+// GetStatuses returns the catalog of wallet statuses with human-readable
+// descriptions, so clients can render results and legends consistently.
+func (h *Handler) GetStatuses(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"statuses": models.StatusInfos()})
+}
+
 // ==================== API Key Management ====================
 
 // CreateAPIKey creates a new API key for the authenticated user
@@ -1515,7 +1521,7 @@ func parseAddWalletRequest(c *gin.Context) (models.AddWalletRequest, bool) {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
 			Error:   "invalid status",
 			Code:    "INVALID_STATUS",
-			Details: "valid statuses: hacked, vulnerable, safe, hacker, drained",
+			Details: "valid statuses: " + strings.Join(models.ValidStatusNames(), ", "),
 		})
 		return req, false
 	}
