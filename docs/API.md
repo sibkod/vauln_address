@@ -60,6 +60,50 @@ Returns list of supported blockchain networks.
 
 ---
 
+### Get Wallet Statuses
+
+**GET** `/api/statuses`
+
+Returns the catalog of wallet statuses with labels, severity
+(`danger` / `warning` / `info`) and human-readable descriptions. Use it to
+render check results and legends consistently.
+
+**Response:**
+```json
+{
+  "statuses": [
+    {
+      "status": "hacker",
+      "label": "Hacker",
+      "severity": "danger",
+      "description": "The address belongs to a known hacker or drainer operator and is linked to the theft of funds. Never send assets to it."
+    }
+  ]
+}
+```
+
+**Status values:**
+
+| Status | Severity | Meaning |
+|--------|----------|---------|
+| `hacked` | danger | Wallet compromised: private key or seed phrase publicly known |
+| `vulnerable` | warning | Wallet data exposed, funds not stolen yet |
+| `safe` | info | Listed as safe: no leaks or malicious activity |
+| `hacker` | danger | Known hacker / drainer operator |
+| `drained` | danger | Wallet compromised and fully emptied |
+| `phishing` | danger | Collects funds from phishing victims |
+| `scam` | danger | Fraudulent scheme (fake investments, giveaway scams) |
+| `mixer` | warning | Mixing / laundering service, compliance risk |
+| `sanctioned` | danger | On a sanctions registry (e.g. OFAC SDN) |
+| `exchange` | info | Verified deposit address of a known exchange |
+| `suspicious` | warning | Drainer-like activity, not confirmed yet |
+| `frozen` | warning | Assets frozen by token issuer or court order |
+
+`not_found` is a synthetic check-only status meaning the address is absent
+from the database.
+
+---
+
 ### Get Pricing
 
 **GET** `/api/pricing?checks={count}`
@@ -287,7 +331,8 @@ Headers: `X-Admin-Key: <ADMIN_API_KEY>`.
 
 Stores the finding (deduplicated by `signature`). For `DRAINER` verdicts the
 victim is registered in the wallets table as `drained` and the hacker as
-`hacker` (source `solana_scan`), unless already present.
+`hacker`; for `SUSPICIOUS` verdicts the counterparty is registered as
+`suspicious` (source `solana_scan`), unless already present.
 
 **Response:** `{ "id": 1, "inserted": true, "victim_added": true, "hacker_added": true }`
 
@@ -678,12 +723,8 @@ Checks if a wallet address is in the compromised database.
 }
 ```
 
-**Status Values:**
-- `not_found` / `safe` - Address not in database
-- `hacked` - Address found, private key leaked
-- `vulnerable` - Address flagged as vulnerable
-- `hacker` - Address belongs to hacker
-- `drained` - Address has been drained
+**Status Values:** see `GET /api/statuses` for the full catalog with
+descriptions. `not_found` means the address is absent from the database.
 
 **Errors:**
 - `400 INVALID_REQUEST` - Missing address or chain

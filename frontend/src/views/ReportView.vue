@@ -183,6 +183,13 @@ const statusMeta: Record<string, { icon: string; label: string; cls: string }> =
   hacker: { icon: '💀', label: 'HACKER', cls: 'danger' },
   vulnerable: { icon: '⚠️', label: 'VULNERABLE', cls: 'warn' },
   drained: { icon: '🏴', label: 'DRAINED', cls: 'danger' },
+  phishing: { icon: '🎣', label: 'PHISHING', cls: 'danger' },
+  scam: { icon: '🕳️', label: 'SCAM', cls: 'danger' },
+  mixer: { icon: '🌀', label: 'MIXER', cls: 'warn' },
+  sanctioned: { icon: '⛔', label: 'SANCTIONED', cls: 'danger' },
+  suspicious: { icon: '🔍', label: 'SUSPICIOUS', cls: 'warn' },
+  frozen: { icon: '🧊', label: 'FROZEN', cls: 'warn' },
+  exchange: { icon: '🏦', label: 'EXCHANGE', cls: 'safe' },
   safe: { icon: '✅', label: 'SAFE', cls: 'safe' },
   not_found: { icon: '✅', label: 'SAFE', cls: 'safe' }
 }

@@ -84,6 +84,7 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "vauln-address-api", "time": time.Now().UTC().Format(time.RFC3339)})
 	})
 	api.GET("/chains", h.GetSupportedChains)
+	api.GET("/statuses", h.GetStatuses)
 	api.GET("/recent", h.GetRecentChecks)
 	api.GET("/checks", h.GetRecentChecks) // User check history
 	api.GET("/pricing", h.GetPricing)

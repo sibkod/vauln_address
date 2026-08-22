@@ -8,6 +8,12 @@
 - `internal/validators`: TestValidateTronAddress, TestValidateAddress/Sui_valid fail on clean checkout.
 - `internal/handlers`: TestCreateOrder_InvalidRequest/negative_checks expects 400 for negative checks but the handler returns 200 (validation bug in CreateOrder).
 
+## Wallet statuses
+- Single source of truth: `statusCatalog` in internal/models/models.go (12 statuses: hacked, vulnerable, safe, hacker, drained, phishing, scam, mixer, sanctioned, exchange, suspicious, frozen) with label, severity (danger/warning/info) and description. `IsValidStatus`/`ValidStatusNames`/`StatusDescription` derive from it; report details and the admin import error use these helpers.
+- Public catalog endpoint: `GET /api/statuses` (handlers.GetStatuses). Frontend mirrors the catalog in HomeView/ReportView/ChecksView statusMeta maps and global CSS (`.dot.danger|vulnerable|success`, `.alert-status.<status>` in style.css).
+- Scanner ingest: DRAINER → victim `drained` + hacker `hacker`; SUSPICIOUS → counterparty `suspicious`.
+- Tests: internal/models/models_test.go validates catalog/validation sync.
+
 ## Data conventions
 - DB access supports postgres/mysql/sqlite; all queries use `?` placeholders and per-dialect upserts (see UpsertUserNonce).
 - `check_history.wallet_address` doubles as report-access key: authenticated wallet address, or `ip:<ip>` for anonymous users (repository.AnonymousRequesterPrefix). Anonymous rows older than 24h are deleted by ReportCleanupService, which implements report expiry (models.AnonymousReportTTL).

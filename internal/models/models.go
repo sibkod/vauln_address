@@ -10,7 +10,77 @@ const (
 	StatusSafe       WalletStatus = "safe"
 	StatusHacker     WalletStatus = "hacker"
 	StatusDrained    WalletStatus = "drained"
+	StatusPhishing   WalletStatus = "phishing"
+	StatusScam       WalletStatus = "scam"
+	StatusMixer      WalletStatus = "mixer"
+	StatusSanctioned WalletStatus = "sanctioned"
+	StatusExchange   WalletStatus = "exchange"
+	StatusSuspicious WalletStatus = "suspicious"
+	StatusFrozen     WalletStatus = "frozen"
 )
+
+// StatusSeverity groups wallet statuses by how dangerous an address is.
+const (
+	SeverityDanger  = "danger"  // malicious or compromised — never interact
+	SeverityWarning = "warning" // suspicious or risky — interact with caution
+	SeverityInfo    = "info"    // neutral informational listing
+)
+
+// StatusInfo describes one wallet status for API consumers and the UI.
+type StatusInfo struct {
+	Status      WalletStatus `json:"status"`
+	Label       string       `json:"label"`
+	Severity    string       `json:"severity"`
+	Description string       `json:"description"`
+}
+
+// statusCatalog is the single source of truth for wallet statuses:
+// validation, admin import errors, report details and the /api/statuses
+// endpoint all derive from it.
+var statusCatalog = []StatusInfo{
+	{StatusHacked, "Hacked", SeverityDanger,
+		"The wallet is compromised: its private key or seed phrase is publicly known. Anyone can import it and steal all funds — do not use this address."},
+	{StatusVulnerable, "Vulnerable", SeverityWarning,
+		"Wallet data was exposed, but the funds have not been stolen yet. Move all assets to a new wallet immediately."},
+	{StatusSafe, "Safe", SeverityInfo,
+		"The address is listed in the database as safe: no leaks or malicious activity detected."},
+	{StatusHacker, "Hacker", SeverityDanger,
+		"The address belongs to a known hacker or drainer operator and is linked to the theft of funds. Never send assets to it."},
+	{StatusDrained, "Drained", SeverityDanger,
+		"The wallet was compromised and all funds were withdrawn from it."},
+	{StatusPhishing, "Phishing", SeverityDanger,
+		"The address is linked to a phishing campaign: it collects funds from victims of fake websites and cloned services."},
+	{StatusScam, "Scam", SeverityDanger,
+		"The address is linked to a fraudulent scheme: fake investments, giveaway scams or impersonation."},
+	{StatusMixer, "Mixer", SeverityWarning,
+		"The address is used to mix or launder funds and obscure their origin; interacting with it may flag your wallet in compliance checks."},
+	{StatusSanctioned, "Sanctioned", SeverityDanger,
+		"The address is listed in sanctions registries (e.g. OFAC SDN). Interacting with it may have legal consequences."},
+	{StatusExchange, "Exchange", SeverityInfo,
+		"Verified deposit address of a known exchange or custodial service."},
+	{StatusSuspicious, "Suspicious", SeverityWarning,
+		"Drainer-like activity was detected for this address, but it is not confirmed as malicious yet. Treat it with caution."},
+	{StatusFrozen, "Frozen", SeverityWarning,
+		"Assets on this address were frozen by the token issuer or by a court order; outgoing transfers may be blocked."},
+}
+
+// StatusInfos returns the full catalog of known wallet statuses.
+func StatusInfos() []StatusInfo {
+	out := make([]StatusInfo, len(statusCatalog))
+	copy(out, statusCatalog)
+	return out
+}
+
+// StatusDescription returns the human-readable explanation of a status.
+// The second return value is false for unknown statuses.
+func StatusDescription(status WalletStatus) (string, bool) {
+	for _, info := range statusCatalog {
+		if info.Status == status {
+			return info.Description, true
+		}
+	}
+	return "", false
+}
 
 type Chain string
 
@@ -31,11 +101,18 @@ func IsValidChain(chain string) bool {
 }
 
 func IsValidStatus(status string) bool {
-	switch WalletStatus(status) {
-	case StatusHacked, StatusVulnerable, StatusSafe, StatusHacker, StatusDrained:
-		return true
+	_, ok := StatusDescription(WalletStatus(status))
+	return ok
+}
+
+// ValidStatusNames returns the list of accepted status values, e.g. for
+// error messages of the admin import endpoints.
+func ValidStatusNames() []string {
+	names := make([]string, len(statusCatalog))
+	for i, info := range statusCatalog {
+		names[i] = string(info.Status)
 	}
-	return false
+	return names
 }
 
 // ==================== User Authentication ====================

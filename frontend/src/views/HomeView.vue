@@ -198,38 +198,52 @@ async function check() {
   loading.value = false
 }
 
+// Wallet status catalog — mirror of the backend /api/statuses data.
+// Icons summarize wallet risk in the check result and the recent-checks list.
+const statusMeta: Record<string, { icon: string; label: string; desc: string; cls: string }> = {
+  hacked: { icon: '🚨', label: 'COMPROMISED', desc: 'DO NOT use this wallet', cls: 'danger' },
+  compromised: { icon: '🚨', label: 'COMPROMISED', desc: 'DO NOT use this wallet', cls: 'danger' },
+  hacker: { icon: '💀', label: 'HACKER', desc: 'never send assets here', cls: 'danger' },
+  drained: { icon: '🏴', label: 'DRAINED', desc: 'wallet emptied after compromise', cls: 'danger' },
+  phishing: { icon: '🎣', label: 'PHISHING', desc: 'collects funds from phishing victims', cls: 'danger' },
+  scam: { icon: '🕳️', label: 'SCAM', desc: 'fraudulent scheme address', cls: 'danger' },
+  sanctioned: { icon: '⛔', label: 'SANCTIONED', desc: 'on a sanctions list', cls: 'danger' },
+  vulnerable: { icon: '⚠️', label: 'VULNERABLE', desc: 'data exposed, not yet exploited', cls: 'vulnerable' },
+  suspicious: { icon: '🔍', label: 'SUSPICIOUS', desc: 'drainer-like activity, unconfirmed', cls: 'vulnerable' },
+  mixer: { icon: '🌀', label: 'MIXER', desc: 'launders funds, compliance risk', cls: 'vulnerable' },
+  frozen: { icon: '🧊', label: 'FROZEN', desc: 'assets frozen by issuer or court', cls: 'vulnerable' },
+  exchange: { icon: '🏦', label: 'EXCHANGE', desc: 'verified service deposit address', cls: 'success' },
+  safe: { icon: '✅', label: 'SAFE', desc: 'not found in database', cls: 'success' },
+  not_found: { icon: '✅', label: 'SAFE', desc: 'not found in database', cls: 'success' }
+}
+
+const legendItems = ['hacked', 'hacker', 'drained', 'phishing', 'vulnerable', 'suspicious', 'exchange', 'safe']
+  .map(st => statusMeta[st])
+
+function metaFor(status: string | undefined) {
+  return statusMeta[status || ''] || { icon: '❓', label: (status || 'unknown').toUpperCase(), desc: '', cls: '' }
+}
+
 function setResultText() {
   if (!result.value) return ''
   if (result.value.message) return result.value.message
   if (result.value.error) return result.value.error
-  if (result.value.status === 'hacked' || result.value.status === 'compromised') return '🚨 COMPROMISED — DO NOT use this wallet.'
-  if (result.value.status === 'vulnerable') return '⚠️ VULNERABLE — data available, not yet exploited.'
-  if (result.value.status === 'not_found' || result.value.status === 'safe') return '✅ Safe. Not found in database.'
-  return `Status: ${result.value.status}`
+  const m = metaFor(result.value.status)
+  return `${m.icon} ${m.label}${m.desc ? ` — ${m.desc}.` : ''}`
 }
 
 function getResultClass() {
   if (!result.value) return ''
-  if (result.value.status === 'hacked' || result.value.status === 'compromised') return 'danger'
-  if (result.value.status === 'vulnerable') return 'vulnerable'
-  return 'success'
+  return metaFor(result.value.status).cls || 'success'
 }
 </script>
 
 <template>
   <!-- Legend -->
   <div class="status-legend">
-    <div class="legend-item">
-      <span class="dot hacked"></span>
-      <div><span class="label">Hacked</span><span class="desc">Compromised — DO NOT use</span></div>
-    </div>
-    <div class="legend-item">
-      <span class="dot vulnerable"></span>
-      <div><span class="label">Vulnerable</span><span class="desc">Data available, not yet exploited</span></div>
-    </div>
-    <div class="legend-item">
-      <span class="dot safe"></span>
-      <div><span class="label">Safe</span><span class="desc">Not found in database</span></div>
+    <div class="legend-item" v-for="l in legendItems" :key="l.label">
+      <span class="dot" :class="l.cls"></span>
+      <div><span class="label">{{ l.icon }} {{ l.label }}</span><span class="desc">{{ l.desc }}</span></div>
     </div>
   </div>
 
@@ -307,9 +321,9 @@ function getResultClass() {
         v-for="check in recentChecks" 
         :key="check.id || check.address + check.time"
         class="alert-item"
-        :class="check.status === 'hacked' || check.status === 'compromised' ? 'danger' : check.status === 'vulnerable' ? 'vulnerable' : 'success'"
+        :class="metaFor(check.status).cls"
       >
-        <span class="alert-icon">{{ check.status === 'hacked' || check.status === 'compromised' ? '🚨' : check.status === 'vulnerable' ? '⚠️' : '✅' }}</span>
+        <span class="alert-icon">{{ metaFor(check.status).icon }}</span>
         <span class="alert-addr">{{ check.address }}</span>
         <span class="alert-chain">{{ (check.chain || chain).toUpperCase() }}</span>
         <span class="alert-status" :class="check.status">{{ (check.status || 'safe').toUpperCase() }}</span>
