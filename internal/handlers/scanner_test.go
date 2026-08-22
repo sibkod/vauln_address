@@ -49,6 +49,17 @@ func postFinding(t *testing.T, router *gin.Engine, adminKey string, body models.
 	return w
 }
 
+// Valid 32-byte base58 addresses used across scanner tests — the ingest
+// handler rejects anything that does not decode to a Solana public key.
+const (
+	scanAddrVictim  = "9ML9o4nY6i54JPUcA8oDKFWQAsFR4ht3hXf6WdtmCpvw"
+	scanAddrHacker  = "4QFiKg8ejx5LfqqLNbnKsiCnbEgRtgakBF6abMrkquKW"
+	scanAddrSender1 = "27Jc8szpEz1PiDTsF1QTs4PLLD8izBEWkfYPxA9drq7Z"
+	scanAddrSender2 = "56qGwVvKnGnCHid5cn1hVNHPJ2ny6iAwFd9825y2WkSk"
+	scanAddrSender3 = "9cgS3VZhoJgaRpbfbFzAUrHxcXzhGZB1uzBXJJiZpwa"
+	scanAddrSender4 = "HjPZYpzbN6UspYq1jtF51A5LXZBpwLGUqV2KVrRuRjYo"
+)
+
 func sampleFinding(sig, victim, hacker string) models.ScanFindingRequest {
 	return models.ScanFindingRequest{
 		Signature:     sig,
@@ -87,8 +98,8 @@ func TestIngestScanFinding_RegistersWallets(t *testing.T) {
 	router := setupScannerRouter(env)
 	ctx := context.Background()
 
-	victim := "VictimWallet1111111111111111111111111111"
-	hacker := "HackerWallet1111111111111111111111111111"
+	victim := scanAddrVictim
+	hacker := scanAddrHacker
 
 	w := postFinding(t, router, scanTestAdminKey, sampleFinding("sig-drain-1", victim, hacker))
 	if w.Code != http.StatusOK {
@@ -143,12 +154,12 @@ func TestIngestScanFinding_MarksAssociated(t *testing.T) {
 	ctx := context.Background()
 
 	// An already-known wallet must keep its status, only gain the flag.
-	if _, err := env.repo.CreateWallet(ctx, "senderKnown", "solana", models.StatusPhishing, "", ""); err != nil {
+	if _, err := env.repo.CreateWallet(ctx, scanAddrSender2, "solana", models.StatusPhishing, "", ""); err != nil {
 		t.Fatalf("CreateWallet: %v", err)
 	}
 
-	payload := sampleFinding("sig-drain-assoc", "victim-assoc", "hacker-assoc")
-	payload.ExposedAddresses = []string{"senderNew", "senderKnown", "hacker-assoc", ""}
+	payload := sampleFinding("sig-drain-assoc", scanAddrVictim, scanAddrHacker)
+	payload.ExposedAddresses = []string{scanAddrSender1, scanAddrSender2, scanAddrHacker, ""}
 
 	w := postFinding(t, router, scanTestAdminKey, payload)
 	if w.Code != http.StatusOK {
@@ -164,7 +175,7 @@ func TestIngestScanFinding_MarksAssociated(t *testing.T) {
 		t.Errorf("expected 2 associated addresses (dupes/self skipped), got %d", resp.Associated)
 	}
 
-	fresh, err := env.repo.GetWallet(ctx, "senderNew", "solana")
+	fresh, err := env.repo.GetWallet(ctx, scanAddrSender1, "solana")
 	if err != nil || fresh == nil {
 		t.Fatalf("senderNew not registered: %v", err)
 	}
@@ -175,7 +186,7 @@ func TestIngestScanFinding_MarksAssociated(t *testing.T) {
 		t.Errorf("senderNew must carry the association flag and reason: %+v", fresh)
 	}
 
-	known, err := env.repo.GetWallet(ctx, "senderKnown", "solana")
+	known, err := env.repo.GetWallet(ctx, scanAddrSender2, "solana")
 	if err != nil || known == nil {
 		t.Fatalf("senderKnown lookup failed: %v", err)
 	}
@@ -187,19 +198,61 @@ func TestIngestScanFinding_MarksAssociated(t *testing.T) {
 	}
 
 	// SUSPICIOUS verdicts never mark associations.
-	payload2 := sampleFinding("sig-susp-assoc", "victim-s", "hacker-s")
+	payload2 := sampleFinding("sig-susp-assoc", scanAddrVictim, scanAddrSender4)
 	payload2.Verdict = models.ScanVerdictSuspicious
-	payload2.ExposedAddresses = []string{"senderSusp"}
+	payload2.ExposedAddresses = []string{scanAddrSender3}
 	w = postFinding(t, router, scanTestAdminKey, payload2)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
-	susp, err := env.repo.GetWallet(ctx, "senderSusp", "solana")
+	susp, err := env.repo.GetWallet(ctx, scanAddrSender3, "solana")
 	if err != nil {
 		t.Fatalf("senderSusp lookup failed: %v", err)
 	}
 	if susp != nil && susp.AssociatedHacker {
 		t.Error("suspicious findings must not mark associations")
+	}
+}
+
+// TestIngestScanFinding_FiltersInvalidAddresses verifies that placeholder
+// strings which fail strict base58-32B validation are dropped from the
+// finding before wallet registration: the finding itself is stored, but the
+// bogus counterparty never becomes a wallet.
+func TestIngestScanFinding_FiltersInvalidAddresses(t *testing.T) {
+	env := setupReportTest(t)
+	router := setupScannerRouter(env)
+	ctx := context.Background()
+
+	payload := sampleFinding("sig-invalid-addr", "VictimWallet1111111111111111111111111111", scanAddrHacker)
+	payload.ExposedAddresses = []string{scanAddrSender1, "X5eq6Ho3abcdefghijklmno1234567890123456789AB"}
+
+	w := postFinding(t, router, scanTestAdminKey, payload)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		VictimAdded bool `json:"victim_added"`
+		HackerAdded bool `json:"hacker_added"`
+		Associated  int  `json:"associated"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.VictimAdded {
+		t.Error("invalid victim address must not be registered as a wallet")
+	}
+	if !resp.HackerAdded {
+		t.Error("valid hacker address must be registered")
+	}
+	if resp.Associated != 1 {
+		t.Errorf("expected only 1 valid associated address, got %d", resp.Associated)
+	}
+
+	if w1, _ := env.repo.GetWallet(ctx, "VictimWallet1111111111111111111111111111", "solana"); w1 != nil {
+		t.Error("invalid victim placeholder must not appear in wallets")
+	}
+	if w2, _ := env.repo.GetWallet(ctx, "X5eq6Ho3abcdefghijklmno1234567890123456789AB", "solana"); w2 != nil {
+		t.Error("invalid exposed placeholder must not appear in wallets")
 	}
 }
 

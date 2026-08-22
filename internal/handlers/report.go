@@ -206,6 +206,11 @@ func (h *Handler) fillTxNode(c *gin.Context, node *models.ReportTxNode, chain st
 		if other == "" || other == node.Address || visited[other] {
 			continue
 		}
+		// показываем в дереве только валидные адреса: плейсхолдеры
+		// прошлых прогонов сканера не должны попадать в отчёт
+		if ok, _ := validators.ValidateAddress(treeValidationChain(f.Chain, chain), other); !ok {
+			continue
+		}
 		cp := byAddr[other]
 		if cp == nil {
 			cp = &counterparty{address: other, chain: f.Chain}
@@ -269,6 +274,17 @@ func (h *Handler) treeNodeStatus(c *gin.Context, address, chain string) string {
 		return status
 	}
 	return models.TreeStatusUnknown
+}
+
+// treeValidationChain picks the chain used to validate counterparties in
+// the transaction tree: the counterparty address is validated against the
+// chain recorded in its finding (scan findings always carry their own
+// chain), with the report chain as fallback.
+func treeValidationChain(findingChain, reportChain string) string {
+	if models.IsValidChain(findingChain) {
+		return findingChain
+	}
+	return reportChain
 }
 
 func currencyOf(chain string) string {
