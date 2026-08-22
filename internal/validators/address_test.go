@@ -63,9 +63,15 @@ func TestValidateSolanaAddress(t *testing.T) {
 		want    bool
 	}{
 		{"valid address", "7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV", true},
-		{"valid short", "1111111111111111", true},
+		{"system program", "11111111111111111111111111111111", true},
+		{"token program", "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", true},
+		{"drainer operator", "4QFiKg8ejx5LfqqLNbnKsiCnbEgRtgakBF6abMrkquKW", true},
+		{"short address", "1111111111111111", false},
+		{"valid chars wrong length", "X5eq6Ho3abcdefghijklmno1234567890123456789AB", false},
+		{"placeholder word", "VictimWallet1111111111111111111111111111", false},
 		{"too short", "7EcDhSYGxXys", false},
 		{"too long", "7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtVxxx", false},
+		{"invalid base58 char", "7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLt0", false},
 		{"empty", "", false},
 	}
 

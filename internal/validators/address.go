@@ -1,6 +1,7 @@
 package validators
 
 import (
+	"math/big"
 	"regexp"
 	"strings"
 
@@ -67,10 +68,38 @@ func validateBTC(address string) (bool, string) {
 }
 
 func validateSolana(address string) (bool, string) {
-	if solanaRegex.MatchString(address) && len(address) >= 32 && len(address) <= 44 {
-		return true, ""
+	if !solanaRegex.MatchString(address) || len(address) < 32 || len(address) > 44 {
+		return false, "invalid Solana address format: must be 32-44 base58 characters"
 	}
-	return false, "invalid Solana address format: must be 32-44 base58 characters"
+	if !solanaDecodesTo32Bytes(address) {
+		return false, "invalid Solana address: does not decode to a 32-byte public key"
+	}
+	return true, ""
+}
+
+// solanaDecodesTo32Bytes checks that a base58 string is a well-formed
+// encoding of exactly 32 bytes — the length of a Solana public key.
+// Arbitrary base58 strings with leading-zero padding or oversized payloads
+// pass the character regex but are not real addresses.
+func solanaDecodesTo32Bytes(address string) bool {
+	const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+	value := big.NewInt(0)
+	base := big.NewInt(58)
+	for _, ch := range address {
+		idx := strings.IndexRune(alphabet, ch)
+		if idx < 0 {
+			return false
+		}
+		value.Mul(value, base)
+		value.Add(value, big.NewInt(int64(idx)))
+	}
+	body := value.Bytes()
+	// ведущие '1' — это нулевые байты; остальное — само число
+	leading := 0
+	for leading < len(address) && address[leading] == '1' {
+		leading++
+	}
+	return leading+len(body) == 32
 }
 
 func validateSui(address string) (bool, string) {

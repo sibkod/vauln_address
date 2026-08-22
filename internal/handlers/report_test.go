@@ -335,8 +335,8 @@ func TestGetReport_TreeFromScanFindings(t *testing.T) {
 	ctx := context.Background()
 	env.seedHackedWallet(t, reportTestAddr, "evm")
 
-	const hackerAddr = "HackerOp11111111111111111111111111111111"
-	const otherVictim = "VictimTwo2222222222222222222222222222222"
+	const hackerAddr = scanAddrHacker
+	const otherVictim = scanAddrVictim
 	if _, err := env.repo.CreateWallet(ctx, hackerAddr, "solana", models.StatusHacker, "", ""); err != nil {
 		t.Fatalf("CreateWallet hacker: %v", err)
 	}

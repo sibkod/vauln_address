@@ -248,7 +248,12 @@ class Rpc:
             try:
                 payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
                 req = urllib.request.Request(ep, data=json.dumps(payload).encode(), headers=HEADERS)
-                return json.load(urllib.request.urlopen(req, timeout=self.timeout))
+                r = json.load(urllib.request.urlopen(req, timeout=self.timeout))
+                # часть публичных узлов не держит историю и отдаёт result: null
+                # вместо ошибки — считаем это отказом и переключаемся
+                if r.get("error") or (method == "getTransaction" and r.get("result") is None):
+                    raise RuntimeError(f"RPC {method} on {ep}: {r.get('error') or 'null result'}")
+                return r
             except Exception as e:  # noqa: BLE001
                 last_err = e
                 self.ep_idx += 1
@@ -288,55 +293,35 @@ class Rpc:
         return out
 
     def get_transactions(self, signatures, progress=False):
-        """Выкачивает транзакции батчами, при отказе — по одной."""
+        """Выкачивает транзакции по одной — публичные узлы режут батчи."""
         result = {}
         missing = list(signatures)
-        batch = 40
-        i = 0
-        while i < len(missing):
-            chunk = missing[i:i + batch]
-            done_batch = False
+        for i, s in enumerate(missing):
             try:
-                payload = [
-                    {"jsonrpc": "2.0", "id": j, "method": "getTransaction",
-                     "params": [s, {"encoding": "jsonParsed",
-                                    "maxSupportedTransactionVersion": 0}]}
-                    for j, s in enumerate(chunk)
-                ]
-                req = urllib.request.Request(
-                    RPC_ENDPOINTS[0], data=json.dumps(payload).encode(), headers=HEADERS)
-                resp = json.load(urllib.request.urlopen(req, timeout=180))
-                if isinstance(resp, list):
-                    # порядок ответов в batch не гарантирован — маппим по id
-                    for r in resp:
-                        if isinstance(r, dict) and isinstance(r.get("id"), int):
-                            result[chunk[r["id"]]] = r.get("result")
-                    ok = sum(1 for s in chunk if result.get(s))
-                    # узел часто режет батч: если успехов меньше половины —
-                    # добираем по одной, это надёжнее
-                    if ok < len(chunk) / 2:
-                        done_batch = False
-                    else:
-                        done_batch = True
-                        time.sleep(0.8)
+                r = self.call(
+                    "getTransaction",
+                    [s, {"encoding": "jsonParsed",
+                         "maxSupportedTransactionVersion": 0}])
+                result[s] = r.get("result")
             except Exception:  # noqa: BLE001
-                done_batch = False
-            if not done_batch:
-                for s in chunk:
-                    if result.get(s):
-                        continue
-                    try:
-                        result[s] = self.call(
-                            "getTransaction",
-                            [s, {"encoding": "jsonParsed",
-                                 "maxSupportedTransactionVersion": 0}],
-                        ).get("result")
-                    except Exception:  # noqa: BLE001
-                        result[s] = None
-                    time.sleep(0.15)
-            i += batch
-            if progress:
-                print(f"  txs: {min(i, len(missing))}/{len(missing)}", flush=True)
+                result[s] = None
+            time.sleep(0.8)
+            if progress and (i + 1) % 40 == 0:
+                print(f"  txs: {i + 1}/{len(missing)}", flush=True)
+        # вторая попытка для null'ов — первый прогон мог упасть по rate limit
+        nulls = [s for s, v in result.items() if not v]
+        if nulls:
+            time.sleep(5)
+            for s in nulls:
+                try:
+                    r = self.call(
+                        "getTransaction",
+                        [s, {"encoding": "jsonParsed",
+                             "maxSupportedTransactionVersion": 0}])
+                    result[s] = r.get("result")
+                except Exception:  # noqa: BLE001
+                    pass
+                time.sleep(0.8)
         return result
 
 
@@ -713,6 +698,12 @@ def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
               f" -> {fmt_time(sigs[0]['blockTime'])}")
 
     print("[2/3] Загрузка транзакций (с кэшем) ...")
+    # старые прогоны кэшировали null-ы из-за сброшенных RPC-запросов — чистим
+    stale = [k for k, v in cache.items() if not v]
+    for k in stale:
+        del cache[k]
+    if stale:
+        print(f"      выброшено пустых записей из кэша: {len(stale)}")
     missing = [s["signature"] for s in sigs if not cache.get(s["signature"])]
     print(f"      в кэше: {len(sigs) - len(missing)}, к загрузке: {len(missing)}")
     if missing:

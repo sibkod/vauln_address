@@ -36,7 +36,7 @@ const live = ref(true)
 const lastError = ref('')
 
 const POLL_INTERVAL = 4000
-const PAGE_SIZE = 50
+const PAGE_SIZE = 10
 let pollTimer: number | null = null
 
 async function fetchStats() {

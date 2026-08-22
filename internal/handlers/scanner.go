@@ -14,6 +14,7 @@ import (
 	"vauln-address/internal/models"
 	"vauln-address/internal/repository"
 	"vauln-address/internal/services"
+	"vauln-address/internal/validators"
 )
 
 // ==================== Scanner ingest (solana_scan.py -> DB) ====================
@@ -58,6 +59,29 @@ func (h *Handler) IngestScanFinding(c *gin.Context) {
 	if req.HackerAddress == req.VictimAddress {
 		req.HackerAddress = ""
 	}
+
+	// Reject addresses that fail strict encoding checks (base58-32B for
+	// Solana): the scanner occasionally emits placeholder strings that look
+	// like addresses but decode to the wrong byte length. The finding itself
+	// is still stored, but the bogus counterparty is not registered as a
+	// wallet and never pollutes reports.
+	if req.VictimAddress != "" {
+		if ok, _ := validators.ValidateAddress(req.Chain, req.VictimAddress); !ok {
+			req.VictimAddress = ""
+		}
+	}
+	if req.HackerAddress != "" {
+		if ok, _ := validators.ValidateAddress(req.Chain, req.HackerAddress); !ok {
+			req.HackerAddress = ""
+		}
+	}
+	filtered := req.ExposedAddresses[:0]
+	for _, addr := range req.ExposedAddresses {
+		if ok, _ := validators.ValidateAddress(req.Chain, addr); ok {
+			filtered = append(filtered, addr)
+		}
+	}
+	req.ExposedAddresses = filtered
 
 	id, inserted, err := h.repo.InsertScanFinding(c.Request.Context(), req)
 	if err != nil {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, inject, onMounted, onUnmounted } from 'vue'
+import CollapsibleSection from '../components/CollapsibleSection.vue'
 import { useRoute } from 'vue-router'
 import TxTreeNode, { type TxNode } from '../components/TxTreeNode.vue'
 
@@ -326,8 +327,7 @@ function evidenceDate(e: StatusEvidence): string {
       </div>
 
       <!-- Evidence chain -->
-      <div v-if="report.evidence && report.evidence.length" class="section">
-        <h2>Evidence chain</h2>
+      <CollapsibleSection v-if="report.evidence && report.evidence.length" title="Evidence chain">
         <p class="tree-hint">Why this wallet has the {{ meta.label }} status — step by step</p>
         <ol class="evidence-chain">
           <li v-for="(e, i) in report.evidence" :key="i" class="evidence-item" :class="evidenceCls(e.code)">
@@ -348,11 +348,10 @@ function evidenceDate(e: StatusEvidence): string {
             </div>
           </li>
         </ol>
-      </div>
+      </CollapsibleSection>
 
       <!-- Leaks -->
-      <div v-if="report.leaks && report.leaks.length" class="section">
-        <h2>Leaky records</h2>
+      <CollapsibleSection v-if="report.leaks && report.leaks.length" title="Leaky records">
         <table class="leaks-table">
           <thead>
             <tr><th>Type</th><th>Source</th><th>Discovered</th></tr>
@@ -365,15 +364,14 @@ function evidenceDate(e: StatusEvidence): string {
             </tr>
           </tbody>
         </table>
-      </div>
+      </CollapsibleSection>
 
       <!-- Transaction tree -->
-      <div v-if="report.transactions" class="section">
-        <h2>Transaction flows</h2>
+      <CollapsibleSection v-if="report.transactions" title="Transaction flows">
         <p class="tree-hint">Counterparties indexed by the scanner and the status of each wallet</p>
         <TxTreeNode v-if="report.transactions.children?.length" :node="report.transactions" />
         <p v-else class="tree-empty">No indexed transactions for this address yet — the scanner has not observed it on-chain.</p>
-      </div>
+      </CollapsibleSection>
 
       <div class="section footer-note">
         Report created {{ new Date(report.created_at).toLocaleString() }}
