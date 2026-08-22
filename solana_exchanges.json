@@ -1,0 +1,21 @@
+{
+  "_about": "Известные горячие/холодные кошельки бирж и обменных сервисов в Solana. Используется solana_scan.py для определения точек кэшаута (куда ушли украденные средства). Пополняйте адресами, помеченными в эксплорерах (Solscan/SolanaFM labels).",
+  "_sources": [
+    "https://github.com/ashpoolin/gelato.sh (src/data/exchanges.js)",
+    "explorer labels: solscan.io / solana.fm"
+  ],
+  "exchanges": {
+    "5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9": "Binance (hot wallet)",
+    "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM": "Binance (cold wallet)",
+    "AC5RDfQFmDS1deWZos921JfqscXdByf8BKHs5ACWjtW2": "Bybit",
+    "H8sMJSCQxfKiFTCfDR3DUMLPwcRbM61LGFJ8N4dK3WjS": "Coinbase",
+    "2AQdpHJ2JpcEgPiATUXjQxA8QmafFegfQwSLWSprPicn": "Coinbase 2",
+    "6FEVkH17P9y8Q9aCkDdPcMDjvj7SVxrTETaYEm8f51Jy": "Crypto.com",
+    "AobVSwdW9BbpMdJvTqeCN4hPAmh4rHm7vwLnQ5ATSyrS": "Crypto.com 2",
+    "u6PJ8DtQuPFnfmwHbGFULQ4u4EgjDiyYKjVEsynXq2w": "Gate.io",
+    "5VCwKtCXgCJ6kit5FybXjvriW3xELsFDhYrPSqtJNmcD": "OKX",
+    "88xTWZMeKfiTgbfEmPLdsUCQcZinwUfk25EBQZ21XMAZ": "HTX (Huobi)",
+    "FWznbcNXWQuHTawe9RxvQ2LdCENssh12dsznf4RiouN5": "Kraken",
+    "ASTyfSima4LLAdDgoFGkgqoKowG1LZFDr9fAQrg7iaJZ": "MEXC"
+  }
+}

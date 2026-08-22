@@ -20,6 +20,16 @@ drainer_analyzer.py — детектор Solana-дрейнеров и анали
 может быть легитимным переводом/депозитом/свапом), DRAINER (только P1 —
 захват on-curve кошелька неизвестной программой).
 
+Трейсинг пути средств (scan-wallet): после выявления кошельков операторов
+их исходящие SOL-переводы считаются распределением украденного. Получатели
+классифицируются:
+  F1  1 перевод от оператора    — SUSPICIOUS (возможный сообщник)
+  F2  2+ перевода от операторов — hacker (соучастник/другой хакер);
+      такие кошельки раскрываются рекурсивно (--trace-depth)
+Кошельки бирж/обменников (solana_exchanges.json, --exchanges-file / env
+SOLANA_EXCHANGES_FILE) — точки кэшаута: цепочка на них заканчивается.
+Программы и PDA (off-curve) — не кошельки, в метки не идут.
+
 Белый список известных программ (~300 programId: DEX, лендинг, NFT,
 инфраструктура) подгружается из solana_programs.json рядом со скриптом
 (флаг --programs-file / env SOLANA_PROGRAMS_FILE) — без него P3 шумит.
@@ -141,9 +151,33 @@ KNOWN_BAD_PROGRAMS = {
 # На миллионах реальных транзакций это редкая комбинация, а у дрейнера — постоянная.
 COMPUTE_BUDGET = "ComputeBudget111111111111111111111111111111"
 
+# Известные кошельки бирж и обменных сервисов (горячие/холодные) — точки
+# кэшаута, куда операторы выводят украденное. Перевод на такой адрес — конец
+# отслеживаемой цепочки, а не сообщник. Пополняется из solana_exchanges.json
+# (--exchanges-file / env SOLANA_EXCHANGES_FILE).
+KNOWN_EXCHANGES = {
+    "5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9": "Binance (hot wallet)",
+    "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM": "Binance (cold wallet)",
+    "AC5RDfQFmDS1deWZos921JfqscXdByf8BKHs5ACWjtW2": "Bybit",
+    "H8sMJSCQxfKiFTCfDR3DUMLPwcRbM61LGFJ8N4dK3WjS": "Coinbase",
+    "2AQdpHJ2JpcEgPiATUXjQxA8QmafFegfQwSLWSprPicn": "Coinbase 2",
+    "6FEVkH17P9y8Q9aCkDdPcMDjvj7SVxrTETaYEm8f51Jy": "Crypto.com",
+    "AobVSwdW9BbpMdJvTqeCN4hPAmh4rHm7vwLnQ5ATSyrS": "Crypto.com 2",
+    "u6PJ8DtQuPFnfmwHbGFULQ4u4EgjDiyYKjVEsynXq2w": "Gate.io",
+    "5VCwKtCXgCJ6kit5FybXjvriW3xELsFDhYrPSqtJNmcD": "OKX",
+    "88xTWZMeKfiTgbfEmPLdsUCQcZinwUfk25EBQZ21XMAZ": "HTX (Huobi)",
+    "FWznbcNXWQuHTawe9RxvQ2LdCENssh12dsznf4RiouN5": "Kraken",
+    "ASTyfSima4LLAdDgoFGkgqoKowG1LZFDr9fAQrg7iaJZ": "MEXC",
+}
+
+# Пыль ниже этого порога в исходящих потоках операторов игнорируется.
+TRACE_MIN_SOL = 0.001
+
 
 DEFAULT_PROGRAMS_FILE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "solana_programs.json")
+DEFAULT_EXCHANGES_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "solana_exchanges.json")
 
 
 def load_known_programs(path):
@@ -169,6 +203,29 @@ def load_known_programs(path):
         print(f"[!] файл белого списка не найден: {path} "
               f"(используется встроенный, {len(KNOWN_PROGRAMS)} программ)",
               file=sys.stderr)
+    except Exception as e:
+        print(f"[!] ошибка загрузки {path}: {e}", file=sys.stderr)
+
+
+def load_known_exchanges(path):
+    """Догружает кошельки бирж/обменников из JSON (address -> name).
+
+    Файл опционален: без него работает встроенный список KNOWN_EXCHANGES.
+    """
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        exchanges = data.get("exchanges", data)
+        added = 0
+        for addr, name in exchanges.items():
+            addr = addr.strip()
+            if addr and addr not in KNOWN_EXCHANGES:
+                KNOWN_EXCHANGES[addr] = str(name)
+                added += 1
+        print(f"[i] известные биржи/обменники: {len(KNOWN_EXCHANGES)} "
+              f"(+{added} из {path})")
+    except FileNotFoundError:
+        pass  # файл опционален — встроенного списка достаточно
     except Exception as e:
         print(f"[!] ошибка загрузки {path}: {e}", file=sys.stderr)
 
@@ -684,32 +741,163 @@ def mode_quick_scan(rpc, address, limit, watch_programs=None):
     return flagged
 
 
-def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
-                     api_url=None, api_key=None):
+def outgoing_transfers(tx, address, signature=""):
+    """SOL-переводы, уходящие С адреса внутри транзакции (system transfer).
+
+    Пыль (< TRACE_MIN_SOL) и self-transfer игнорируются.
+    """
+    outs = []
+    for ix in iter_instructions(tx):
+        if ix.get("program") != "system":
+            continue
+        p = ix.get("parsed") or {}
+        if p.get("type") != "transfer":
+            continue
+        info = p.get("info") or {}
+        if info.get("source") != address:
+            continue
+        dst = info.get("destination")
+        amt = int(info.get("lamports") or 0) / 1e9
+        if not dst or dst == address or amt < TRACE_MIN_SOL:
+            continue
+        outs.append({"to": dst, "amount_sol": amt, "tx": signature})
+    return outs
+
+
+def trace_fund_flows(rpc, seeds, cache_dir, depth=1, max_txs=100, max_wallets=10):
+    """BFS по исходящим SOL-потокам от кошельков операторов (полный путь средств).
+
+    seeds — адреса операторов (назначения sweep-переводов / новые владельцы
+    захваченных аккаунтов). Каждый получатель их исходящих переводов —
+    соучастник или точка кэшаута; получатели с 2+ переводами (сообщники)
+    раскрываются рекурсивно до глубины depth. Биржи (KNOWN_EXCHANGES),
+    программы и PDA (off-curve) — терминальные узлы, дальше не идём.
+
+    Возвращает список рёбер {from,to,level,sol,txs,signatures}.
+    """
+    visited = set()
+    edges = []
+    frontier = [a for a in dict.fromkeys(seeds)
+                if a and a not in KNOWN_EXCHANGES][:max_wallets]
+    level = 1  # уровень 0 — ребро victim -> operator из основного анализа
+    while frontier and level <= depth + 1:
+        nxt = []
+        for src in frontier:
+            if src in visited or src in KNOWN_EXCHANGES:
+                continue
+            visited.add(src)
+            print(f"  [trace] уровень {level}: исходящие потоки {src[:12]}...",
+                  flush=True)
+            try:
+                sigs, cache = load_wallet_txs(rpc, src, cache_dir, max_txs,
+                                              verbose=False)
+            except Exception as e:  # noqa: BLE001 — один узел не роняет трейс
+                print(f"  [trace] !! не удалось загрузить {src[:12]}...: {e}")
+                continue
+            agg = {}
+            for s in sigs:
+                tx = cache.get(s["signature"])
+                if not tx:
+                    continue
+                for o in outgoing_transfers(tx, src, s["signature"]):
+                    a = agg.setdefault(o["to"], {"sol": 0.0, "txs": 0, "sigs": []})
+                    a["sol"] += o["amount_sol"]
+                    a["txs"] += 1
+                    a["sigs"].append(o["tx"])
+            for dst, a in agg.items():
+                edges.append({"from": src, "to": dst, "level": level,
+                              "sol": round(a["sol"], 6), "txs": a["txs"],
+                              "signatures": a["sigs"]})
+                # сообщник с 2+ переводами — раскрываем его исходящие дальше
+                if (a["txs"] >= 2 and dst not in visited
+                        and dst not in KNOWN_EXCHANGES
+                        and dst not in KNOWN_PROGRAMS and is_on_curve(dst)):
+                    nxt.append(dst)
+        frontier = [d for d in dict.fromkeys(nxt)
+                    if d not in visited][:max_wallets]
+        level += 1
+    return edges
+
+
+def classify_downstream(edges):
+    """Сводит рёбра потоков по получателю и выставляет метку.
+
+    exchange   — кошелёк биржи/обменника (точка кэшаута, конец цепочки)
+    program    — известная программа или off-curve адрес (PDA), не кошелёк
+    hacker     — 2+ перевода от операторов сети: соучастник/другой хакер
+    suspicious — 1 перевод от оператора: возможный сообщник
+    """
+    by_dst = {}
+    for e in edges:
+        d = by_dst.setdefault(e["to"], {"sol": 0.0, "txs": 0, "sources": set(),
+                                        "sigs": []})
+        d["sol"] += e["sol"]
+        d["txs"] += e["txs"]
+        d["sources"].add(e["from"])
+        d["sigs"].extend(e["signatures"])
+    out = []
+    for dst, d in by_dst.items():
+        entry = {"address": dst, "sol_received": round(d["sol"], 6),
+                 "txs": d["txs"], "sources": sorted(d["sources"]),
+                 "signatures": d["sigs"]}
+        if dst in KNOWN_EXCHANGES:
+            entry["label"] = "exchange"
+            entry["service"] = KNOWN_EXCHANGES[dst]
+        elif dst in KNOWN_PROGRAMS or not is_on_curve(dst):
+            entry["label"] = "program"
+        elif d["txs"] >= 2 or len(d["sources"]) >= 2:
+            entry["label"] = "hacker"
+        else:
+            entry["label"] = "suspicious"
+        out.append(entry)
+    out.sort(key=lambda e: -e["sol_received"])
+    return out
+
+
+def load_wallet_txs(rpc, address, cache_dir, max_txs=None, verbose=True):
+    """Подписи и транзакции адреса с дисковым кэшем <cache_dir>/<address>.json.
+
+    Возвращает (sigs, cache): sigs — ответ getSignaturesForAddress (новые
+    первыми), cache — {signature: tx}. Пустые записи кэша (null из-за
+    сброшенных RPC-запросов прошлых прогонов) выбрасываются.
+    """
     os.makedirs(cache_dir, exist_ok=True)
     cache_path = os.path.join(cache_dir, f"{address}.json")
-    cache = json.load(open(cache_path)) if os.path.exists(cache_path) else {}
-
-    print(f"[1/3] Список транзакций {address} ...")
+    cache = {}
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path) as f:
+                cache = json.load(f)
+        except Exception:  # noqa: BLE001 — битый кэш перекачиваем
+            cache = {}
+    stale = [k for k, v in cache.items() if not v]
+    for k in stale:
+        del cache[k]
+    if stale and verbose:
+        print(f"      выброшено пустых записей из кэша: {len(stale)}")
     sigs = rpc.get_signatures(address, limit=max_txs)
+    missing = [s["signature"] for s in sigs if not cache.get(s["signature"])]
+    if verbose:
+        print(f"      в кэше: {len(sigs) - len(missing)}, к загрузке: {len(missing)}")
+    if missing:
+        fetched = rpc.get_transactions(missing, progress=verbose)
+        cache.update(fetched)
+        with open(cache_path, "w") as f:
+            json.dump(cache, f)
+    return sigs, cache
+
+
+def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
+                     api_url=None, api_key=None, trace_depth=1,
+                     trace_wallets=10, trace_txs=100):
+    cache_path = os.path.join(cache_dir, f"{address}.json")
+    print(f"[1/3] Список транзакций {address} ...")
+    print("[2/3] Загрузка транзакций (с кэшем) ...")
+    sigs, cache = load_wallet_txs(rpc, address, cache_dir, max_txs)
     print(f"      всего подписей: {len(sigs)}")
     if sigs:
         print(f"      период: {fmt_time(sigs[-1]['blockTime'])}"
               f" -> {fmt_time(sigs[0]['blockTime'])}")
-
-    print("[2/3] Загрузка транзакций (с кэшем) ...")
-    # старые прогоны кэшировали null-ы из-за сброшенных RPC-запросов — чистим
-    stale = [k for k, v in cache.items() if not v]
-    for k in stale:
-        del cache[k]
-    if stale:
-        print(f"      выброшено пустых записей из кэша: {len(stale)}")
-    missing = [s["signature"] for s in sigs if not cache.get(s["signature"])]
-    print(f"      в кэше: {len(sigs) - len(missing)}, к загрузке: {len(missing)}")
-    if missing:
-        fetched = rpc.get_transactions(missing, progress=True)
-        cache.update(fetched)
-        json.dump(cache, open(cache_path, "w"))
 
     print("[3/3] Анализ потоков и паттернов ...")
     in_flows, out_flows = Counter(), Counter()
@@ -721,6 +909,7 @@ def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
     operator_sol = defaultdict(float)  # swept SOL received per operator
     unknown_progs = Counter()
     drainer_tx_count = 0
+    theft_edges = {}  # (victim, operator) -> {sol, txs, sigs}: ребра уровня 0
 
     for s in sigs:
         tx = cache.get(s["signature"])
@@ -738,6 +927,11 @@ def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
             if d.get("to") and d["to"] != d.get("from"):
                 operators[d["to"]] += 1
                 operator_sol[d["to"]] += d.get("amount_sol") or 0
+                key = (d["from"], d["to"])
+                e = theft_edges.setdefault(key, {"sol": 0.0, "txs": 0, "sigs": []})
+                e["sol"] += d.get("amount_sol") or 0
+                e["txs"] += 1
+                e["sigs"].append(s["signature"])
         for t in details["takeovers"]:
             takeover_victims.add(t["account"])
             takeover_details[t["account"]] = {"tx": s["signature"],
@@ -763,6 +957,29 @@ def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
                         ts, datetime.timezone.utc).strftime("%Y-%m")] += amt
             elif info.get("source") == address:
                 out_flows[info["destination"]] += amt
+
+    # Трейсинг исходящих потоков операторов: все исходящие с выявленных
+    # кошельков операторов — это соучастники, другие хакеры или точки
+    # кэшаута (биржи/обменники). 1 перевод получателю — SUSPICIOUS,
+    # 2+ перевода — hacker; hacker-получатели раскрываются рекурсивно
+    # до trace_depth уровней (полный путь движения средств).
+    downstream, flow_edges = [], []
+    seeds = [a for a, _ in operators.most_common(trace_wallets)]
+    if address not in seeds:
+        seeds.insert(0, address)
+    if trace_depth >= 0 and seeds:
+        print(f"[trace] трейсинг исходящих потоков: {len(seeds)} операторов, "
+              f"глубина {trace_depth}, до {trace_txs} tx на кошелёк ...")
+        flow_edges = trace_fund_flows(rpc, seeds, cache_dir, depth=trace_depth,
+                                      max_txs=trace_txs,
+                                      max_wallets=trace_wallets)
+        downstream = classify_downstream(flow_edges)
+    fund_flow = [{"from": v, "to": op, "level": 0,
+                  "sol": round(e["sol"], 6), "txs": e["txs"],
+                  "signatures": e["sigs"]}
+                 for (v, op), e in sorted(theft_edges.items(),
+                                          key=lambda kv: -kv[1]["sol"])]
+    fund_flow.extend(flow_edges)
 
     report = {
         "target": address,
@@ -791,6 +1008,13 @@ def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
                              for a, c in operators.most_common(50)],
         "unknown_programs_seen": [{"program": p, "tx_count": c}
                                   for p, c in unknown_progs.most_common(30)],
+        "fund_flow": fund_flow,
+        "downstream_wallets": [{k: v for k, v in e.items() if k != "signatures"}
+                               for e in downstream],
+        "cashout_points": [{"address": e["address"], "service": e["service"],
+                            "sol_received": e["sol_received"], "txs": e["txs"],
+                            "sources": e["sources"]}
+                           for e in downstream if e["label"] == "exchange"],
     }
 
     out_path = os.path.join(cache_dir, f"{address}.report.json")
@@ -821,6 +1045,24 @@ def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
     for d_ in report["top_sources"][:10]:
         mark = " [HIJACKED]" if d_["hijacked"] else ""
         print(f"    {d_['address']}  {d_['sol']:.6f} SOL ({d_['txs']} tx){mark}")
+    if downstream:
+        hackers = [e for e in downstream if e["label"] == "hacker"]
+        suspects = [e for e in downstream if e["label"] == "suspicious"]
+        print("\n  ПУТЬ ДВИЖЕНИЯ СРЕДСТВ (исходящие потоки операторов):")
+        if report["cashout_points"]:
+            print("    Кэшаут (биржи/обменники):")
+            for e in report["cashout_points"][:10]:
+                print(f"      {e['address']}  {e['sol_received']:.4f} SOL"
+                      f" ({e['txs']} tx)  -> {e['service']}")
+        if hackers:
+            print("    Соучастники/другие хакеры (2+ перевода):")
+            for e in hackers[:10]:
+                print(f"      {e['address']}  {e['sol_received']:.4f} SOL"
+                      f" ({e['txs']} tx)")
+        if suspects:
+            print("    Подозрительные получатели (1 перевод):")
+            for e in suspects[:10]:
+                print(f"      {e['address']}  {e['sol_received']:.4f} SOL")
     print(f"\n  Полный отчёт: {out_path}")
     print(f"  Кэш транзакций: {cache_path}")
 
@@ -861,6 +1103,38 @@ def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
             if resp is not None:
                 sent += 1
         print(f"  Отправлено находок в API: {sent}/{len(report['hijacked_accounts'])}")
+
+        # Downstream-находки: получатель одного перевода от оператора —
+        # SUSPICIOUS, 2+ переводов — hacker (verdict DRAINER с пустой жертвой:
+        # поток, а не дрейн — бэкенд регистрирует только сторону хакера).
+        # Биржи/обменники и программы не отправляем — это не злоумышленники.
+        flow_sent = 0
+        for e in downstream:
+            if e["label"] == "suspicious":
+                f_verdict, f_ind = "SUSPICIOUS", ["F1_DOWNSTREAM_TRANSFER"]
+            elif e["label"] == "hacker":
+                f_verdict, f_ind = "DRAINER", ["F2_REPEAT_DOWNSTREAM"]
+            else:
+                continue
+            resp = post_finding(api_url, api_key, {
+                "chain": "solana",
+                "signature": e["signatures"][-1],
+                "slot": 0,
+                "verdict": f_verdict,
+                "indicators": f_ind,
+                "victim_address": "",
+                "hacker_address": e["address"],
+                "amount_sol": e["sol_received"],
+                "programs": [],
+                "exposed_addresses": e["sources"],
+                "source": "flow-trace",
+            })
+            if resp is not None:
+                flow_sent += 1
+        flow_total = sum(1 for e in downstream
+                         if e["label"] in ("suspicious", "hacker"))
+        if flow_total:
+            print(f"  Отправлено downstream-находок в API: {flow_sent}/{flow_total}")
     return report
 
 
@@ -885,6 +1159,15 @@ def main():
     p_sw.add_argument("--cache-dir", default="./drainer_cache")
     p_sw.add_argument("--max-txs", type=int, default=None,
                       help="ограничить число транзакций (для теста)")
+    p_sw.add_argument("--trace-depth", type=int, default=1,
+                      help="глубина трейсинга исходящих потоков операторов "
+                           "(0 — только исходящие операторов, -1 — выключить)")
+    p_sw.add_argument("--trace-wallets", type=int, default=10,
+                      help="макс. кошельков операторов на уровень трейсинга")
+    p_sw.add_argument("--trace-txs", type=int, default=100,
+                      help="макс. транзакций на кошелёк при трейсинге")
+    p_sw.add_argument("--no-trace", action="store_true",
+                      help="не трейсить исходящие потоки операторов")
 
     p_w = sub.add_parser("watch", help="LIVE-мониторинг блоков на паттерн дрейнера")
     p_w.add_argument("--full-blocks", action="store_true",
@@ -904,6 +1187,11 @@ def main():
                                               DEFAULT_PROGRAMS_FILE),
                        help="JSON со списком известных программ "
                             "(по умолчанию solana_programs.json рядом со скриптом)")
+        p.add_argument("--exchanges-file",
+                       default=os.environ.get("SOLANA_EXCHANGES_FILE",
+                                              DEFAULT_EXCHANGES_FILE),
+                       help="JSON с кошельками бирж/обменников (по умолчанию "
+                            "solana_exchanges.json рядом со скриптом)")
 
     # отправка находок в БД через API бэкенда (watch и scan-wallet)
     for p in (p_sw, p_w):
@@ -916,6 +1204,8 @@ def main():
     args = ap.parse_args()
     if args.programs_file:
         load_known_programs(args.programs_file)
+    if args.exchanges_file:
+        load_known_exchanges(args.exchanges_file)
     rpc = Rpc()
 
     if args.mode == "check-tx":
@@ -923,9 +1213,13 @@ def main():
     elif args.mode == "quick-scan":
         mode_quick_scan(rpc, args.address, args.limit, args.watch_program)
     elif args.mode == "scan-wallet":
+        trace_depth = -1 if args.no_trace else args.trace_depth
         mode_scan_wallet(rpc, args.address, args.cache_dir,
                          args.watch_program, args.max_txs,
-                         api_url=args.api_url, api_key=args.api_key)
+                         api_url=args.api_url, api_key=args.api_key,
+                         trace_depth=trace_depth,
+                         trace_wallets=args.trace_wallets,
+                         trace_txs=args.trace_txs)
     elif args.mode == "watch":
         mode_watch(rpc, args.watch_program, full_blocks=args.full_blocks,
                    out_file=args.out, stats_every=args.stats_every,

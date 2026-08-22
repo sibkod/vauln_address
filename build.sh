@@ -107,7 +107,7 @@ JWT_SECRET=${JWT_SECRET:-}
 EOF
 
 # scanner + whitelist travel with the build (live monitor data source)
-cp solana_scan.py solana_programs.json "$DIST_DIR/"
+cp solana_scan.py solana_programs.json solana_exchanges.json "$DIST_DIR/"
 [[ -d migrations ]] && cp -r migrations "$DIST_DIR/"
 
 echo "--- config -> $ENV_OUT"

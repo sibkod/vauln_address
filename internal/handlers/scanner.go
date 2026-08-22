@@ -410,6 +410,14 @@ var scanIndicatorMeta = map[string]struct {
 		"Known drainer program",
 		"the transaction invoked a program from the drainer watchlist",
 	},
+	"F1_DOWNSTREAM_TRANSFER": {
+		"Downstream transfer from drainer operator",
+		"this wallet received funds from a drainer operator — possible accomplice or cash-out hop",
+	},
+	"F2_REPEAT_DOWNSTREAM": {
+		"Repeated downstream transfers from drainer operators",
+		"this wallet received funds from drainer operators two or more times — likely accomplice or another hacker wallet",
+	},
 }
 
 // buildStatusEvidence composes the chain of evidence explaining the wallet
