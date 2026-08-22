@@ -109,7 +109,7 @@ onMounted(loadCaptcha)
 
     <div v-if="successId !== null" class="success-box">
       <div class="success-icon">✅</div>
-      <h2>Report #{{ successId }} submitted</h2>
+      <h2>Report submitted</h2>
       <p>
         Thank you! The report has been saved and
         <span v-if="telegramSent">forwarded to our analysts on Telegram.</span>

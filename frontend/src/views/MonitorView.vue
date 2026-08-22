@@ -16,19 +16,9 @@ interface Finding {
   created_at: string
 }
 
-interface Stats {
-  total_findings: number
-  drainer_count: number
-  suspicious_count: number
-  victim_count: number
-  hacker_count: number
-  stolen_sol: number
-}
-
 const apiBase = inject<string>('apiBase', '')
 
 const findings = ref<Finding[]>([])
-const stats = ref<Stats | null>(null)
 const loading = ref(true)
 const live = ref(true)
 const lastError = ref('')
@@ -36,13 +26,6 @@ const lastError = ref('')
 const POLL_INTERVAL = 4000
 const FEED_SIZE = 10
 let pollTimer: number | null = null
-
-async function fetchStats() {
-  try {
-    const res = await fetch(`${apiBase}/api/monitor/stats`)
-    if (res.ok) stats.value = await res.json()
-  } catch { /* keep old stats */ }
-}
 
 async function fetchLatest() {
   const res = await fetch(`${apiBase}/api/monitor/findings`)
@@ -65,7 +48,6 @@ async function pollNew() {
       }
     }
     lastError.value = ''
-    fetchStats()
   } catch {
     lastError.value = 'Connection lost — retrying…'
   }
@@ -98,7 +80,7 @@ function timeAgo(ts: string): string {
 
 onMounted(async () => {
   try {
-    await Promise.all([fetchLatest(), fetchStats()])
+    await fetchLatest()
     lastError.value = ''
   } catch {
     lastError.value = 'Failed to load monitoring data. Is the backend running?'
@@ -127,33 +109,6 @@ onUnmounted(() => {
           {{ live ? '⏸ Pause' : '▶ Resume' }}
         </button>
         <span v-if="lastError" class="feed-error">{{ lastError }}</span>
-      </div>
-    </div>
-
-    <div v-if="stats" class="stats-grid">
-      <div class="stat-card">
-        <div class="stat-value">{{ stats.total_findings }}</div>
-        <div class="stat-label">Findings</div>
-      </div>
-      <div class="stat-card danger">
-        <div class="stat-value">{{ stats.drainer_count }}</div>
-        <div class="stat-label">Drainer TXs</div>
-      </div>
-      <div class="stat-card warn">
-        <div class="stat-value">{{ stats.suspicious_count }}</div>
-        <div class="stat-label">Suspicious</div>
-      </div>
-      <div class="stat-card victim">
-        <div class="stat-value">{{ stats.victim_count }}</div>
-        <div class="stat-label">Victims</div>
-      </div>
-      <div class="stat-card hacker">
-        <div class="stat-value">{{ stats.hacker_count }}</div>
-        <div class="stat-label">Hackers</div>
-      </div>
-      <div class="stat-card sol">
-        <div class="stat-value">{{ stats.stolen_sol.toFixed(2) }} ◎</div>
-        <div class="stat-label">SOL swept</div>
       </div>
     </div>
 
@@ -196,10 +151,6 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div class="indicator-chips">
-          <span v-for="ind in f.indicators" :key="ind" class="chip">{{ ind }}</span>
-        </div>
-
         <div class="finding-footer">
           <a :href="solscanTx(f.signature)" target="_blank" rel="noopener" class="tx-link">
             {{ shortAddr(f.signature) }} ↗
@@ -209,7 +160,6 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <p class="feed-note">Showing the latest {{ FEED_SIZE }} detections — older history is not available.</p>
     </div>
   </div>
 </template>
@@ -308,45 +258,6 @@ onUnmounted(() => {
   font-size: 0.8rem;
 }
 
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 0.75rem;
-  margin-bottom: 1.5rem;
-}
-
-.stat-card {
-  background: #1a1f2e;
-  border: 1px solid #2a3548;
-  border-radius: 12px;
-  padding: 0.9rem;
-  text-align: center;
-}
-
-.stat-card.danger { border-color: rgba(255, 107, 107, 0.35); }
-.stat-card.warn { border-color: rgba(255, 179, 71, 0.35); }
-.stat-card.victim { border-color: rgba(255, 179, 71, 0.35); }
-.stat-card.hacker { border-color: rgba(255, 107, 107, 0.35); }
-.stat-card.sol { border-color: rgba(102, 126, 234, 0.4); }
-
-.stat-value {
-  font-size: 1.4rem;
-  font-weight: 700;
-  color: #e7ecf5;
-}
-
-.stat-card.danger .stat-value, .stat-card.hacker .stat-value { color: #ff6b6b; }
-.stat-card.warn .stat-value, .stat-card.victim .stat-value { color: #ffb347; }
-.stat-card.sol .stat-value { color: #7ea2ff; }
-
-.stat-label {
-  color: #6b7a9e;
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  margin-top: 0.2rem;
-}
-
 .loading {
   text-align: center;
   padding: 3rem;
@@ -383,13 +294,6 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
-}
-
-.feed-note {
-  text-align: center;
-  color: #4c5a7a;
-  font-size: 0.8rem;
-  margin: 0.5rem 0 0;
 }
 
 .finding-card {
@@ -473,23 +377,6 @@ onUnmounted(() => {
 .addr.hacker { color: #ff6b6b; }
 .addr.none { color: #4c5a7a; }
 .addr:hover { text-decoration: underline; }
-
-.indicator-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  margin-bottom: 0.6rem;
-}
-
-.chip {
-  background: #12182a;
-  border: 1px solid #2a3548;
-  color: #8fa3d0;
-  border-radius: 6px;
-  padding: 0.15rem 0.5rem;
-  font-size: 0.68rem;
-  font-family: monospace;
-}
 
 .finding-footer {
   display: flex;
