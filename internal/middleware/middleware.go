@@ -20,8 +20,8 @@ import (
 )
 
 type RateLimiter struct {
-	repo  *repository.Repository
-	cfg   *config.Config
+	repo *repository.Repository
+	cfg  *config.Config
 }
 
 func NewRateLimiter(repo *repository.Repository, cfg *config.Config) *RateLimiter {
@@ -115,7 +115,7 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 			}
 		}
 
-					// Check IP limit using FreeCheckLimit
+		// Check IP limit using FreeCheckLimit
 		if rateLimit.Count >= rl.cfg.FreeCheckLimit {
 			// IP limit exhausted
 			// For authenticated users: try to use their balance as fallback
@@ -240,18 +240,18 @@ func formatDuration(d time.Duration) string {
 
 // Address validation regexes
 var (
-	evmRegex   = regexp.MustCompile(`^0x[a-fA-F0-9]{40}$`)
-	btcRegex   = regexp.MustCompile(`^(bc1|[13])[a-zA-HJ-NP-Z0-9]{25,39}$`)
-	solRegex   = regexp.MustCompile(`^[1-9A-HJ-NP-Za-km-z]{32,44}$`)
-	suiRegex   = regexp.MustCompile(`^0x[a-fA-F0-9]{64}$`)
-	tronRegex  = regexp.MustCompile(`^T[A-HJ-NP-Za-km-z1-9]{33}$`)
+	evmRegex  = regexp.MustCompile(`^0x[a-fA-F0-9]{40}$`)
+	btcRegex  = regexp.MustCompile(`^(bc1|[13])[a-zA-HJ-NP-Z0-9]{25,89}$`)
+	solRegex  = regexp.MustCompile(`^[1-9A-HJ-NP-Za-km-z]{32,44}$`)
+	suiRegex  = regexp.MustCompile(`^0x[a-fA-F0-9]{64}$`)
+	tronRegex = regexp.MustCompile(`^T[A-HJ-NP-Za-km-z1-9]{33}$`)
 )
 
 func validateAddressFormat(chain, address string) bool {
 	if address == "" {
 		return false
 	}
-	
+
 	switch chain {
 	case "evm":
 		return evmRegex.MatchString(address)
@@ -341,7 +341,7 @@ func AdminMiddleware(adminAPIKey string) gin.HandlerFunc {
 		if adminKey == "" {
 			adminKey = c.Query("admin_key")
 		}
-		
+
 		if adminKey == "" || adminKey != adminAPIKey {
 			c.JSON(http.StatusUnauthorized, models.ErrorResponse{
 				Error: "admin access required",
@@ -350,7 +350,7 @@ func AdminMiddleware(adminAPIKey string) gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		
+
 		c.Next()
 	}
 }

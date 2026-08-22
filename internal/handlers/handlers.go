@@ -149,7 +149,7 @@ func (h *Handler) GetNonce(c *gin.Context) {
 	}
 
 	// Create the message to sign
-	message := fmt.Sprintf("Sign this message to authenticate with Vauln Address.\n\nNonce: %s\nTimestamp: %d",
+	message := fmt.Sprintf("Sign this message to authenticate on pwnd.info.\n\nNonce: %s\nTimestamp: %d",
 		nonce, time.Now().Unix())
 
 	c.JSON(http.StatusOK, models.NonceResponse{

@@ -51,7 +51,7 @@ type Config struct {
 func Load() *Config {
 	godotenv.Load()
 
-	dbType := DBType(getEnv("DB_TYPE", "postgres"))
+	dbType := DBType(getEnv("DB_TYPE", "mysql"))
 
 	// Solana configuration - easy 1-line switch between devnet and mainnet
 	// Set SOLANA_USE_DEVNET=false for mainnet
