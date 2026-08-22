@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 type WalletStatus string
 
@@ -101,6 +104,41 @@ func IsValidChain(chain string) bool {
 		return true
 	}
 	return false
+}
+
+// evmNetworkNames lists specific EVM networks a scanner may report for
+// finer-grained display (e.g. on the monitoring feed). They all share the EVM
+// address format, so wallet registration and address validation normalize
+// them back to ChainEVM.
+var evmNetworkNames = map[string]bool{
+	"ethereum":  true,
+	"bnb":       true,
+	"base":      true,
+	"linea":     true,
+	"arbitrum":  true,
+	"polygon":   true,
+	"optimism":  true,
+	"avalanche": true,
+}
+
+// IsEVMNetwork reports whether chain names a specific EVM network.
+func IsEVMNetwork(chain string) bool {
+	return evmNetworkNames[strings.ToLower(chain)]
+}
+
+// IsScanChain reports whether a scanner finding may carry this chain value:
+// one of the canonical chains or a specific EVM network.
+func IsScanChain(chain string) bool {
+	return IsValidChain(chain) || IsEVMNetwork(chain)
+}
+
+// CanonicalChain maps a specific EVM network back to ChainEVM so wallet
+// registration and address validation keep using the generic chain.
+func CanonicalChain(chain string) string {
+	if IsEVMNetwork(chain) {
+		return string(ChainEVM)
+	}
+	return chain
 }
 
 func IsValidStatus(status string) bool {

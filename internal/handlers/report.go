@@ -23,11 +23,19 @@ const (
 )
 
 var chainCurrency = map[string]string{
-	"evm":    "ETH",
-	"btc":    "BTC",
-	"solana": "SOL",
-	"sui":    "SUI",
-	"tron":   "TRX",
+	"evm":       "ETH",
+	"btc":       "BTC",
+	"solana":    "SOL",
+	"sui":       "SUI",
+	"tron":      "TRX",
+	"ethereum":  "ETH",
+	"bnb":       "BNB",
+	"base":      "ETH",
+	"linea":     "ETH",
+	"arbitrum":  "ETH",
+	"polygon":   "POL",
+	"optimism":  "ETH",
+	"avalanche": "AVAX",
 }
 
 // GetReport returns a detailed report for an address found in the database.
@@ -311,6 +319,8 @@ func (h *Handler) treeNodeStatus(c *gin.Context, address, chain string) string {
 // chain recorded in its finding (scan findings always carry their own
 // chain), with the report chain as fallback.
 func treeValidationChain(findingChain, reportChain string) string {
+	// Specific EVM networks (bnb, base, …) share the EVM address format.
+	findingChain = models.CanonicalChain(findingChain)
 	if models.IsValidChain(findingChain) {
 		return findingChain
 	}

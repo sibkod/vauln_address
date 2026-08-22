@@ -26,7 +26,7 @@ const chain = computed(() => (props.chain || '').toLowerCase())
 
   <!-- Ethereum / EVM -->
   <svg
-    v-else-if="chain === 'evm'"
+    v-else-if="chain === 'evm' || chain === 'ethereum'"
     :width="size" :height="size" viewBox="0 0 32 32"
     role="img" aria-label="Ethereum"
   >
@@ -37,6 +37,78 @@ const chain = computed(() => (props.chain || '').toLowerCase())
     <path fill="#fff" d="M16.5 28v-6.03L9 17.62z" />
     <path fill="#fff" fill-opacity=".2" d="M16.5 20.57l7.5-4.35-7.5-3.35z" />
     <path fill="#fff" fill-opacity=".6" d="M9 16.22l7.5 4.35v-7.7z" />
+  </svg>
+
+  <!-- BNB Chain -->
+  <svg
+    v-else-if="chain === 'bnb'"
+    :width="size" :height="size" viewBox="0 0 32 32"
+    role="img" aria-label="BNB Chain"
+  >
+    <circle cx="16" cy="16" r="16" fill="#F0B90B" />
+    <path fill="#fff" d="M16 7l3 3-3 3-3-3 3-3zM10 13l3 3-3 3-3-3 3-3zM22 13l3 3-3 3-3-3 3-3zM16 13l3 3-3 3-3-3 3-3zM16 19l3 3-3 3-3-3 3-3z" />
+  </svg>
+
+  <!-- Base -->
+  <svg
+    v-else-if="chain === 'base'"
+    :width="size" :height="size" viewBox="0 0 32 32"
+    role="img" aria-label="Base"
+  >
+    <circle cx="16" cy="16" r="16" fill="#0052FF" />
+    <path fill="#fff" d="M16 26a10 10 0 1 1 9.94-11.1H18.4v2.2H26A10 10 0 0 1 16 26z" />
+  </svg>
+
+  <!-- Linea -->
+  <svg
+    v-else-if="chain === 'linea'"
+    :width="size" :height="size" viewBox="0 0 32 32"
+    role="img" aria-label="Linea"
+  >
+    <circle cx="16" cy="16" r="16" fill="#121212" />
+    <path fill="#fff" d="M11 8v12.5h10.5V23H11.5L11 22.5V8z" />
+    <path fill="#fff" d="M22.5 8v4h-3.5V8z" />
+  </svg>
+
+  <!-- Arbitrum -->
+  <svg
+    v-else-if="chain === 'arbitrum'"
+    :width="size" :height="size" viewBox="0 0 32 32"
+    role="img" aria-label="Arbitrum"
+  >
+    <circle cx="16" cy="16" r="16" fill="#28A0F0" />
+    <path fill="#fff" d="M16 7l7 16h-3.4L16 13.4 12.4 23H9l7-16z" />
+    <path fill="#fff" d="M14.2 19h3.6v2.2h-3.6z" />
+  </svg>
+
+  <!-- Polygon -->
+  <svg
+    v-else-if="chain === 'polygon'"
+    :width="size" :height="size" viewBox="0 0 32 32"
+    role="img" aria-label="Polygon"
+  >
+    <circle cx="16" cy="16" r="16" fill="#8247E5" />
+    <path fill="#fff" d="M21.5 13.4c-.6-.35-1.3-.35-1.9 0l-2.6 1.5-1.9 1.1-2.6 1.5c-.6.35-1.3.35-1.9 0l-2-1.15c-.55-.35-.9-1-.9-1.65v-2.3c0-.65.35-1.3.9-1.65l2-1.15c.6-.35 1.3-.35 1.9 0l2 1.15c.55.35.9 1 .9 1.65v1.5l2.6-1.5v-2.3c0-.65-.35-1.3-.9-1.65l-4.5-2.6c-.6-.35-1.3-.35-1.9 0l-4.5 2.6c-.55.35-.9 1-.9 1.65v5.2c0 .65.35 1.3.9 1.65l4.5 2.6c.6.35 1.3.35 1.9 0l2.6-1.5 1.9-1.1 2.6-1.5c.6-.35 1.3-.35 1.9 0l2 1.15c.55.35.9 1 .9 1.65v2.3c0 .65-.35 1.3-.9 1.65l-2 1.15c-.6.35-1.3.35-1.9 0l-2-1.15c-.55-.35-.9-1-.9-1.65v-1.5l-2.6 1.5v2.3c0 .65.35 1.3.9 1.65l4.5 2.6c.6.35 1.3.35 1.9 0l4.5-2.6c.55-.35.9-1 .9-1.65v-5.2c0-.65-.35-1.3-.9-1.65l-4.5-2.6z" />
+  </svg>
+
+  <!-- Optimism -->
+  <svg
+    v-else-if="chain === 'optimism'"
+    :width="size" :height="size" viewBox="0 0 32 32"
+    role="img" aria-label="Optimism"
+  >
+    <circle cx="16" cy="16" r="16" fill="#FF0420" />
+    <path fill="#fff" d="M16 8.5a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15zm0 11.6a4.1 4.1 0 1 1 0-8.2 4.1 4.1 0 0 1 0 8.2z" />
+  </svg>
+
+  <!-- Avalanche -->
+  <svg
+    v-else-if="chain === 'avalanche'"
+    :width="size" :height="size" viewBox="0 0 32 32"
+    role="img" aria-label="Avalanche"
+  >
+    <circle cx="16" cy="16" r="16" fill="#E84142" />
+    <path fill="#fff" d="M11.5 23h-3l8-14h3l3.5 6.3h-3L18 11.8l-4.5 7.9h3l-2 3.3h-3zM21 23h3l-3-5.2-1.5 2.6L21 23z" />
   </svg>
 
   <!-- Bitcoin -->

@@ -47,13 +47,18 @@ func (h *Handler) IngestScanFinding(c *gin.Context) {
 	if req.Chain == "" {
 		req.Chain = string(models.ChainSolana)
 	}
-	if !models.IsValidChain(req.Chain) {
+	// Besides the canonical chains the scanner may report a specific EVM
+	// network (bnb, base, linea, …): the finding keeps it for display, but
+	// address validation and wallet registration use the canonical chain.
+	if !models.IsScanChain(req.Chain) {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
 			Error: "unsupported chain",
 			Code:  "INVALID_CHAIN",
 		})
 		return
 	}
+	req.Chain = strings.ToLower(req.Chain)
+	walletChain := models.CanonicalChain(req.Chain)
 
 	// A finding where victim and hacker coincide is malformed: the scanner
 	// could not resolve the real operator. Drop the hacker side instead of
@@ -68,18 +73,18 @@ func (h *Handler) IngestScanFinding(c *gin.Context) {
 	// is still stored, but the bogus counterparty is not registered as a
 	// wallet and never pollutes reports.
 	if req.VictimAddress != "" {
-		if ok, _ := validators.ValidateAddress(req.Chain, req.VictimAddress); !ok {
+		if ok, _ := validators.ValidateAddress(walletChain, req.VictimAddress); !ok {
 			req.VictimAddress = ""
 		}
 	}
 	if req.HackerAddress != "" {
-		if ok, _ := validators.ValidateAddress(req.Chain, req.HackerAddress); !ok {
+		if ok, _ := validators.ValidateAddress(walletChain, req.HackerAddress); !ok {
 			req.HackerAddress = ""
 		}
 	}
 	filtered := req.ExposedAddresses[:0]
 	for _, addr := range req.ExposedAddresses {
-		if ok, _ := validators.ValidateAddress(req.Chain, addr); ok {
+		if ok, _ := validators.ValidateAddress(walletChain, addr); ok {
 			filtered = append(filtered, addr)
 		}
 	}
@@ -98,15 +103,15 @@ func (h *Handler) IngestScanFinding(c *gin.Context) {
 	if inserted {
 		switch req.Verdict {
 		case models.ScanVerdictDrainer:
-			victimAdded = h.registerScanWallet(c, req.VictimAddress, req.Chain,
+			victimAdded = h.registerScanWallet(c, req.VictimAddress, walletChain,
 				models.StatusDrained, "drainer victim: funds swept by drainer transaction")
 			if !isProgramAddress(req.HackerAddress, req.Programs) {
-				hackerAdded = h.registerScanWallet(c, req.HackerAddress, req.Chain,
+				hackerAdded = h.registerScanWallet(c, req.HackerAddress, walletChain,
 					models.StatusHacker, "drainer operator: received stolen funds or hijacked accounts")
 			}
 		case models.ScanVerdictSuspicious:
 			if !isProgramAddress(req.HackerAddress, req.Programs) {
-				hackerAdded = h.registerScanWallet(c, req.HackerAddress, req.Chain,
+				hackerAdded = h.registerScanWallet(c, req.HackerAddress, walletChain,
 					models.StatusSuspicious, "suspicious drainer-like transaction, not yet confirmed as malicious")
 			}
 		}
@@ -124,7 +129,7 @@ func (h *Handler) IngestScanFinding(c *gin.Context) {
 				continue
 			}
 			seen[addr] = true
-			if err := h.repo.MarkAssociatedHacker(c.Request.Context(), addr, req.Chain, reason); err != nil {
+			if err := h.repo.MarkAssociatedHacker(c.Request.Context(), addr, walletChain, reason); err != nil {
 				log.Printf("scanner: failed to mark association %s: %v", addr, err)
 				continue
 			}
