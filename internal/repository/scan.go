@@ -84,15 +84,21 @@ const scanFindingCols = `id, chain, signature, slot, verdict, indicators,
 	victim_address, hacker_address, amount_sol, programs, source, created_at`
 
 // GetScanFindings lists findings. With afterID > 0 it returns newer rows
-// ascending (live polling); otherwise the latest rows descending.
-func (r *Repository) GetScanFindings(ctx context.Context, afterID int64, limit int) ([]models.ScanFinding, error) {
+// ascending (live polling); with beforeID > 0 it returns older rows
+// descending (load-more pagination); otherwise the latest rows descending.
+func (r *Repository) GetScanFindings(ctx context.Context, afterID, beforeID int64, limit int) ([]models.ScanFinding, error) {
 	var rows *sql.Rows
 	var err error
-	if afterID > 0 {
+	switch {
+	case afterID > 0:
 		rows, err = r.db.QueryContext(ctx,
 			`SELECT `+scanFindingCols+` FROM scan_findings WHERE id > ? ORDER BY id ASC LIMIT ?`,
 			afterID, limit)
-	} else {
+	case beforeID > 0:
+		rows, err = r.db.QueryContext(ctx,
+			`SELECT `+scanFindingCols+` FROM scan_findings WHERE id < ? ORDER BY id DESC LIMIT ?`,
+			beforeID, limit)
+	default:
 		rows, err = r.db.QueryContext(ctx,
 			`SELECT `+scanFindingCols+` FROM scan_findings ORDER BY id DESC LIMIT ?`,
 			limit)

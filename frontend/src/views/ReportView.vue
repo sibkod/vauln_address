@@ -369,9 +369,10 @@ function evidenceDate(e: StatusEvidence): string {
 
       <!-- Transaction tree -->
       <div v-if="report.transactions" class="section">
-        <h2>Outgoing transactions</h2>
-        <p class="tree-hint">Where the funds went and the status of each wallet</p>
-        <TxTreeNode :node="report.transactions" />
+        <h2>Transaction flows</h2>
+        <p class="tree-hint">Counterparties indexed by the scanner and the status of each wallet</p>
+        <TxTreeNode v-if="report.transactions.children?.length" :node="report.transactions" />
+        <p v-else class="tree-empty">No indexed transactions for this address yet — the scanner has not observed it on-chain.</p>
       </div>
 
       <div class="section footer-note">
@@ -385,7 +386,8 @@ function evidenceDate(e: StatusEvidence): string {
 .report-page {
   max-width: 900px;
   margin: 0 auto;
-  padding: 2rem 1rem;
+  padding: 1.5rem 1rem;
+  min-width: 0;
 }
 
 .report-header {
@@ -636,8 +638,10 @@ function evidenceDate(e: StatusEvidence): string {
   background: #1a1f2e;
   border: 1px solid #2a3548;
   border-radius: 12px;
-  padding: 1.25rem;
-  margin-bottom: 1.25rem;
+  padding: 0.9rem 1rem;
+  margin-bottom: 0.9rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .section h2 {
@@ -710,6 +714,12 @@ function evidenceDate(e: StatusEvidence): string {
   color: #6b7a9e;
   font-size: 0.8rem;
   margin: 0 0 0.75rem;
+}
+
+.tree-empty {
+  color: #6b7a9e;
+  font-size: 0.85rem;
+  margin: 0;
 }
 
 .evidence-chain {

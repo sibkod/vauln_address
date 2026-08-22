@@ -726,6 +726,8 @@ def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
     monthly = defaultdict(float)
     takeover_victims, takeover_details = set(), {}
     drainer_sources = {}  # signature -> set of senders funding the operator
+    operators = Counter()  # operator (hacker) wallets: sweep destination / takeover new owner
+    operator_sol = defaultdict(float)  # swept SOL received per operator
     unknown_progs = Counter()
     drainer_tx_count = 0
 
@@ -741,10 +743,16 @@ def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
             sources |= {t["account"] for t in details["takeovers"]}
             if sources:
                 drainer_sources[s["signature"]] = sorted(sources)
+        for d in details["drain_transfers"]:
+            if d.get("to") and d["to"] != d.get("from"):
+                operators[d["to"]] += 1
+                operator_sol[d["to"]] += d.get("amount_sol") or 0
         for t in details["takeovers"]:
             takeover_victims.add(t["account"])
             takeover_details[t["account"]] = {"tx": s["signature"],
                                               "time": tx.get("blockTime")}
+            if t.get("new_owner"):
+                operators[t["new_owner"]] += 1
         for p in details["unknown_programs"]:
             unknown_progs[p] += 1
         for ix in iter_instructions(tx):
@@ -787,6 +795,9 @@ def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
             {"address": a, "tx": takeover_details[a]["tx"],
              "time": fmt_time(takeover_details[a]["time"])}
             for a in sorted(takeover_victims)],
+        "operator_wallets": [{"address": a, "sweep_txs": c,
+                              "sol_received": round(operator_sol.get(a, 0.0), 6)}
+                             for a, c in operators.most_common(50)],
         "unknown_programs_seen": [{"program": p, "tx_count": c}
                                   for p, c in unknown_progs.most_common(30)],
     }
@@ -812,6 +823,9 @@ def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
     print("\n  Топ-10 получателей (операторы/консолидация):")
     for d in report["top_destinations"][:10]:
         print(f"    {d['address']}  {d['sol']:.4f} SOL")
+    print("\n  Кошельки операторов (назначение sweep-переводов и захватов):")
+    for o in report["operator_wallets"][:10]:
+        print(f"    {o['address']}  {o['sol_received']:.4f} SOL ({o['sweep_txs']} sweep tx)")
     print("\n  Топ-10 источников (жертвы):")
     for d_ in report["top_sources"][:10]:
         mark = " [HIJACKED]" if d_["hijacked"] else ""
@@ -820,7 +834,9 @@ def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
     print(f"  Кэш транзакций: {cache_path}")
 
     # Отправляем находки в БД: жертвы — захваченные аккаунты,
-    # хакер — сканируемый кошелёк (оператор, собирающий средства).
+    # хакер — реальный оператор транзакции (назначение sweep / новый владелец
+    # аккаунта); сканируемый кошелёк считается оператором только если он сам
+    # получил sweep-перевод в этой транзакции.
     if api_url:
         sent = 0
         for item in report["hijacked_accounts"]:
@@ -828,14 +844,23 @@ def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
             if not tx:
                 continue
             verdict, indicators, details = detect_patterns(tx, watch_programs)
+            victim, hacker = extract_parties(details, signers(tx))
+            if not victim:
+                victim = item["address"]
+            if not hacker:
+                sweep_dests = {d.get("to") for d in details["drain_transfers"]}
+                if address in sweep_dests:
+                    hacker = address
+            if hacker == victim:
+                hacker = ""
             resp = post_finding(api_url, api_key, {
                 "chain": "solana",
                 "signature": item["tx"],
                 "slot": tx.get("slot") or 0,
                 "verdict": verdict,
                 "indicators": indicators,
-                "victim_address": item["address"],
-                "hacker_address": address,
+                "victim_address": victim,
+                "hacker_address": hacker,
                 "amount_sol": round(sum(d.get("amount_sol") or 0
                                         for d in details["drain_transfers"]), 9),
                 "programs": details["unknown_programs"],

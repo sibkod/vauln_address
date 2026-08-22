@@ -1,11 +1,10 @@
 package handlers
 
 import (
-	"crypto/sha256"
-	"encoding/binary"
 	"fmt"
 	"math"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -17,8 +16,10 @@ import (
 )
 
 const (
-	reportTreeDepth    = 3
-	reportTreeMaxNodes = 64
+	reportTreeDepth       = 2
+	reportTreeMaxNodes    = 48
+	reportTreeMaxChildren = 20
+	reportTreeFindingsCap = 250
 )
 
 var chainCurrency = map[string]string{
@@ -172,71 +173,100 @@ func buildReportDetails(report *models.ReportResponse, leaks []models.LeakedKeyI
 
 // ==================== Transaction tree ====================
 
-// buildTxTree derives a deterministic tree of outgoing transactions for the
-// report. Child wallet statuses are resolved against the wallets table;
-// addresses not present in the database are classified as unknown or
-// potential_hacker by heuristic.
+// buildTxTree builds the transaction tree from real indexed scanner data:
+// child nodes are counterparties of the address in scan_findings, aggregated
+// by address (tx count = number of findings, amount = total SOL moved).
+// Addresses without indexed findings produce an empty tree.
 func (h *Handler) buildTxTree(c *gin.Context, address, chain string) *models.ReportTxNode {
-	visited := map[string]bool{address: true}
-	nodes := 1
 	root := &models.ReportTxNode{Address: address, Currency: currencyOf(chain)}
-	root.Status = h.treeNodeStatus(c, address, chain, address)
+	root.Status = h.treeNodeStatus(c, address, chain)
+	nodes := 1
+	visited := map[string]bool{address: true}
 	h.fillTxNode(c, root, chain, 0, visited, &nodes)
 	return root
 }
 
 func (h *Handler) fillTxNode(c *gin.Context, node *models.ReportTxNode, chain string, depth int, visited map[string]bool, nodes *int) {
-	seed := nodeSeed(chain, node.Address, depth)
-	node.TxCount = 1 + int(seed%24)
-	node.Amount = roundAmount(0.05 + float64(seed%50000)/137.0)
+	findings, err := h.repo.GetScanFindingsForAddress(c.Request.Context(), node.Address, reportTreeFindingsCap)
+	if err != nil || len(findings) == 0 {
+		return
+	}
+
+	type counterparty struct {
+		address string
+		chain   string
+		txCount int
+		amount  float64
+	}
+	byAddr := map[string]*counterparty{}
+	total := 0.0
+	for _, f := range findings {
+		total += f.AmountSOL
+		other := scanCounterparty(node.Address, f)
+		if other == "" || other == node.Address || visited[other] {
+			continue
+		}
+		cp := byAddr[other]
+		if cp == nil {
+			cp = &counterparty{address: other, chain: f.Chain}
+			byAddr[other] = cp
+		}
+		cp.txCount++
+		cp.amount += f.AmountSOL
+	}
+	node.TxCount = len(findings)
+	node.Amount = roundAmount(total)
 
 	if depth >= reportTreeDepth || *nodes >= reportTreeMaxNodes {
 		return
 	}
 
-	childCount := 2 + int(seed>>8)%3 // 2..4 children per level
-	remaining := node.Amount
-	for i := 0; i < childCount && *nodes < reportTreeMaxNodes; i++ {
-		childAddr := deriveChildAddress(chain, node.Address, depth, i)
-		if visited[childAddr] {
-			continue
+	list := make([]*counterparty, 0, len(byAddr))
+	for _, cp := range byAddr {
+		list = append(list, cp)
+	}
+	sort.Slice(list, func(i, j int) bool {
+		if list[i].amount != list[j].amount {
+			return list[i].amount > list[j].amount
 		}
-		visited[childAddr] = true
+		return list[i].address < list[j].address
+	})
+
+	for _, cp := range list {
+		if len(node.Children) >= reportTreeMaxChildren || *nodes >= reportTreeMaxNodes {
+			break
+		}
+		visited[cp.address] = true
 		*nodes = *nodes + 1
-
-		share := 0.1 + float64(nodeSeed(childAddr, chain, i)%45)/100.0 // 10..55%
-		amount := roundAmount(node.Amount * share)
-		if i == childCount-1 || amount > remaining {
-			amount = roundAmount(remaining * 0.9)
-		}
-		if amount < 0 {
-			amount = 0
-		}
-		remaining -= amount
-
 		child := &models.ReportTxNode{
-			Address:          childAddr,
+			Address:          cp.address,
 			Currency:         node.Currency,
-			Amount:           amount,
-			Status:           h.treeNodeStatus(c, node.Address, chain, childAddr),
-			AssociatedHacker: h.repo.GetWalletAssociation(c.Request.Context(), childAddr, chain),
+			Status:           h.treeNodeStatus(c, cp.address, cp.chain),
+			AssociatedHacker: h.repo.GetWalletAssociation(c.Request.Context(), cp.address, cp.chain),
 		}
 		node.Children = append(node.Children, child)
 		h.fillTxNode(c, child, chain, depth+1, visited, nodes)
 	}
 }
 
-// treeNodeStatus resolves a tree address: database status when known,
-// otherwise a deterministic heuristic - potential_hacker for suspicious
-// patterns, unknown for the rest.
-func (h *Handler) treeNodeStatus(c *gin.Context, parent, chain, address string) string {
+// scanCounterparty returns the other party of a scan finding relative to
+// address: the hacker when address is the victim and vice versa.
+func scanCounterparty(address string, f models.ScanFinding) string {
+	switch {
+	case f.VictimAddress == address:
+		return f.HackerAddress
+	case f.HackerAddress == address:
+		return f.VictimAddress
+	}
+	return ""
+}
+
+// treeNodeStatus resolves a tree address against the wallets table;
+// addresses not present in the database are reported as unknown.
+func (h *Handler) treeNodeStatus(c *gin.Context, address, chain string) string {
 	status, err := h.repo.GetWalletStatus(c.Request.Context(), address, chain)
 	if err == nil && status != "" {
 		return status
-	}
-	seed := nodeSeed(parent, address, 7)
-	if seed%13 == 0 {
-		return models.TreeStatusPotentialHacker
 	}
 	return models.TreeStatusUnknown
 }
@@ -246,48 +276,6 @@ func currencyOf(chain string) string {
 		return cur
 	}
 	return strings.ToUpper(chain)
-}
-
-// nodeSeed is a deterministic 64-bit seed for any combination of inputs.
-func nodeSeed(parts ...interface{}) uint64 {
-	h := sha256.New()
-	for _, p := range parts {
-		fmt.Fprintf(h, "%v|", p)
-	}
-	return binary.BigEndian.Uint64(h.Sum(nil))
-}
-
-// deriveChildAddress builds a plausible-looking deterministic address for
-// the chain from the parent address, tree depth and child index.
-func deriveChildAddress(chain, parent string, depth, index int) string {
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%d|%d", chain, parent, depth, index)))
-	hexPart := fmt.Sprintf("%x", sum)
-
-	switch chain {
-	case "evm":
-		return "0x" + hexPart[:40]
-	case "sui":
-		return "0x" + hexPart // 64 hex chars
-	case "btc":
-		return "1" + base58Of(sum, 33)
-	case "solana":
-		return base58Of(sum, 44)
-	case "tron":
-		return "T" + base58Of(sum, 33)
-	default:
-		return hexPart[:40]
-	}
-}
-
-const base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-
-// base58Of maps hash bytes onto the base58 alphabet with a fixed length.
-func base58Of(sum [32]byte, length int) string {
-	out := make([]byte, length)
-	for i := 0; i < length; i++ {
-		out[i] = base58Alphabet[int(sum[i%32])%len(base58Alphabet)]
-	}
-	return string(out)
 }
 
 func roundAmount(v float64) float64 {

@@ -78,16 +78,22 @@ const statusIcons: Record<string, string> = {
 </template>
 
 <style scoped>
+.tx-node {
+  min-width: 0;
+}
+
 .tx-card {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
+  gap: 0.35rem;
+  padding: 0.35rem 0.6rem;
   background: #151a24;
   border: 1px solid #2a3548;
-  border-radius: 8px;
-  font-size: 0.82rem;
+  border-radius: 7px;
+  font-size: 0.78rem;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .tx-card.danger { border-color: rgba(255, 107, 107, 0.5); }
@@ -95,23 +101,26 @@ const statusIcons: Record<string, string> = {
 .tx-card.safe { border-color: rgba(75, 201, 160, 0.4); }
 
 .tx-assoc {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
 }
 
 .tx-addr {
   color: #98a8ce;
   font-family: monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tx-badge {
-  padding: 0.1rem 0.45rem;
+  padding: 0.05rem 0.4rem;
   border-radius: 5px;
-  font-size: 0.68rem;
+  font-size: 0.62rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   background: rgba(76, 90, 122, 0.3);
   color: #98a8ce;
+  white-space: nowrap;
 }
 
 .tx-card.danger .tx-badge {
@@ -131,23 +140,26 @@ const statusIcons: Record<string, string> = {
 
 .tx-meta {
   color: #4c5a7a;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
+  white-space: nowrap;
 }
 
 .tx-amount {
   margin-left: auto;
   color: #e7ecf5;
   font-family: monospace;
-  font-size: 0.78rem;
+  font-size: 0.74rem;
+  white-space: nowrap;
 }
 
 .tx-children {
-  margin-left: 1.25rem;
-  padding-left: 0.75rem;
+  margin-left: 1rem;
+  padding-left: 0.6rem;
   border-left: 1px solid #2a3548;
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
-  padding-top: 0.4rem;
+  gap: 0.3rem;
+  padding-top: 0.3rem;
+  min-width: 0;
 }
 </style>

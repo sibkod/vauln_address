@@ -248,10 +248,13 @@ after the same requester checks the address via `POST /api/check`:
 }
 ```
 
-`transactions` is a deterministic tree of outgoing transfers. Child wallet
-statuses are resolved against the database; addresses not present in it are
-classified as `unknown` or `potential_hacker`. `expires_at` is only present
-for anonymous requests.
+`transactions` is a deterministic tree built from the scanner-indexed
+findings (`scan_findings` table). Each node aggregates that wallet's own
+indexed transactions (count and swept amount); children are the counterparties
+it interacted with, grouped by address. Child wallet statuses are resolved
+against the database; addresses not present in it are classified as `unknown`
+or `potential_hacker`. Wallets flagged with `associated_hacker` are marked in
+the tree. `expires_at` is only present for anonymous requests.
 
 **Errors:**
 - `400 INVALID_REQUEST / INVALID_CHAIN / INVALID_ADDRESS` - missing or invalid params
@@ -346,11 +349,12 @@ The hacker address itself and duplicates are skipped.
 
 ### Monitor Findings
 
-**GET** `/api/monitor/findings?limit=20&after_id=0`
+**GET** `/api/monitor/findings?limit=20&after_id=0&before_id=0`
 
-Public live feed of scanner findings. Without `after_id` returns the latest
-rows newest-first; with `after_id` returns only newer rows ascending (used by
-the live page for incremental polling).
+Public live feed of scanner findings. Without parameters returns the latest
+rows newest-first; with `after_id` returns only newer rows ascending (live
+incremental polling); with `before_id` returns older rows descending (the
+"load more" pagination of the live page).
 
 ### Monitor Stats
 

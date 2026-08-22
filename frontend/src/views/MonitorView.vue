@@ -30,10 +30,13 @@ const apiBase = inject<string>('apiBase', '')
 const findings = ref<Finding[]>([])
 const stats = ref<Stats | null>(null)
 const loading = ref(true)
+const loadingMore = ref(false)
+const hasMore = ref(true)
 const live = ref(true)
 const lastError = ref('')
 
 const POLL_INTERVAL = 4000
+const PAGE_SIZE = 50
 let pollTimer: number | null = null
 
 async function fetchStats() {
@@ -44,10 +47,11 @@ async function fetchStats() {
 }
 
 async function fetchLatest() {
-  const res = await fetch(`${apiBase}/api/monitor/findings?limit=50`)
+  const res = await fetch(`${apiBase}/api/monitor/findings?limit=${PAGE_SIZE}`)
   if (!res.ok) throw new Error('findings request failed')
   const data = await res.json()
   findings.value = data.findings || []
+  hasMore.value = findings.value.length >= PAGE_SIZE
 }
 
 async function pollNew() {
@@ -60,13 +64,31 @@ async function pollNew() {
       const fresh: Finding[] = data.findings || []
       if (fresh.length) {
         // fresh rows come ascending; newest first in the feed
-        findings.value = [...fresh.reverse(), ...findings.value].slice(0, 200)
+        findings.value = [...fresh.reverse(), ...findings.value].slice(0, 500)
       }
     }
     lastError.value = ''
     fetchStats()
   } catch {
     lastError.value = 'Connection lost — retrying…'
+  }
+}
+
+async function loadMore() {
+  if (loadingMore.value || !findings.value.length || !hasMore.value) return
+  loadingMore.value = true
+  try {
+    const minId = findings.value[findings.value.length - 1].id
+    const res = await fetch(`${apiBase}/api/monitor/findings?before_id=${minId}&limit=${PAGE_SIZE}`)
+    if (res.ok) {
+      const data = await res.json()
+      const older: Finding[] = data.findings || []
+      if (older.length < PAGE_SIZE) hasMore.value = false
+      const seen = new Set(findings.value.map(f => f.id))
+      findings.value = [...findings.value, ...older.filter(f => !seen.has(f.id))]
+    }
+  } catch { /* retry on next click */ } finally {
+    loadingMore.value = false
   }
 }
 
@@ -206,6 +228,12 @@ onUnmounted(() => {
           <span class="slot">slot {{ f.slot }}</span>
           <span class="source">{{ f.source }}</span>
         </div>
+      </div>
+
+      <div v-if="hasMore" class="load-more">
+        <button class="load-more-btn" :disabled="loadingMore" @click="loadMore">
+          {{ loadingMore ? 'Loading…' : 'Load older events' }}
+        </button>
       </div>
     </div>
   </div>
@@ -381,6 +409,25 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 0.85rem;
 }
+
+.load-more {
+  display: flex;
+  justify-content: center;
+  padding-top: 0.5rem;
+}
+
+.load-more-btn {
+  padding: 0.6rem 1.4rem;
+  border-radius: 8px;
+  border: 1px solid #2a3548;
+  background: #1a1f2e;
+  color: #98a8ce;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.load-more-btn:hover:not(:disabled) { border-color: #3d4c6e; color: #e7ecf5; }
+.load-more-btn:disabled { opacity: 0.6; cursor: default; }
 
 .finding-card {
   background: #1a1f2e;

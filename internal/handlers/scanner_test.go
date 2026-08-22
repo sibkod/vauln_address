@@ -264,6 +264,22 @@ func TestMonitorEndpoints(t *testing.T) {
 		t.Errorf("expected 0 new findings after id %d, got %d", afterID, len(feed.Findings))
 	}
 
+	// older-page pagination returns only rows below before_id, newest first
+	req = httptest.NewRequest("GET", fmt.Sprintf("/api/monitor/findings?limit=10&before_id=%d", afterID), nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if err := json.Unmarshal(w.Body.Bytes(), &feed); err != nil {
+		t.Fatalf("decode paged findings: %v", err)
+	}
+	if len(feed.Findings) != 3 {
+		t.Errorf("expected 3 older findings before id %d, got %d", afterID, len(feed.Findings))
+	}
+	for _, f := range feed.Findings {
+		if f.ID >= afterID {
+			t.Errorf("before_id page must exclude id %d, got %d", afterID, f.ID)
+		}
+	}
+
 	// stats
 	req = httptest.NewRequest("GET", "/api/monitor/stats", nil)
 	w = httptest.NewRecorder()
