@@ -14,9 +14,10 @@ export default defineConfig({
     outDir: 'dist'
   },
   server: {
+    allowedHosts: true,
     proxy: {
       '/api': {
-        target: 'http://api.vuln.test',
+        target: process.env.VITE_PROXY_TARGET || 'http://api.vuln.test',
         changeOrigin: true
       }
     }

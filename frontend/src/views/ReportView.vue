@@ -29,6 +29,8 @@ interface Report {
   source?: string
   has_pk: boolean
   has_seed: boolean
+  associated_hacker?: boolean
+  associated_reason?: string
   leaks?: LeakInfo[]
   evidence?: StatusEvidence[]
   transactions?: TxNode
@@ -191,7 +193,8 @@ const statusMeta: Record<string, { icon: string; label: string; cls: string }> =
   frozen: { icon: '🧊', label: 'FROZEN', cls: 'warn' },
   exchange: { icon: '🏦', label: 'EXCHANGE', cls: 'safe' },
   safe: { icon: '✅', label: 'SAFE', cls: 'safe' },
-  not_found: { icon: '✅', label: 'SAFE', cls: 'safe' }
+  not_found: { icon: '✅', label: 'SAFE', cls: 'safe' },
+  unknown: { icon: '❓', label: 'UNKNOWN', cls: 'warn' }
 }
 
 const meta = computed(() => statusMeta[report.value?.status || ''] || { icon: '❓', label: (report.value?.status || 'unknown').toUpperCase(), cls: '' })
@@ -313,6 +316,10 @@ function evidenceDate(e: StatusEvidence): string {
         <h2>Why it was flagged</h2>
         <p v-if="report.reason" class="reason">Reason: {{ report.reason }}<span v-if="report.source"> (source: {{ report.source }})</span></p>
         <p class="details">{{ report.details }}</p>
+        <div v-if="report.associated_hacker" class="assoc-banner">
+          🕸️ Associated with a hacker — this wallet transferred funds to a known drainer operator.
+          <span v-if="report.associated_reason" class="assoc-reason">{{ report.associated_reason }}</span>
+        </div>
         <div v-if="exposureText(report).length" class="exposure">
           Exposed data: {{ exposureText(report).join(' and ') }} — publicly available
         </div>
@@ -362,9 +369,10 @@ function evidenceDate(e: StatusEvidence): string {
 
       <!-- Transaction tree -->
       <div v-if="report.transactions" class="section">
-        <h2>Outgoing transactions</h2>
-        <p class="tree-hint">Where the funds went and the status of each wallet</p>
-        <TxTreeNode :node="report.transactions" />
+        <h2>Transaction flows</h2>
+        <p class="tree-hint">Counterparties indexed by the scanner and the status of each wallet</p>
+        <TxTreeNode v-if="report.transactions.children?.length" :node="report.transactions" />
+        <p v-else class="tree-empty">No indexed transactions for this address yet — the scanner has not observed it on-chain.</p>
       </div>
 
       <div class="section footer-note">
@@ -378,7 +386,8 @@ function evidenceDate(e: StatusEvidence): string {
 .report-page {
   max-width: 900px;
   margin: 0 auto;
-  padding: 2rem 1rem;
+  padding: 1.5rem 1rem;
+  min-width: 0;
 }
 
 .report-header {
@@ -629,8 +638,10 @@ function evidenceDate(e: StatusEvidence): string {
   background: #1a1f2e;
   border: 1px solid #2a3548;
   border-radius: 12px;
-  padding: 1.25rem;
-  margin-bottom: 1.25rem;
+  padding: 0.9rem 1rem;
+  margin-bottom: 0.9rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .section h2 {
@@ -662,6 +673,23 @@ function evidenceDate(e: StatusEvidence): string {
   font-size: 0.85rem;
 }
 
+.assoc-banner {
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  background: rgba(255, 179, 71, 0.08);
+  border: 1px solid rgba(255, 179, 71, 0.35);
+  border-radius: 8px;
+  color: #ffb347;
+  font-size: 0.85rem;
+}
+
+.assoc-reason {
+  display: block;
+  margin-top: 0.25rem;
+  color: #98a8ce;
+  font-size: 0.8rem;
+}
+
 .leaks-table {
   width: 100%;
   border-collapse: collapse;
@@ -686,6 +714,12 @@ function evidenceDate(e: StatusEvidence): string {
   color: #6b7a9e;
   font-size: 0.8rem;
   margin: 0 0 0.75rem;
+}
+
+.tree-empty {
+  color: #6b7a9e;
+  font-size: 0.85rem;
+  margin: 0;
 }
 
 .evidence-chain {

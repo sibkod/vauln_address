@@ -52,6 +52,13 @@ func (h *Handler) IngestScanFinding(c *gin.Context) {
 		return
 	}
 
+	// A finding where victim and hacker coincide is malformed: the scanner
+	// could not resolve the real operator. Drop the hacker side instead of
+	// registering the victim as its own hacker.
+	if req.HackerAddress == req.VictimAddress {
+		req.HackerAddress = ""
+	}
+
 	id, inserted, err := h.repo.InsertScanFinding(c.Request.Context(), req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
@@ -75,11 +82,32 @@ func (h *Handler) IngestScanFinding(c *gin.Context) {
 		}
 	}
 
+	// Wallets that sent funds to the operator are flagged as associated with
+	// a hacker, but their status is never escalated automatically: unknown
+	// ones are registered as "unknown", existing statuses stay untouched.
+	associated := 0
+	if req.Verdict == models.ScanVerdictDrainer && req.HackerAddress != "" {
+		reason := "transferred funds to known drainer operator " + req.HackerAddress
+		seen := map[string]bool{req.HackerAddress: true}
+		for _, addr := range req.ExposedAddresses {
+			if addr == "" || seen[addr] {
+				continue
+			}
+			seen[addr] = true
+			if err := h.repo.MarkAssociatedHacker(c.Request.Context(), addr, req.Chain, reason); err != nil {
+				log.Printf("scanner: failed to mark association %s: %v", addr, err)
+				continue
+			}
+			associated++
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"id":           id,
 		"inserted":     inserted,
 		"victim_added": victimAdded,
 		"hacker_added": hackerAdded,
+		"associated":   associated,
 	})
 }
 
@@ -112,14 +140,19 @@ func (h *Handler) GetMonitorFindings(c *gin.Context) {
 			limit = parsed
 		}
 	}
-	var afterID int64
+	var afterID, beforeID int64
 	if a := c.Query("after_id"); a != "" {
 		if parsed, err := strconv.ParseInt(a, 10, 64); err == nil && parsed > 0 {
 			afterID = parsed
 		}
 	}
+	if b := c.Query("before_id"); b != "" {
+		if parsed, err := strconv.ParseInt(b, 10, 64); err == nil && parsed > 0 {
+			beforeID = parsed
+		}
+	}
 
-	findings, err := h.repo.GetScanFindings(c.Request.Context(), afterID, limit)
+	findings, err := h.repo.GetScanFindings(c.Request.Context(), afterID, beforeID, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error: "database error",

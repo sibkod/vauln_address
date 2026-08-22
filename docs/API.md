@@ -248,10 +248,13 @@ after the same requester checks the address via `POST /api/check`:
 }
 ```
 
-`transactions` is a deterministic tree of outgoing transfers. Child wallet
-statuses are resolved against the database; addresses not present in it are
-classified as `unknown` or `potential_hacker`. `expires_at` is only present
-for anonymous requests.
+`transactions` is a deterministic tree built from the scanner-indexed
+findings (`scan_findings` table). Each node aggregates that wallet's own
+indexed transactions (count and swept amount); children are the counterparties
+it interacted with, grouped by address. Child wallet statuses are resolved
+against the database; addresses not present in it are classified as `unknown`
+or `potential_hacker`. Wallets flagged with `associated_hacker` are marked in
+the tree. `expires_at` is only present for anonymous requests.
 
 **Errors:**
 - `400 INVALID_REQUEST / INVALID_CHAIN / INVALID_ADDRESS` - missing or invalid params
@@ -325,6 +328,7 @@ Headers: `X-Admin-Key: <ADMIN_API_KEY>`.
   "hacker_address": "HackerWallet...",
   "amount_sol": 1.5,
   "programs": ["EtrnLzg..."],
+  "exposed_addresses": ["SenderWallet1...", "SenderWallet2..."],
   "source": "watch"
 }
 ```
@@ -334,15 +338,23 @@ victim is registered in the wallets table as `drained` and the hacker as
 `hacker`; for `SUSPICIOUS` verdicts the counterparty is registered as
 `suspicious` (source `solana_scan`), unless already present.
 
-**Response:** `{ "id": 1, "inserted": true, "victim_added": true, "hacker_added": true }`
+`exposed_addresses` (optional, `DRAINER` only): wallets that sent funds to
+the hacker address in the drainer transaction. Each gets
+`associated_hacker = true` plus an explanatory `associated_reason`
+(see `GET /api/report`). Addresses absent from the wallets table are
+registered with status `unknown`; an existing status is never overridden.
+The hacker address itself and duplicates are skipped.
+
+**Response:** `{ "id": 1, "inserted": true, "victim_added": true, "hacker_added": true, "associated": 2 }`
 
 ### Monitor Findings
 
-**GET** `/api/monitor/findings?limit=20&after_id=0`
+**GET** `/api/monitor/findings?limit=20&after_id=0&before_id=0`
 
-Public live feed of scanner findings. Without `after_id` returns the latest
-rows newest-first; with `after_id` returns only newer rows ascending (used by
-the live page for incremental polling).
+Public live feed of scanner findings. Without parameters returns the latest
+rows newest-first; with `after_id` returns only newer rows ascending (live
+incremental polling); with `before_id` returns older rows descending (the
+"load more" pagination of the live page).
 
 ### Monitor Stats
 

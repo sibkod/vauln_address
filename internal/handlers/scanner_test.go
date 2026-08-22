@@ -134,6 +134,75 @@ func TestIngestScanFinding_RegistersWallets(t *testing.T) {
 	}
 }
 
+// TestIngestScanFinding_MarksAssociated verifies that wallets that sent funds
+// to the drainer operator get the associated_hacker flag: unknown ones are
+// registered as "unknown", existing statuses are never overridden.
+func TestIngestScanFinding_MarksAssociated(t *testing.T) {
+	env := setupReportTest(t)
+	router := setupScannerRouter(env)
+	ctx := context.Background()
+
+	// An already-known wallet must keep its status, only gain the flag.
+	if _, err := env.repo.CreateWallet(ctx, "senderKnown", "solana", models.StatusPhishing, "", ""); err != nil {
+		t.Fatalf("CreateWallet: %v", err)
+	}
+
+	payload := sampleFinding("sig-drain-assoc", "victim-assoc", "hacker-assoc")
+	payload.ExposedAddresses = []string{"senderNew", "senderKnown", "hacker-assoc", ""}
+
+	w := postFinding(t, router, scanTestAdminKey, payload)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Associated int `json:"associated"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Associated != 2 {
+		t.Errorf("expected 2 associated addresses (dupes/self skipped), got %d", resp.Associated)
+	}
+
+	fresh, err := env.repo.GetWallet(ctx, "senderNew", "solana")
+	if err != nil || fresh == nil {
+		t.Fatalf("senderNew not registered: %v", err)
+	}
+	if fresh.Status != models.StatusUnknown {
+		t.Errorf("expected senderNew status unknown, got %q", fresh.Status)
+	}
+	if !fresh.AssociatedHacker || fresh.AssociatedReason == "" {
+		t.Errorf("senderNew must carry the association flag and reason: %+v", fresh)
+	}
+
+	known, err := env.repo.GetWallet(ctx, "senderKnown", "solana")
+	if err != nil || known == nil {
+		t.Fatalf("senderKnown lookup failed: %v", err)
+	}
+	if known.Status != models.StatusPhishing {
+		t.Errorf("existing status must not be overridden, got %q", known.Status)
+	}
+	if !known.AssociatedHacker {
+		t.Error("senderKnown must be flagged as associated")
+	}
+
+	// SUSPICIOUS verdicts never mark associations.
+	payload2 := sampleFinding("sig-susp-assoc", "victim-s", "hacker-s")
+	payload2.Verdict = models.ScanVerdictSuspicious
+	payload2.ExposedAddresses = []string{"senderSusp"}
+	w = postFinding(t, router, scanTestAdminKey, payload2)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	susp, err := env.repo.GetWallet(ctx, "senderSusp", "solana")
+	if err != nil {
+		t.Fatalf("senderSusp lookup failed: %v", err)
+	}
+	if susp != nil && susp.AssociatedHacker {
+		t.Error("suspicious findings must not mark associations")
+	}
+}
+
 // TestMonitorEndpoints covers the live feed: latest findings, incremental
 // after_id polling and aggregate stats.
 func TestMonitorEndpoints(t *testing.T) {
@@ -193,6 +262,22 @@ func TestMonitorEndpoints(t *testing.T) {
 	}
 	if len(feed.Findings) != 0 {
 		t.Errorf("expected 0 new findings after id %d, got %d", afterID, len(feed.Findings))
+	}
+
+	// older-page pagination returns only rows below before_id, newest first
+	req = httptest.NewRequest("GET", fmt.Sprintf("/api/monitor/findings?limit=10&before_id=%d", afterID), nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if err := json.Unmarshal(w.Body.Bytes(), &feed); err != nil {
+		t.Fatalf("decode paged findings: %v", err)
+	}
+	if len(feed.Findings) != 3 {
+		t.Errorf("expected 3 older findings before id %d, got %d", afterID, len(feed.Findings))
+	}
+	for _, f := range feed.Findings {
+		if f.ID >= afterID {
+			t.Errorf("before_id page must exclude id %d, got %d", afterID, f.ID)
+		}
 	}
 
 	// stats

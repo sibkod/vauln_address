@@ -136,18 +136,6 @@ func decodeError(t *testing.T, w *httptest.ResponseRecorder) models.ErrorRespons
 	return resp
 }
 
-func walkTree(node *models.ReportTxNode, fn func(*models.ReportTxNode, int), depth int) {
-	fn(node, depth)
-	for _, child := range node.Children {
-		walkTree(child, fn, depth+1)
-	}
-}
-
-var validTreeStatuses = map[string]bool{
-	"hacked": true, "vulnerable": true, "hacker": true, "drained": true,
-	"safe": true, "unknown": true, "potential_hacker": true,
-}
-
 // TestGetReport_AnonymousFlow covers the happy path: hacked wallet with a
 // leak, anonymous requester, full report with reason, details and tree.
 func TestGetReport_AnonymousFlow(t *testing.T) {
@@ -207,7 +195,8 @@ func TestGetReport_AnonymousFlow(t *testing.T) {
 		t.Errorf("expires_at should be ~24h ahead, got %v from now", untilExpiry)
 	}
 
-	// transaction tree
+	// transaction tree: built from indexed scanner findings - with none
+	// the tree is just the root with zero real transactions
 	root := report.Transactions
 	if root == nil {
 		t.Fatal("report must include the transaction tree")
@@ -218,31 +207,9 @@ func TestGetReport_AnonymousFlow(t *testing.T) {
 	if root.Currency != "ETH" {
 		t.Errorf("expected ETH currency for evm, got %q", root.Currency)
 	}
-	if root.TxCount < 1 || root.Amount <= 0 {
-		t.Errorf("root must have tx_count >= 1 and amount > 0, got %d / %f", root.TxCount, root.Amount)
-	}
-	if len(root.Children) < 2 {
-		t.Errorf("root must have outgoing children, got %d", len(root.Children))
-	}
-
-	nodeCount := 0
-	walkTree(root, func(n *models.ReportTxNode, depth int) {
-		nodeCount++
-		if n.Address == "" {
-			t.Error("tree node with empty address")
-		}
-		if !validTreeStatuses[n.Status] {
-			t.Errorf("tree node %s has invalid status %q", n.Address, n.Status)
-		}
-		if n.Amount < 0 {
-			t.Errorf("tree node %s has negative amount %f", n.Address, n.Amount)
-		}
-		if depth > reportTreeDepth {
-			t.Errorf("tree deeper than %d levels", reportTreeDepth)
-		}
-	}, 0)
-	if nodeCount > reportTreeMaxNodes {
-		t.Errorf("tree has %d nodes, max is %d", nodeCount, reportTreeMaxNodes)
+	if root.TxCount != 0 || len(root.Children) != 0 {
+		t.Errorf("without indexed findings the tree must be empty, got %d tx / %d children",
+			root.TxCount, len(root.Children))
 	}
 
 	// the tree must be deterministic across requests
@@ -360,21 +327,24 @@ func TestGetReport_InvalidParams(t *testing.T) {
 	}
 }
 
-// TestGetReport_TreeUsesDBStatuses checks that tree nodes which exist in the
-// wallets table show their database status instead of a heuristic one.
-func TestGetReport_TreeUsesDBStatuses(t *testing.T) {
+// TestGetReport_TreeFromScanFindings builds the transaction tree from real
+// scan_findings: counterparties are aggregated per address, their statuses
+// resolved against the wallets table, amounts and tx counts summed.
+func TestGetReport_TreeFromScanFindings(t *testing.T) {
 	env := setupReportTest(t)
 	ctx := context.Background()
 	env.seedHackedWallet(t, reportTestAddr, "evm")
 
-	// the tree derives children deterministically - plant one of them as a
-	// known hacker wallet in the database
-	knownChild := deriveChildAddress("evm", reportTestAddr, 0, 0)
-	if _, err := env.repo.CreateWallet(ctx, knownChild, "evm", models.StatusHacker, "", ""); err != nil {
-		t.Fatalf("CreateWallet child: %v", err)
+	const hackerAddr = "HackerOp11111111111111111111111111111111"
+	const otherVictim = "VictimTwo2222222222222222222222222222222"
+	if _, err := env.repo.CreateWallet(ctx, hackerAddr, "solana", models.StatusHacker, "", ""); err != nil {
+		t.Fatalf("CreateWallet hacker: %v", err)
 	}
+	env.seedFinding(t, "sig-1", reportTestAddr, hackerAddr, 1.5)
+	env.seedFinding(t, "sig-2", reportTestAddr, hackerAddr, 0.5)
+	env.seedFinding(t, "sig-3", otherVictim, hackerAddr, 2.0)
 
-	requester := repository.AnonymousRequesterPrefix + "203.0.113.14"
+	requester := repository.AnonymousRequesterPrefix + "203.0.113.15"
 	if err := env.repo.RecordCheck(ctx, requester, reportTestAddr, "evm", "hacked"); err != nil {
 		t.Fatalf("RecordCheck: %v", err)
 	}
@@ -382,24 +352,75 @@ func TestGetReport_TreeUsesDBStatuses(t *testing.T) {
 	router := gin.New()
 	router.GET("/api/report", env.handler.GetReport)
 
-	w := doReportRequest(router, reportTestAddr, "evm", "203.0.113.14:1")
+	w := doReportRequest(router, reportTestAddr, "evm", "203.0.113.15:1")
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	report := decodeReport(t, w)
 
-	var childNode *models.ReportTxNode
-	walkTree(report.Transactions, func(n *models.ReportTxNode, _ int) {
-		if n.Address == knownChild {
-			childNode = n
-		}
-	}, 0)
-
-	if childNode == nil {
-		t.Fatal("known child address not present in the tree")
+	root := report.Transactions
+	if root == nil {
+		t.Fatal("report must include the transaction tree")
 	}
-	if childNode.Status != string(models.StatusHacker) {
-		t.Errorf("child in DB should have status hacker, got %q", childNode.Status)
+	if root.TxCount != 2 || root.Amount != 2.0 {
+		t.Errorf("root must aggregate its 2 indexed findings / 2.0, got %d / %f", root.TxCount, root.Amount)
+	}
+	if len(root.Children) != 1 {
+		t.Fatalf("root must have the single counterparty as child, got %d", len(root.Children))
+	}
+
+	hackerNode := root.Children[0]
+	if hackerNode.Address != hackerAddr {
+		t.Errorf("expected child %s, got %s", hackerAddr, hackerNode.Address)
+	}
+	if hackerNode.Status != string(models.StatusHacker) {
+		t.Errorf("counterparty in DB must show its DB status hacker, got %q", hackerNode.Status)
+	}
+	if hackerNode.TxCount != 3 || hackerNode.Amount != 4.0 {
+		t.Errorf("hacker node shows its own totals: 3 tx / 4.0 expected, got %d / %f", hackerNode.TxCount, hackerNode.Amount)
+	}
+
+	// second level: the hacker's other victims (the wave of the attack)
+	if len(hackerNode.Children) != 1 {
+		t.Fatalf("hacker node must expose its other victims, got %d children", len(hackerNode.Children))
+	}
+	otherVict := hackerNode.Children[0]
+	if otherVict.Address != otherVictim {
+		t.Errorf("expected grandchild %s, got %s", otherVictim, otherVict.Address)
+	}
+	if otherVict.TxCount != 1 || otherVict.Amount != 2.0 {
+		t.Errorf("grandchild must aggregate 1 tx / 2.0, got %d / %f", otherVict.TxCount, otherVict.Amount)
+	}
+	if otherVict.Status != models.TreeStatusUnknown {
+		t.Errorf("grandchild not in the DB must be unknown, got %q", otherVict.Status)
+	}
+
+	// the tree must be deterministic across requests
+	w2 := doReportRequest(router, reportTestAddr, "evm", "203.0.113.15:1")
+	report2 := decodeReport(t, w2)
+	tree1, _ := json.Marshal(report.Transactions)
+	tree2, _ := json.Marshal(report2.Transactions)
+	if !bytes.Equal(tree1, tree2) {
+		t.Error("transaction tree must be identical across requests")
+	}
+}
+
+// seedFinding inserts one scanner finding with a unique signature.
+func (e *reportTestEnv) seedFinding(t *testing.T, signature, victim, hacker string, amount float64) {
+	t.Helper()
+	_, inserted, err := e.repo.InsertScanFinding(context.Background(), models.ScanFindingRequest{
+		Chain:         "solana",
+		Signature:     signature,
+		Slot:          1,
+		Verdict:       models.ScanVerdictDrainer,
+		Indicators:    []string{"P2_FULL_BALANCE_SWEEP"},
+		VictimAddress: victim,
+		HackerAddress: hacker,
+		AmountSOL:     amount,
+		Source:        "test",
+	})
+	if err != nil || !inserted {
+		t.Fatalf("InsertScanFinding %s: inserted=%v err=%v", signature, inserted, err)
 	}
 }
 

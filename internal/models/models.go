@@ -17,6 +17,7 @@ const (
 	StatusExchange   WalletStatus = "exchange"
 	StatusSuspicious WalletStatus = "suspicious"
 	StatusFrozen     WalletStatus = "frozen"
+	StatusUnknown    WalletStatus = "unknown"
 )
 
 // StatusSeverity groups wallet statuses by how dangerous an address is.
@@ -62,6 +63,8 @@ var statusCatalog = []StatusInfo{
 		"Drainer-like activity was detected for this address, but it is not confirmed as malicious yet. Treat it with caution."},
 	{StatusFrozen, "Frozen", SeverityWarning,
 		"Assets on this address were frozen by the token issuer or by a court order; outgoing transfers may be blocked."},
+	{StatusUnknown, "Unknown", SeverityWarning,
+		"No verdict on this wallet yet. It appeared in the database because funds were moved to a known hacker or drainer operator — treat it as potentially compromised."},
 }
 
 // StatusInfos returns the full catalog of known wallet statuses.
@@ -227,14 +230,19 @@ type Order struct {
 // ==================== Existing Models ====================
 
 type Wallet struct {
-	ID        int64        `json:"id"`
-	Address   string       `json:"address"`
-	Chain     Chain        `json:"chain"`
-	Status    WalletStatus `json:"status"`
-	HasPK     bool         `json:"has_pk"`
-	HasSeed   bool         `json:"has_seed"`
-	CreatedAt time.Time    `json:"created_at"`
-	UpdatedAt time.Time    `json:"updated_at"`
+	ID      int64        `json:"id"`
+	Address string       `json:"address"`
+	Chain   Chain        `json:"chain"`
+	Status  WalletStatus `json:"status"`
+	HasPK   bool         `json:"has_pk"`
+	HasSeed bool         `json:"has_seed"`
+	// AssociatedHacker marks addresses that transferred funds to a known
+	// hacker/drainer operator. It never overrides Status - it is a
+	// link-level flag shown next to the status in checks and reports.
+	AssociatedHacker bool      `json:"associated_hacker"`
+	AssociatedReason string    `json:"associated_reason,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 type ContactMessage struct {
@@ -446,31 +454,34 @@ type LeakedKeyInfo struct {
 
 // ReportTxNode is a node of the outgoing transaction tree of a wallet.
 type ReportTxNode struct {
-	Address  string          `json:"address"`
-	TxCount  int             `json:"tx_count"`
-	Amount   float64         `json:"amount"`
-	Currency string          `json:"currency"`
-	Status   string          `json:"status"`
-	Children []*ReportTxNode `json:"children,omitempty"`
+	Address          string          `json:"address"`
+	TxCount          int             `json:"tx_count"`
+	Amount           float64         `json:"amount"`
+	Currency         string          `json:"currency"`
+	Status           string          `json:"status"`
+	AssociatedHacker bool            `json:"associated_hacker,omitempty"`
+	Children         []*ReportTxNode `json:"children,omitempty"`
 }
 
 // ReportResponse is the full report payload for a found address.
 type ReportResponse struct {
-	Address      string           `json:"address"`
-	Chain        string           `json:"chain"`
-	Found        bool             `json:"found"`
-	Status       string           `json:"status"`
-	Reason       string           `json:"reason,omitempty"`
-	Details      string           `json:"details"`
-	Source       string           `json:"source,omitempty"`
-	HasPK        bool             `json:"has_pk"`
-	HasSeed      bool             `json:"has_seed"`
-	Leaks        []LeakedKeyInfo  `json:"leaks,omitempty"`
-	Evidence     []StatusEvidence `json:"evidence,omitempty"`
-	Transactions *ReportTxNode    `json:"transactions,omitempty"`
-	ExpiresAt    *time.Time       `json:"expires_at,omitempty"`
-	Public       bool             `json:"public,omitempty"`
-	CreatedAt    time.Time        `json:"created_at"`
+	Address          string           `json:"address"`
+	Chain            string           `json:"chain"`
+	Found            bool             `json:"found"`
+	Status           string           `json:"status"`
+	Reason           string           `json:"reason,omitempty"`
+	Details          string           `json:"details"`
+	Source           string           `json:"source,omitempty"`
+	HasPK            bool             `json:"has_pk"`
+	HasSeed          bool             `json:"has_seed"`
+	AssociatedHacker bool             `json:"associated_hacker,omitempty"`
+	AssociatedReason string           `json:"associated_reason,omitempty"`
+	Leaks            []LeakedKeyInfo  `json:"leaks,omitempty"`
+	Evidence         []StatusEvidence `json:"evidence,omitempty"`
+	Transactions     *ReportTxNode    `json:"transactions,omitempty"`
+	ExpiresAt        *time.Time       `json:"expires_at,omitempty"`
+	Public           bool             `json:"public,omitempty"`
+	CreatedAt        time.Time        `json:"created_at"`
 }
 
 // ShareReportRequest asks to make a report public (authenticated users only).
@@ -523,6 +534,10 @@ type ScanFindingRequest struct {
 	AmountSOL     float64  `json:"amount_sol"`
 	Programs      []string `json:"programs"`
 	Source        string   `json:"source"`
+	// ExposedAddresses are wallets that sent funds to the hacker in this
+	// drainer transaction. They get flagged as associated with a hacker
+	// without their status being escalated automatically.
+	ExposedAddresses []string `json:"exposed_addresses"`
 }
 
 // ScanStats are aggregate counters for the live monitoring page.
