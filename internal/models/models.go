@@ -439,6 +439,9 @@ type AddWalletJobResponse struct {
 const (
 	TreeStatusUnknown         = "unknown"
 	TreeStatusPotentialHacker = "potential_hacker"
+	// TreeStatusProgram marks an on-chain program id that surfaced in the
+	// tree instead of the hacker wallet behind it.
+	TreeStatusProgram = "program"
 )
 
 // AnonymousReportTTL is how long a report stays available for
@@ -460,6 +463,7 @@ type ReportTxNode struct {
 	Currency         string          `json:"currency"`
 	Status           string          `json:"status"`
 	AssociatedHacker bool            `json:"associated_hacker,omitempty"`
+	IsProgram        bool            `json:"is_program,omitempty"`
 	Children         []*ReportTxNode `json:"children,omitempty"`
 }
 

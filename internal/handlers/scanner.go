@@ -23,7 +23,9 @@ import (
 // Besides storing the finding it adds the involved wallets to the database:
 // for DRAINER the victim as "drained" and the hacker as "hacker", for
 // SUSPICIOUS the counterparty as "suspicious", so they show up in checks
-// and reports.
+// and reports. A hacker address that is one of the on-chain programs the
+// transaction invoked is not registered: the funds only passed through the
+// program, the real operator wallet sits behind it.
 func (h *Handler) IngestScanFinding(c *gin.Context) {
 	var req models.ScanFindingRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -98,11 +100,15 @@ func (h *Handler) IngestScanFinding(c *gin.Context) {
 		case models.ScanVerdictDrainer:
 			victimAdded = h.registerScanWallet(c, req.VictimAddress, req.Chain,
 				models.StatusDrained, "drainer victim: funds swept by drainer transaction")
-			hackerAdded = h.registerScanWallet(c, req.HackerAddress, req.Chain,
-				models.StatusHacker, "drainer operator: received stolen funds or hijacked accounts")
+			if !isProgramAddress(req.HackerAddress, req.Programs) {
+				hackerAdded = h.registerScanWallet(c, req.HackerAddress, req.Chain,
+					models.StatusHacker, "drainer operator: received stolen funds or hijacked accounts")
+			}
 		case models.ScanVerdictSuspicious:
-			hackerAdded = h.registerScanWallet(c, req.HackerAddress, req.Chain,
-				models.StatusSuspicious, "suspicious drainer-like transaction, not yet confirmed as malicious")
+			if !isProgramAddress(req.HackerAddress, req.Programs) {
+				hackerAdded = h.registerScanWallet(c, req.HackerAddress, req.Chain,
+					models.StatusSuspicious, "suspicious drainer-like transaction, not yet confirmed as malicious")
+			}
 		}
 	}
 
@@ -154,29 +160,23 @@ func (h *Handler) registerScanWallet(c *gin.Context, address, chain string, stat
 
 // ==================== Live monitoring ====================
 
+// monitorFeedLimit caps the monitoring feed: only the latest 10 findings are
+// ever served, older ones stay in the database but are not retrievable.
+const monitorFeedLimit = 10
+
 // GetMonitorFindings returns scanner findings for the live monitoring page.
-// With after_id > 0 the endpoint returns only newer rows ascending, which
-// the frontend uses for incremental live polling.
+// The feed is intentionally limited to the latest monitorFeedLimit rows —
+// older history is not served. With after_id > 0 the endpoint returns only
+// newer rows ascending, which the frontend uses for incremental live polling.
 func (h *Handler) GetMonitorFindings(c *gin.Context) {
-	limit := 20
-	if l := c.Query("limit"); l != "" {
-		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
-			limit = parsed
-		}
-	}
-	var afterID, beforeID int64
+	var afterID int64
 	if a := c.Query("after_id"); a != "" {
 		if parsed, err := strconv.ParseInt(a, 10, 64); err == nil && parsed > 0 {
 			afterID = parsed
 		}
 	}
-	if b := c.Query("before_id"); b != "" {
-		if parsed, err := strconv.ParseInt(b, 10, 64); err == nil && parsed > 0 {
-			beforeID = parsed
-		}
-	}
 
-	findings, err := h.repo.GetScanFindings(c.Request.Context(), afterID, beforeID, limit)
+	findings, err := h.repo.GetScanFindings(c.Request.Context(), afterID, 0, monitorFeedLimit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error: "database error",

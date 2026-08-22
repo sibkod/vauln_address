@@ -9,6 +9,7 @@ export interface TxNode {
   currency: string
   status: string
   associated_hacker?: boolean
+  is_program?: boolean
   children?: TxNode[]
 }
 
@@ -38,9 +39,8 @@ function toggleGroup(key: string) {
   openGroups.value = new Set(openGroups.value)
 }
 
-function short(addr: string) {
-  if (addr.length <= 14) return addr
-  return `${addr.slice(0, 8)}…${addr.slice(-6)}`
+function addrTitle(node: TxNode) {
+  return node.is_program ? `${node.address} — on-chain program` : node.address
 }
 
 function statusClass(status: string) {
@@ -53,6 +53,7 @@ function statusClass(status: string) {
     case 'sanctioned':
       return 'danger'
     case 'potential_hacker':
+    case 'program':
     case 'vulnerable':
     case 'suspicious':
     case 'mixer':
@@ -81,6 +82,7 @@ const statusIcons: Record<string, string> = {
   suspicious: '🔍',
   frozen: '🧊',
   exchange: '🏦',
+  program: '⚙️',
   unknown: '❓',
   not_found: '✅'
 }
@@ -91,7 +93,7 @@ const statusIcons: Record<string, string> = {
     <div class="tx-card" :class="statusClass(props.node.status)">
       <span class="tx-icon">{{ statusIcons[props.node.status] || '❓' }}</span>
       <span v-if="props.node.associated_hacker" class="tx-assoc" title="Transferred funds to a known hacker operator">🕸️</span>
-      <span class="tx-addr" :title="props.node.address">{{ short(props.node.address) }}</span>
+      <span class="tx-addr" :title="addrTitle(props.node)">{{ props.node.address }}</span>
       <span class="tx-badge">{{ (props.node.status || 'unknown').replace('_', ' ') }}</span>
       <span class="tx-meta">{{ props.node.tx_count }} tx</span>
       <span class="tx-amount">{{ props.node.amount }} {{ props.node.currency }}</span>

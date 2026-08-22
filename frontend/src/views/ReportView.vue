@@ -329,25 +329,27 @@ function evidenceDate(e: StatusEvidence): string {
       <!-- Evidence chain -->
       <CollapsibleSection v-if="report.evidence && report.evidence.length" title="Evidence chain">
         <p class="tree-hint">Why this wallet has the {{ meta.label }} status — step by step</p>
-        <ol class="evidence-chain">
-          <li v-for="(e, i) in report.evidence" :key="i" class="evidence-item" :class="evidenceCls(e.code)">
-            <span class="evidence-icon">{{ evidenceIcon(e.code) }}</span>
-            <div class="evidence-body">
-              <div class="evidence-title">
-                {{ e.title }}
-                <span v-if="evidenceDate(e)" class="evidence-date">{{ evidenceDate(e) }}</span>
+        <div class="evidence-scroll">
+          <ol class="evidence-chain">
+            <li v-for="(e, i) in report.evidence" :key="i" class="evidence-item" :class="evidenceCls(e.code)">
+              <span class="evidence-icon">{{ evidenceIcon(e.code) }}</span>
+              <div class="evidence-body">
+                <div class="evidence-title">
+                  {{ e.title }}
+                  <span v-if="evidenceDate(e)" class="evidence-date">{{ evidenceDate(e) }}</span>
+                </div>
+                <div class="evidence-desc">{{ e.description }}</div>
+                <div class="evidence-meta">
+                  <a v-if="e.tx_signature" :href="solscanTx(e.tx_signature)" target="_blank" rel="noopener" class="evidence-link">
+                    tx {{ shortAddr(e.tx_signature) }} ↗
+                  </a>
+                  <span v-if="e.counterparty" class="evidence-counterparty">with {{ shortAddr(e.counterparty) }}</span>
+                  <span v-if="e.amount_sol" class="evidence-amount">-{{ e.amount_sol.toFixed(4) }} SOL</span>
+                </div>
               </div>
-              <div class="evidence-desc">{{ e.description }}</div>
-              <div class="evidence-meta">
-                <a v-if="e.tx_signature" :href="solscanTx(e.tx_signature)" target="_blank" rel="noopener" class="evidence-link">
-                  tx {{ shortAddr(e.tx_signature) }} ↗
-                </a>
-                <span v-if="e.counterparty" class="evidence-counterparty">with {{ shortAddr(e.counterparty) }}</span>
-                <span v-if="e.amount_sol" class="evidence-amount">-{{ e.amount_sol.toFixed(4) }} SOL</span>
-              </div>
-            </div>
-          </li>
-        </ol>
+            </li>
+          </ol>
+        </div>
       </CollapsibleSection>
 
       <!-- Leaks -->
@@ -718,6 +720,27 @@ function evidenceDate(e: StatusEvidence): string {
   color: #6b7a9e;
   font-size: 0.85rem;
   margin: 0;
+}
+
+.evidence-scroll {
+  max-height: 340px;
+  overflow-y: auto;
+  padding-right: 0.4rem;
+  scrollbar-width: thin;
+  scrollbar-color: #2a3548 transparent;
+}
+
+.evidence-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.evidence-scroll::-webkit-scrollbar-thumb {
+  background: #2a3548;
+  border-radius: 3px;
+}
+
+.evidence-scroll::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .evidence-chain {
