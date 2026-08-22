@@ -141,6 +141,10 @@ KNOWN_PROGRAMS = {
 KNOWN_BAD_PROGRAMS = {
     "3wRre6bqgqBFfNUbdTaUGQSJ4vWFnbwe6QiWJgqzHiu7": "drainer-core (case 9ML9o4nY)",
     "syspv6Qe5BbK8GPEjLbMnmF9hZy7juAuePbuspciCFP": "account-takeover (case 9ML9o4nY)",
+    # Cases из scanner-review 22.08.2026: вызываются рядом с каждым takeover
+    # через syspv6… в связке с sweep-переводом на оператора 4QFiKg8e…
+    "4PG6e97DLCn2PRN4ZMmTLg83jsetrDkvamr3JiXoiffa": "drainer-side program (takeover tx companion)",
+    "J9kkSCMTwuXtANwDrTdbKCW6vey8pWySUMc7mGooTzTo": "drainer-side program (takeover tx companion)",
 }
 # EtrnLzgbS7nMMy5fbD42kXiUzGg8XQzJ972Xtk1cjWih убрана: это активный легитимный
 # сервис/бот (не содержит takeover/transfer, балансы не меняются), попавший
