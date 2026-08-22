@@ -176,7 +176,10 @@ func buildReportDetails(report *models.ReportResponse, leaks []models.LeakedKeyI
 // buildTxTree builds the transaction tree from real indexed scanner data:
 // child nodes are counterparties of the address in scan_findings, aggregated
 // by address (tx count = number of findings, amount = total SOL moved).
-// Addresses without indexed findings produce an empty tree.
+// Counterparties that are on-chain programs invoked by the transaction are
+// marked as programs and never expanded; hacker wallets are the sink of the
+// stolen funds, so the tree stops at them instead of following the funds
+// further. Addresses without indexed findings produce an empty tree.
 func (h *Handler) buildTxTree(c *gin.Context, address, chain string) *models.ReportTxNode {
 	root := &models.ReportTxNode{Address: address, Currency: currencyOf(chain)}
 	root.Status = h.treeNodeStatus(c, address, chain)
@@ -193,10 +196,11 @@ func (h *Handler) fillTxNode(c *gin.Context, node *models.ReportTxNode, chain st
 	}
 
 	type counterparty struct {
-		address string
-		chain   string
-		txCount int
-		amount  float64
+		address   string
+		chain     string
+		txCount   int
+		amount    float64
+		isProgram bool
 	}
 	byAddr := map[string]*counterparty{}
 	total := 0.0
@@ -218,11 +222,21 @@ func (h *Handler) fillTxNode(c *gin.Context, node *models.ReportTxNode, chain st
 		}
 		cp.txCount++
 		cp.amount += f.AmountSOL
+		if isProgramAddress(other, f.Programs) {
+			cp.isProgram = true
+		}
 	}
 	node.TxCount = len(findings)
 	node.Amount = roundAmount(total)
 
 	if depth >= reportTreeDepth || *nodes >= reportTreeMaxNodes {
+		return
+	}
+
+	// The tree stops at hacker wallets and at programs: both are sinks for
+	// the stolen funds, so their own totals are shown but where the money
+	// went afterwards is out of scope for this report.
+	if depth > 0 && (node.Status == string(models.StatusHacker) || node.IsProgram) {
 		return
 	}
 
@@ -248,10 +262,26 @@ func (h *Handler) fillTxNode(c *gin.Context, node *models.ReportTxNode, chain st
 			Currency:         node.Currency,
 			Status:           h.treeNodeStatus(c, cp.address, cp.chain),
 			AssociatedHacker: h.repo.GetWalletAssociation(c.Request.Context(), cp.address, cp.chain),
+			IsProgram:        cp.isProgram,
+		}
+		if cp.isProgram {
+			child.Status = models.TreeStatusProgram
 		}
 		node.Children = append(node.Children, child)
 		h.fillTxNode(c, child, chain, depth+1, visited, nodes)
 	}
+}
+
+// isProgramAddress reports whether addr is one of the on-chain programs the
+// scanner recorded for the finding. A program id is never the hacker wallet:
+// the funds only passed through it.
+func isProgramAddress(addr string, programs []string) bool {
+	for _, p := range programs {
+		if p == addr {
+			return true
+		}
+	}
+	return false
 }
 
 // scanCounterparty returns the other party of a scan finding relative to

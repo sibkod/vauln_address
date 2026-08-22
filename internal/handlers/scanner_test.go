@@ -286,7 +286,7 @@ func TestMonitorEndpoints(t *testing.T) {
 	}
 
 	// latest feed, newest first
-	req := httptest.NewRequest("GET", "/api/monitor/findings?limit=10", nil)
+	req := httptest.NewRequest("GET", "/api/monitor/findings", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -317,20 +317,33 @@ func TestMonitorEndpoints(t *testing.T) {
 		t.Errorf("expected 0 new findings after id %d, got %d", afterID, len(feed.Findings))
 	}
 
-	// older-page pagination returns only rows below before_id, newest first
-	req = httptest.NewRequest("GET", fmt.Sprintf("/api/monitor/findings?limit=10&before_id=%d", afterID), nil)
+	// the feed is hard-capped at the latest monitorFeedLimit rows:
+	// older findings stay in the database but are never served
+	for i := 4; i <= 12; i++ {
+		_, _, err := env.repo.InsertScanFinding(ctx, models.ScanFindingRequest{
+			Signature:  fmt.Sprintf("sig-%d", i),
+			Verdict:    models.ScanVerdictDrainer,
+			Indicators: []string{"P2_FULL_BALANCE_SWEEP"},
+			Source:     "watch",
+		})
+		if err != nil {
+			t.Fatalf("InsertScanFinding %d: %v", i, err)
+		}
+	}
+	req = httptest.NewRequest("GET", "/api/monitor/findings", nil)
 	w = httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	if err := json.Unmarshal(w.Body.Bytes(), &feed); err != nil {
-		t.Fatalf("decode paged findings: %v", err)
+		t.Fatalf("decode capped feed: %v", err)
 	}
-	if len(feed.Findings) != 3 {
-		t.Errorf("expected 3 older findings before id %d, got %d", afterID, len(feed.Findings))
+	if len(feed.Findings) != 10 {
+		t.Errorf("feed must be capped at 10 findings, got %d", len(feed.Findings))
 	}
-	for _, f := range feed.Findings {
-		if f.ID >= afterID {
-			t.Errorf("before_id page must exclude id %d, got %d", afterID, f.ID)
-		}
+	if feed.Findings[0].Signature != "sig-12" {
+		t.Errorf("feed must start with the newest finding, got %q", feed.Findings[0].Signature)
+	}
+	if feed.Findings[len(feed.Findings)-1].Signature != "sig-susp" {
+		t.Errorf("feed must end at the 10th newest finding, got %q", feed.Findings[len(feed.Findings)-1].Signature)
 	}
 
 	// stats
@@ -341,7 +354,7 @@ func TestMonitorEndpoints(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &stats); err != nil {
 		t.Fatalf("decode stats: %v", err)
 	}
-	if stats.TotalFindings != 4 || stats.DrainerCount != 3 || stats.SuspectCount != 1 {
+	if stats.TotalFindings != 13 || stats.DrainerCount != 12 || stats.SuspectCount != 1 {
 		t.Errorf("unexpected stats: %+v", stats)
 	}
 	if stats.VictimCount != 3 || stats.HackerCount != 1 {
@@ -510,5 +523,45 @@ func TestReportEvidenceChain(t *testing.T) {
 	if !hasRegistry || !hasLeak || !hasScanner {
 		t.Errorf("evidence chain incomplete (registry=%v leak=%v scanner=%v): %+v",
 			hasRegistry, hasLeak, hasScanner, report.Evidence)
+	}
+}
+
+// TestIngestScanFinding_ProgramNotRegisteredAsHacker: when the hacker address
+// of a finding is one of the on-chain programs the transaction invoked, it is
+// only a transit point for the stolen funds, so it must not land in the
+// wallets table as a hacker.
+func TestIngestScanFinding_ProgramNotRegisteredAsHacker(t *testing.T) {
+	env := setupReportTest(t)
+	router := setupScannerRouter(env)
+
+	finding := sampleFinding("sig-prog-1", scanAddrVictim, scanAddrSender3)
+	finding.Programs = []string{scanAddrSender3, "EtrnLzgbS7nMMy5fbD42kXiUzGg8XQzJ972Xtk1cjWih"}
+
+	w := postFinding(t, router, scanTestAdminKey, finding)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Inserted    bool `json:"inserted"`
+		VictimAdded bool `json:"victim_added"`
+		HackerAdded bool `json:"hacker_added"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.Inserted || !resp.VictimAdded {
+		t.Errorf("unexpected ingest response: %+v", resp)
+	}
+	if resp.HackerAdded {
+		t.Error("program address must not be registered as a hacker wallet")
+	}
+
+	wlt, err := env.repo.GetWallet(context.Background(), scanAddrSender3, "solana")
+	if err != nil {
+		t.Fatalf("GetWallet: %v", err)
+	}
+	if wlt != nil {
+		t.Errorf("program %s must stay out of the wallets table, got status %q", scanAddrSender3, wlt.Status)
 	}
 }

@@ -380,19 +380,10 @@ func TestGetReport_TreeFromScanFindings(t *testing.T) {
 		t.Errorf("hacker node shows its own totals: 3 tx / 4.0 expected, got %d / %f", hackerNode.TxCount, hackerNode.Amount)
 	}
 
-	// second level: the hacker's other victims (the wave of the attack)
-	if len(hackerNode.Children) != 1 {
-		t.Fatalf("hacker node must expose its other victims, got %d children", len(hackerNode.Children))
-	}
-	otherVict := hackerNode.Children[0]
-	if otherVict.Address != otherVictim {
-		t.Errorf("expected grandchild %s, got %s", otherVictim, otherVict.Address)
-	}
-	if otherVict.TxCount != 1 || otherVict.Amount != 2.0 {
-		t.Errorf("grandchild must aggregate 1 tx / 2.0, got %d / %f", otherVict.TxCount, otherVict.Amount)
-	}
-	if otherVict.Status != models.TreeStatusUnknown {
-		t.Errorf("grandchild not in the DB must be unknown, got %q", otherVict.Status)
+	// the tree stops at the hacker wallet: where the funds went afterwards
+	// is out of scope for this report
+	if len(hackerNode.Children) != 0 {
+		t.Fatalf("hacker node must not be expanded, got %d children", len(hackerNode.Children))
 	}
 
 	// the tree must be deterministic across requests
@@ -610,5 +601,58 @@ func TestShareReport_Flow(t *testing.T) {
 	authRouter.ServeHTTP(w2, req2)
 	if w2.Code != http.StatusForbidden {
 		t.Errorf("share without prior check: expected 403, got %d", w2.Code)
+	}
+}
+
+// TestGetReport_TreeMarksProgramNodes: a counterparty that is one of the
+// on-chain programs invoked by the drainer transaction (not the hacker
+// wallet) is shown as a program node and never expanded.
+func TestGetReport_TreeMarksProgramNodes(t *testing.T) {
+	env := setupReportTest(t)
+	env.seedHackedWallet(t, reportTestAddr, "evm")
+
+	_, inserted, err := env.repo.InsertScanFinding(context.Background(), models.ScanFindingRequest{
+		Chain:         "solana",
+		Signature:     "sig-prog-tree",
+		Slot:          1,
+		Verdict:       models.ScanVerdictDrainer,
+		Indicators:    []string{"P1_ACCOUNT_TAKEOVER"},
+		VictimAddress: reportTestAddr,
+		HackerAddress: scanAddrSender3,
+		AmountSOL:     1.2,
+		Programs:      []string{scanAddrSender3},
+		Source:        "test",
+	})
+	if err != nil || !inserted {
+		t.Fatalf("InsertScanFinding: inserted=%v err=%v", inserted, err)
+	}
+
+	requester := repository.AnonymousRequesterPrefix + "203.0.113.21"
+	if err := env.repo.RecordCheck(context.Background(), requester, reportTestAddr, "evm", "hacked"); err != nil {
+		t.Fatalf("RecordCheck: %v", err)
+	}
+
+	router := gin.New()
+	router.GET("/api/report", env.handler.GetReport)
+
+	w := doReportRequest(router, reportTestAddr, "evm", "203.0.113.21:1")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	report := decodeReport(t, w)
+
+	root := report.Transactions
+	if root == nil || len(root.Children) != 1 {
+		t.Fatalf("expected one child node, got %+v", root)
+	}
+	child := root.Children[0]
+	if child.Address != scanAddrSender3 {
+		t.Errorf("expected child %s, got %s", scanAddrSender3, child.Address)
+	}
+	if !child.IsProgram || child.Status != models.TreeStatusProgram {
+		t.Errorf("program counterparty must be marked as program, got is_program=%v status=%q", child.IsProgram, child.Status)
+	}
+	if len(child.Children) != 0 {
+		t.Errorf("program node must not be expanded, got %d children", len(child.Children))
 	}
 }
