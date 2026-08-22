@@ -621,6 +621,72 @@ func TestIngestScanFinding_ProgramNotRegisteredAsHacker(t *testing.T) {
 	}
 }
 
+// TestIngestScanFinding_NoAssociationFromProgram: program findings (the
+// hacker address is the on-chain program, takeover-only or listed under
+// programs) never mark anyone as associated — their exposed addresses are
+// hijacked victims, not wallets funding an operator. Also the victim is
+// never flagged as associated with its own drainer operator.
+func TestIngestScanFinding_NoAssociationFromProgram(t *testing.T) {
+	env := setupReportTest(t)
+	router := setupScannerRouter(env)
+
+	// Takeover-only finding: hacker = owning program, exposed = victims.
+	finding := models.ScanFindingRequest{
+		Chain:            "solana",
+		Signature:        "sig-takeover-assoc",
+		Slot:             123456,
+		Verdict:          models.ScanVerdictDrainer,
+		Indicators:       []string{"P1_ACCOUNT_TAKEOVER"},
+		VictimAddress:    scanAddrVictim,
+		HackerAddress:    scanAddrSender3, // program id
+		ExposedAddresses: []string{scanAddrVictim, scanAddrSender1},
+		Source:           "watch",
+	}
+	w := postFinding(t, router, scanTestAdminKey, finding)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Associated int `json:"associated"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Associated != 0 {
+		t.Errorf("program findings must create no associations, got %d", resp.Associated)
+	}
+	for _, addr := range []string{scanAddrVictim, scanAddrSender1} {
+		wlt, err := env.repo.GetWallet(context.Background(), addr, "solana")
+		if err != nil {
+			t.Fatalf("GetWallet %s: %v", addr, err)
+		}
+		if wlt != nil && wlt.AssociatedHacker {
+			t.Errorf("%s must not be flagged by a takeover program finding", addr)
+		}
+	}
+
+	// Sweep finding with a real operator: the victim wallet itself is never
+	// flagged as associated, a third-party funder is.
+	payload := sampleFinding("sig-sweep-assoc", scanAddrVictim, scanAddrHacker)
+	payload.ExposedAddresses = []string{scanAddrVictim, scanAddrSender1}
+	w = postFinding(t, router, scanTestAdminKey, payload)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Associated != 1 {
+		t.Errorf("expected exactly the funder to be associated, got %d", resp.Associated)
+	}
+	if wlt, _ := env.repo.GetWallet(context.Background(), scanAddrSender1, "solana"); wlt == nil || !wlt.AssociatedHacker {
+		t.Errorf("the funder must be flagged as associated: %+v", wlt)
+	}
+	if wlt, _ := env.repo.GetWallet(context.Background(), scanAddrVictim, "solana"); wlt != nil && wlt.AssociatedHacker {
+		t.Error("the victim must never be flagged as associated with its own drainer")
+	}
+}
+
 // TestIngestScanFinding_TakeoverProgramNotRegistered: a takeover-only finding
 // (P1, no sweep in the same transaction) names the owning on-chain program as
 // the hacker. The assign instruction never invokes the owner program, so the

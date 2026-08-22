@@ -1492,10 +1492,20 @@ func (r *Repository) CreateWallet(ctx context.Context, address, chain string, st
 // unseen ones are registered with status "unknown".
 func (r *Repository) MarkAssociatedHacker(ctx context.Context, address, chain, reason string) error {
 	now := time.Now()
+	// Skip updating a wallet that already carries this association: repeated
+	// findings naming the same operator must not bump updated_at. NULL is
+	// not LIKE anything, so brand-new wallets still match.
+	var notSet string
+	if r.dbType == config.DBTypeMySQL {
+		notSet = "AND NOT (COALESCE(associated_reason, '') LIKE CONCAT('%', ?, '%'))"
+	} else {
+		notSet = "AND NOT (COALESCE(associated_reason, '') LIKE '%' || ? || '%')"
+	}
 	res, err := r.db.ExecContext(ctx,
 		`UPDATE wallets SET associated_hacker = true, associated_reason = ?, updated_at = ?
-		WHERE address = ? AND chain = ?`,
-		reason, now, address, chain,
+		WHERE address = ? AND chain = ?
+		`+notSet,
+		reason, now, address, chain, reason,
 	)
 	if err != nil {
 		return err

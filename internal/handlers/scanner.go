@@ -99,14 +99,15 @@ func (h *Handler) IngestScanFinding(c *gin.Context) {
 		return
 	}
 
+	// A takeover-only finding (account assigned to a new owner, no funds
+	// swept in the same transaction) names the owning PROGRAM as the
+	// hacker: the assign instruction never invokes the owner program, so
+	// it may be missing from the programs list. A program id is never a
+	// hacker wallet — the real recipient surfaces via fund-flow tracing.
+	hackerIsProgram := isProgramAddress(req.HackerAddress, req.Programs) || isTakeoverOnlyFinding(req.Indicators)
+
 	victimAdded, hackerAdded := false, false
 	if inserted {
-		// A takeover-only finding (account assigned to a new owner, no funds
-		// swept in the same transaction) names the owning PROGRAM as the
-		// hacker: the assign instruction never invokes the owner program, so
-		// it may be missing from the programs list. A program id is never a
-		// hacker wallet — the real recipient surfaces via fund-flow tracing.
-		hackerIsProgram := isProgramAddress(req.HackerAddress, req.Programs) || isTakeoverOnlyFinding(req.Indicators)
 		switch req.Verdict {
 		case models.ScanVerdictDrainer:
 			victimAdded = h.registerScanWallet(c, req.VictimAddress, walletChain,
@@ -126,10 +127,13 @@ func (h *Handler) IngestScanFinding(c *gin.Context) {
 	// Wallets that sent funds to the operator are flagged as associated with
 	// a hacker, but their status is never escalated automatically: unknown
 	// ones are registered as "unknown", existing statuses stay untouched.
+	// A takeover program is never an "operator" — its takeover victims were
+	// hijacked, they did not pay anyone, so program findings never create
+	// associations at all.
 	associated := 0
-	if req.Verdict == models.ScanVerdictDrainer && req.HackerAddress != "" {
+	if req.Verdict == models.ScanVerdictDrainer && req.HackerAddress != "" && !hackerIsProgram {
 		reason := "transferred funds to known drainer operator " + req.HackerAddress
-		seen := map[string]bool{req.HackerAddress: true}
+		seen := map[string]bool{req.HackerAddress: true, req.VictimAddress: true}
 		for _, addr := range req.ExposedAddresses {
 			if addr == "" || seen[addr] {
 				continue
