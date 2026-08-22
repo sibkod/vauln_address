@@ -199,7 +199,7 @@ func (h *Handler) buildTxTree(c *gin.Context, address, chain string) *models.Rep
 
 func (h *Handler) fillTxNode(c *gin.Context, node *models.ReportTxNode, chain string, depth int, visited map[string]bool, nodes *int) {
 	findings, err := h.repo.GetScanFindingsForAddress(c.Request.Context(), node.Address, reportTreeFindingsCap)
-	if err != nil || len(findings) == 0 {
+	if err != nil {
 		return
 	}
 
@@ -209,6 +209,8 @@ func (h *Handler) fillTxNode(c *gin.Context, node *models.ReportTxNode, chain st
 		txCount   int
 		amount    float64
 		isProgram bool
+		payout    bool // wallet received payouts FROM this node (fund flow)
+		repeat    bool // recurring payouts (2+ transfers) => hacker
 	}
 	byAddr := map[string]*counterparty{}
 	total := 0.0
@@ -230,7 +232,11 @@ func (h *Handler) fillTxNode(c *gin.Context, node *models.ReportTxNode, chain st
 		}
 		cp.txCount++
 		cp.amount += f.AmountSOL
-		if isProgramAddress(other, f.Programs) {
+		// A takeover-only finding names the owning program as the hacker:
+		// the assign instruction never invokes the owner program, so older
+		// findings don't list it under programs.
+		if isProgramAddress(other, f.Programs) ||
+			(other == f.HackerAddress && isTakeoverOnlyFinding(f.Indicators)) {
 			cp.isProgram = true
 		}
 	}
@@ -241,15 +247,56 @@ func (h *Handler) fillTxNode(c *gin.Context, node *models.ReportTxNode, chain st
 		return
 	}
 
-	// The tree stops at hacker wallets and at programs: both are sinks for
-	// the stolen funds, so their own totals are shown but where the money
-	// went afterwards is out of scope for this report.
-	if depth > 0 && (node.Status == string(models.StatusHacker) || node.IsProgram) {
+	// The tree stops at hacker wallets: they are the sink of the stolen
+	// funds. Programs are NOT a sink — the funds only pass through them, so
+	// a program node is expanded to the real payout recipients below.
+	if depth > 0 && node.Status == string(models.StatusHacker) && !node.IsProgram {
 		return
+	}
+
+	// Payout recipients: flow-trace findings (F1/F2) record which operator
+	// wallets funded each downstream address — this links every wallet that
+	// received payouts from this node back to it.
+	payouts, err := h.repo.GetFlowPayoutsForSource(c.Request.Context(), node.Address, reportTreeFindingsCap)
+	if err == nil {
+		for _, f := range payouts {
+			recipient := f.HackerAddress
+			if recipient == "" || recipient == node.Address || visited[recipient] || byAddr[recipient] != nil {
+				continue
+			}
+			if ok, _ := validators.ValidateAddress(treeValidationChain(f.Chain, chain), recipient); !ok {
+				continue
+			}
+			cp := &counterparty{address: recipient, chain: f.Chain, payout: true}
+			byAddr[recipient] = cp
+		}
+		// Recurrence decides the verdict: a wallet paid repeatedly (2+
+		// transfers, or seen in several findings) is a hacker, a one-off
+		// recipient stays suspicious.
+		counts := map[string]int{}
+		for _, f := range payouts {
+			counts[f.HackerAddress]++
+		}
+		for _, f := range payouts {
+			cp := byAddr[f.HackerAddress]
+			if cp == nil || !cp.payout {
+				continue
+			}
+			cp.txCount++
+			cp.amount += f.AmountSOL
+			if counts[f.HackerAddress] >= 2 || hasIndicator(f.Indicators, "F2_REPEAT_DOWNSTREAM") {
+				cp.repeat = true
+			}
+		}
 	}
 
 	list := make([]*counterparty, 0, len(byAddr))
 	for _, cp := range byAddr {
+		// A program node shows only where the funds went afterwards: the
+		// victims that were drained through it are not payout recipients.
+		if node.IsProgram && !cp.payout {
+			continue
+		}
 		list = append(list, cp)
 	}
 	sort.Slice(list, func(i, j int) bool {
@@ -274,6 +321,13 @@ func (h *Handler) fillTxNode(c *gin.Context, node *models.ReportTxNode, chain st
 		}
 		if cp.isProgram {
 			child.Status = models.TreeStatusProgram
+		} else if cp.payout && child.Status == models.TreeStatusUnknown {
+			// Not registered yet: classify by payout recurrence.
+			if cp.repeat {
+				child.Status = string(models.StatusHacker)
+			} else {
+				child.Status = string(models.StatusSuspicious)
+			}
 		}
 		node.Children = append(node.Children, child)
 		h.fillTxNode(c, child, chain, depth+1, visited, nodes)

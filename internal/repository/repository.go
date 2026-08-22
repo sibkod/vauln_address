@@ -218,6 +218,7 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 			hacker_address VARCHAR(100),
 			amount_sol DECIMAL(20, 9) DEFAULT 0,
 			programs TEXT,
+			exposed_addresses TEXT,
 			source VARCHAR(20),
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE KEY uk_scan_signature (signature)
@@ -344,6 +345,7 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 			hacker_address TEXT,
 			amount_sol REAL DEFAULT 0,
 			programs TEXT,
+			exposed_addresses TEXT,
 			source TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
@@ -470,6 +472,7 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 			hacker_address VARCHAR(100),
 			amount_sol DECIMAL(20, 9) DEFAULT 0,
 			programs TEXT,
+			exposed_addresses TEXT,
 			source VARCHAR(20),
 			created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 		);
@@ -525,6 +528,9 @@ func (r *Repository) runMigrations(ctx context.Context) error {
 
 	// Migration 006: associated-with-hacker flags on wallets
 	r.migration006(ctx)
+
+	// Migration 007: scanner funding sources on scan_findings
+	r.migration007(ctx)
 
 	return nil
 }
@@ -615,6 +621,19 @@ func (r *Repository) migration006(ctx context.Context) {
 	if _, err := r.db.ExecContext(ctx,
 		"CREATE INDEX IF NOT EXISTS idx_wallets_associated_hacker ON wallets(associated_hacker)"); err != nil {
 		log.Printf("Migration note (wallets association index): %v", err)
+	}
+}
+
+// migration007 adds the exposed_addresses column to scan_findings: the
+// scanner's funding sources (flow-trace payers), persisted so reports can
+// link payouts back to the operator/program that made them.
+func (r *Repository) migration007(ctx context.Context) {
+	_, err := r.db.ExecContext(ctx,
+		"ALTER TABLE scan_findings ADD COLUMN exposed_addresses TEXT")
+	if err != nil && !strings.Contains(err.Error(), "Duplicate column") &&
+		!strings.Contains(err.Error(), "duplicate column") &&
+		!strings.Contains(err.Error(), "no such column") {
+		log.Printf("Migration note (scan_findings exposed_addresses): %v", err)
 	}
 }
 

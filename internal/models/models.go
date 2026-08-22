@@ -560,8 +560,12 @@ type ScanFinding struct {
 	HackerAddress string    `json:"hacker_address,omitempty"`
 	AmountSOL     float64   `json:"amount_sol"`
 	Programs      []string  `json:"programs,omitempty"`
-	Source        string    `json:"source"` // scanner mode: watch / scan-wallet
-	CreatedAt     time.Time `json:"created_at"`
+	// ExposedAddresses are the funding sources of this finding: for
+	// flow-trace findings (F1/F2) they are the operator wallets that paid
+	// the hacker_address, so reports can link payouts back to the payer.
+	ExposedAddresses []string  `json:"exposed_addresses,omitempty"`
+	Source           string    `json:"source"` // scanner mode: watch / scan-wallet
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 // ScanFindingRequest is the ingest payload sent by solana_scan.py.

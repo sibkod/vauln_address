@@ -621,6 +621,56 @@ func TestIngestScanFinding_ProgramNotRegisteredAsHacker(t *testing.T) {
 	}
 }
 
+// TestIngestScanFinding_TakeoverProgramNotRegistered: a takeover-only finding
+// (P1, no sweep in the same transaction) names the owning on-chain program as
+// the hacker. The assign instruction never invokes the owner program, so the
+// address may be missing from the programs list — it still must not land in
+// the wallets table as a hacker.
+func TestIngestScanFinding_TakeoverProgramNotRegistered(t *testing.T) {
+	env := setupReportTest(t)
+	router := setupScannerRouter(env)
+
+	finding := models.ScanFindingRequest{
+		Chain:         "solana",
+		Signature:     "sig-takeover-only",
+		Slot:          123456,
+		Verdict:       models.ScanVerdictDrainer,
+		Indicators:    []string{"P1_ACCOUNT_TAKEOVER"},
+		VictimAddress: scanAddrVictim,
+		HackerAddress: scanAddrSender3, // takeover new_owner: a program id
+		AmountSOL:     0,
+		Source:        "watch",
+	}
+
+	w := postFinding(t, router, scanTestAdminKey, finding)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Inserted    bool `json:"inserted"`
+		VictimAdded bool `json:"victim_added"`
+		HackerAdded bool `json:"hacker_added"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.Inserted || !resp.VictimAdded {
+		t.Errorf("unexpected ingest response: %+v", resp)
+	}
+	if resp.HackerAdded {
+		t.Error("takeover program must not be registered as a hacker wallet")
+	}
+
+	wlt, err := env.repo.GetWallet(context.Background(), scanAddrSender3, "solana")
+	if err != nil {
+		t.Fatalf("GetWallet: %v", err)
+	}
+	if wlt != nil {
+		t.Errorf("takeover program %s must stay out of the wallets table, got status %q", scanAddrSender3, wlt.Status)
+	}
+}
+
 // TestIngestScanFinding_ReviewForwarding: a finding that matched the drainer
 // pattern on a program that is not in the watchlist (no P5 indicator) is
 // flagged for analyst review; known-program findings and duplicate

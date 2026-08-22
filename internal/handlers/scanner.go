@@ -101,16 +101,22 @@ func (h *Handler) IngestScanFinding(c *gin.Context) {
 
 	victimAdded, hackerAdded := false, false
 	if inserted {
+		// A takeover-only finding (account assigned to a new owner, no funds
+		// swept in the same transaction) names the owning PROGRAM as the
+		// hacker: the assign instruction never invokes the owner program, so
+		// it may be missing from the programs list. A program id is never a
+		// hacker wallet — the real recipient surfaces via fund-flow tracing.
+		hackerIsProgram := isProgramAddress(req.HackerAddress, req.Programs) || isTakeoverOnlyFinding(req.Indicators)
 		switch req.Verdict {
 		case models.ScanVerdictDrainer:
 			victimAdded = h.registerScanWallet(c, req.VictimAddress, walletChain,
 				models.StatusDrained, "drainer victim: funds swept by drainer transaction")
-			if !isProgramAddress(req.HackerAddress, req.Programs) {
+			if !hackerIsProgram {
 				hackerAdded = h.registerScanWallet(c, req.HackerAddress, walletChain,
 					models.StatusHacker, "drainer operator: received stolen funds or hijacked accounts")
 			}
 		case models.ScanVerdictSuspicious:
-			if !isProgramAddress(req.HackerAddress, req.Programs) {
+			if !hackerIsProgram {
 				hackerAdded = h.registerScanWallet(c, req.HackerAddress, walletChain,
 					models.StatusSuspicious, "suspicious drainer-like transaction, not yet confirmed as malicious")
 			}
@@ -164,6 +170,16 @@ func hasIndicator(indicators []string, code string) bool {
 		}
 	}
 	return false
+}
+
+// isTakeoverOnlyFinding reports whether the finding is a pure account
+// takeover (P1) with no funds swept in the same transaction (no P2/P6).
+// In such findings the scanner names the owning on-chain program as the
+// hacker — a program id, not a wallet.
+func isTakeoverOnlyFinding(indicators []string) bool {
+	return hasIndicator(indicators, "P1_ACCOUNT_TAKEOVER") &&
+		!hasIndicator(indicators, "P2_FULL_BALANCE_SWEEP") &&
+		!hasIndicator(indicators, "P6_TOKEN_SWEEP")
 }
 
 // forwardFindingForReview sends a scanner finding to the team chat when the

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"vauln-address/internal/config"
 	"vauln-address/internal/models"
 )
 
@@ -47,11 +48,12 @@ func (r *Repository) InsertScanFinding(ctx context.Context, req models.ScanFindi
 	res, err := r.db.ExecContext(ctx,
 		`INSERT INTO scan_findings
 		 (chain, signature, slot, verdict, indicators, victim_address,
-		  hacker_address, amount_sol, programs, source, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		  hacker_address, amount_sol, programs, exposed_addresses, source, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		chain, req.Signature, req.Slot, req.Verdict,
 		joinTags(req.Indicators), req.VictimAddress, req.HackerAddress,
-		req.AmountSOL, joinTags(req.Programs), req.Source, time.Now().UTC(),
+		req.AmountSOL, joinTags(req.Programs), joinTags(req.ExposedAddresses),
+		req.Source, time.Now().UTC(),
 	)
 	if err != nil {
 		return 0, false, err
@@ -66,9 +68,10 @@ func (r *Repository) InsertScanFinding(ctx context.Context, req models.ScanFindi
 // scanFindingScanner maps a scan_findings row to the model.
 func scanFindingRow(scan func(dest ...interface{}) error) (*models.ScanFinding, error) {
 	var f models.ScanFinding
-	var indicators, programs, victim, hacker, source sql.NullString
+	var indicators, programs, victim, hacker, exposed, source sql.NullString
 	err := scan(&f.ID, &f.Chain, &f.Signature, &f.Slot, &f.Verdict,
-		&indicators, &victim, &hacker, &f.AmountSOL, &programs, &source, &f.CreatedAt)
+		&indicators, &victim, &hacker, &f.AmountSOL, &programs, &exposed,
+		&source, &f.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -76,12 +79,13 @@ func scanFindingRow(scan func(dest ...interface{}) error) (*models.ScanFinding, 
 	f.Programs = splitTags(programs.String)
 	f.VictimAddress = victim.String
 	f.HackerAddress = hacker.String
+	f.ExposedAddresses = splitTags(exposed.String)
 	f.Source = source.String
 	return &f, nil
 }
 
 const scanFindingCols = `id, chain, signature, slot, verdict, indicators,
-	victim_address, hacker_address, amount_sol, programs, source, created_at`
+	victim_address, hacker_address, amount_sol, programs, exposed_addresses, source, created_at`
 
 // GetScanFindings lists findings. With afterID > 0 it returns newer rows
 // ascending (live polling); with beforeID > 0 it returns older rows
@@ -127,6 +131,45 @@ func (r *Repository) GetScanFindingsForAddress(ctx context.Context, address stri
 		 WHERE victim_address = ? OR hacker_address = ?
 		 ORDER BY id DESC LIMIT ?`,
 		address, address, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.ScanFinding
+	for rows.Next() {
+		f, err := scanFindingRow(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *f)
+	}
+	return out, rows.Err()
+}
+
+// GetFlowPayoutsForSource returns flow-trace findings (F1/F2 indicators)
+// whose funding sources include the given address — i.e. the payouts this
+// address (operator wallet or drainer program) made to downstream wallets.
+// The hacker_address of each returned finding is the payout recipient.
+func (r *Repository) GetFlowPayoutsForSource(ctx context.Context, source string, limit int) ([]models.ScanFinding, error) {
+	if source == "" {
+		return nil, nil
+	}
+	// exposed_addresses is a CSV; match the address only as a whole element.
+	var contains string
+	if r.dbType == config.DBTypeMySQL {
+		contains = "CONCAT(',', COALESCE(exposed_addresses, ''), ',') LIKE CONCAT('%,', ?, ',%')"
+	} else {
+		contains = "',' || COALESCE(exposed_addresses, '') || ',' LIKE '%,' || ? || ',%'"
+	}
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT `+scanFindingCols+` FROM scan_findings
+		 WHERE (indicators LIKE '%F1_DOWNSTREAM_TRANSFER%'
+		    OR indicators LIKE '%F2_REPEAT_DOWNSTREAM%')
+		   AND `+contains+`
+		 ORDER BY id DESC LIMIT ?`,
+		source, limit,
 	)
 	if err != nil {
 		return nil, err
