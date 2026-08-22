@@ -273,6 +273,21 @@ def post_finding(api_url, api_key, payload):
         return None
 
 
+def finding_programs(details, takeovers=None):
+    """Program id'ы, которые бэкенд обязан считать программами, а не
+    кошельками: вызванные неизвестные программы + программы, ставшие новым
+    владельцем захваченного аккаунта (assign не вызывает программу-владельца,
+    поэтому в unknown_programs её может не быть, а extract_parties ставит её
+    как hacker)."""
+    progs = set(details.get("unknown_programs") or [])
+    for t in (takeovers if takeovers is not None
+              else details.get("takeovers") or []):
+        owner = t.get("new_owner")
+        if owner:
+            progs.add(owner)
+    return sorted(progs)
+
+
 def make_finding_payload(signature, slot, verdict, indicators, details,
                          signer_list, source):
     victim, hacker = extract_parties(details, signer_list)
@@ -286,7 +301,7 @@ def make_finding_payload(signature, slot, verdict, indicators, details,
         "hacker_address": hacker,
         "amount_sol": round(sum(d.get("amount_sol") or 0
                                 for d in details["drain_transfers"]), 9),
-        "programs": details["unknown_programs"],
+        "programs": finding_programs(details),
         "source": source,
     }
 
@@ -642,7 +657,9 @@ def mode_watch(rpc, watch_programs, full_blocks=False, out_file=None,
                 "hacker_address": hacker,
                 "amount_sol": round(sum(d.get("amount_sol") or 0
                                         for d in entry.get("sweeps", [])), 9),
-                "programs": entry.get("unknown_programs", []),
+                "programs": finding_programs(
+                    {"unknown_programs": entry.get("unknown_programs", [])},
+                    takeovers=entry.get("takeovers", [])),
                 "exposed_addresses": exposed,
                 "source": "watch",
             })
@@ -1096,7 +1113,7 @@ def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
                 "hacker_address": hacker,
                 "amount_sol": round(sum(d.get("amount_sol") or 0
                                         for d in details["drain_transfers"]), 9),
-                "programs": details["unknown_programs"],
+                "programs": finding_programs(details),
                 "exposed_addresses": drainer_sources.get(item["tx"], []),
                 "source": "scan-wallet",
             })

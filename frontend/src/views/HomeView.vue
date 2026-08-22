@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, inject, onMounted, computed, onUnmounted } from 'vue'
+import ChainSelect from '../components/ChainSelect.vue'
 
 const chain = ref('evm')
 const address = ref('')
@@ -89,7 +90,13 @@ onUnmounted(() => {
   }
 })
 
-const chainIcons: Record<string, string> = { evm: '🟣', btc: '🟠', solana: '🟢', sui: '🔵', tron: '🔴' }
+const chainOptions = [
+  { value: 'evm', label: 'EVM' },
+  { value: 'btc', label: 'BTC' },
+  { value: 'solana', label: 'Solana' },
+  { value: 'sui', label: 'Sui' },
+  { value: 'tron', label: 'Tron' },
+]
 const chainPlaceholders: Record<string, string> = {
   evm: 'Enter EVM address (0x…)',
   btc: 'Enter Bitcoin address',
@@ -268,17 +275,7 @@ function getResultClass() {
 
   <!-- Search box -->
   <div class="search-box">
-    <div class="chain-selector-wrapper">
-      <span class="chain-icon">{{ chainIcons[chain] }}</span>
-      <select v-model="chain" class="chain-selector">
-        <option value="evm">EVM</option>
-        <option value="btc">BTC</option>
-        <option value="solana">Solana</option>
-        <option value="sui">Sui</option>
-        <option value="tron">Tron</option>
-      </select>
-      <span class="chain-arrow">▾</span>
-    </div>
+    <ChainSelect v-model="chain" :options="chainOptions" />
     <input 
       v-model="address" 
       type="text" 

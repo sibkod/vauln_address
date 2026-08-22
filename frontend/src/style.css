@@ -39,9 +39,11 @@ body.light .logo-area h1 { color: #1e2330; }
 body.light .logo-area .sub { color: #4a5578; }
 body.light .logo-area .badge { background: #3b5fcf10; color: #3b5fcf; border-color: #3b5fcf20; }
 body.light .search-box { background: rgba(210, 218, 230, 0.7); border-color: rgba(0, 0, 0, 0.06); }
-body.light .chain-selector-wrapper { border-color: rgba(0, 0, 0, 0.06); }
-body.light .chain-selector { color: #1e2330; }
-body.light .chain-selector option { background: #e6e9ef; color: #1e2330; }
+body.light .chain-select-trigger { color: #1e2330; border-right-color: rgba(0, 0, 0, 0.06); }
+body.light .chain-select-menu { background: #fff; border-color: rgba(0, 0, 0, 0.08); box-shadow: 0 12px 32px rgba(30, 40, 70, 0.18); }
+body.light .chain-select-option { color: #1e2330; }
+body.light .chain-select-option:hover { background: #eef1f6; }
+body.light .chain-select-option.active { background: rgba(59, 95, 207, 0.12); }
 body.light .search-box input { color: #1e2330; }
 body.light .search-box input::placeholder { color: #6a7a9e; }
 body.light .result-box { background: rgba(210, 218, 230, 0.5); border-color: rgba(0, 0, 0, 0.04); }
@@ -81,7 +83,6 @@ body.light .example-hint { color: #4a5578; }
 body.light .example-hint .example-addr { background: #d0d8e5; color: #c0392b; border-color: rgba(192, 57, 43, 0.15); }
 body.light .example-hint .example-addr:hover { background: #c0c8d8; }
 body.light .example-hint .chain-tag { background: #d0d8e5; color: #4a5578; }
-body.light .chain-selector-wrapper .chain-arrow { color: #6a7a9e; }
 body.light .nav-center { background: rgba(200, 210, 225, 0.3); border-color: rgba(0, 0, 0, 0.04); }
 body.light .progress-bar { background: #c0c8d8; }
 body.light .progress-fill { background: linear-gradient(90deg, #3b5fcf, #6c8cff); }
@@ -200,13 +201,8 @@ body.light .network-badge.mainnet {
 .logo-area .sub { color: #7989b0; font-size: 0.85rem; margin-top: 0.2rem; font-weight: 400; }
 
 /* Search */
-.search-box { background: rgba(16, 22, 34, 0.7); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.04); border-radius: 60px; display: flex; align-items: center; width: 100%; transition: 0.25s; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5); overflow: hidden; }
+.search-box { background: rgba(16, 22, 34, 0.7); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.04); border-radius: 60px; display: flex; align-items: stretch; width: 100%; transition: 0.25s; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5); position: relative; z-index: 10; }
 .search-box:focus-within { border-color: #4b70e0; box-shadow: 0 8px 30px rgba(59, 95, 207, 0.12), 0 0 0 3px #3b5fcf20; }
-.chain-selector-wrapper { display: flex; align-items: center; padding: 0 0.2rem 0 0.8rem; border-right: 1px solid rgba(255, 255, 255, 0.05); flex-shrink: 0; }
-.chain-selector { background: transparent; border: none; color: #c8d2ea; font-size: 0.8rem; font-weight: 500; padding: 0.6rem 0.2rem 0.6rem 0.3rem; cursor: pointer; outline: none; appearance: none; -webkit-appearance: none; min-width: 70px; }
-.chain-selector option { background: #0b0d11; color: #eef2fc; padding: 0.3rem; }
-.chain-selector-wrapper .chain-icon { font-size: 1rem; margin-right: 0.2rem; flex-shrink: 0; }
-.chain-selector-wrapper .chain-arrow { color: #4c5a7a; font-size: 0.6rem; margin-left: 0.1rem; pointer-events: none; }
 .search-box input { flex: 1; background: transparent; border: none; padding: 0.9rem 0.5rem 0.9rem 0.8rem; font-size: 0.95rem; color: #eef3fc; outline: none; min-width: 0; }
 .search-box input::placeholder { color: #4c5a7a; font-weight: 400; letter-spacing: 0.01em; }
 .search-box .check-btn { background: #3b5fcf; border: none; color: white; font-weight: 550; padding: 0.6rem 2rem; border-radius: 60px; font-size: 0.9rem; cursor: pointer; transition: 0.15s; white-space: nowrap; box-shadow: 0 4px 14px #3b5fcf40; letter-spacing: 0.01em; margin: 0.15rem 0.15rem 0.15rem 0.3rem; flex-shrink: 0; }
@@ -372,8 +368,6 @@ body.light .network-badge.mainnet {
   .status-legend .legend-item { font-size: 0.65rem; }
 
   .search-box { flex-wrap: wrap; background: transparent; border: none; box-shadow: none; gap: 0.4rem; padding: 0; }
-  .chain-selector-wrapper { border-right: none; padding: 0; width: 100%; background: rgba(16, 22, 34, 0.6); border-radius: 60px; padding: 0.1rem 0.8rem; border: 1px solid rgba(255, 255, 255, 0.03); }
-  .chain-selector { padding: 0.5rem 0.2rem; width: 100%; }
   .search-box input { background: rgba(16, 22, 34, 0.6); border-radius: 60px; padding: 0.7rem 1rem; border: 1px solid rgba(255, 255, 255, 0.03); width: 100%; }
   .search-box .check-btn { width: 100%; justify-content: center; padding: 0.6rem; margin: 0; }
   .result-box { padding: 0.8rem 1rem; }

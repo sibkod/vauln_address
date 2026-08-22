@@ -145,6 +145,61 @@ func TestIngestScanFinding_RegistersWallets(t *testing.T) {
 	}
 }
 
+// TestIngestScanFinding_SpecificEVMNetwork verifies that a finding from a
+// specific EVM network (e.g. BNB Chain) is accepted and keeps its chain for
+// the monitoring feed, while the involved wallets are registered under the
+// canonical "evm" chain so checks and reports keep working.
+func TestIngestScanFinding_SpecificEVMNetwork(t *testing.T) {
+	env := setupReportTest(t)
+	router := setupScannerRouter(env)
+	ctx := context.Background()
+
+	victim := "0x1111111111111111111111111111111111111111"
+	hacker := "0x2222222222222222222222222222222222222222"
+
+	finding := sampleFinding("sig-bnb-1", victim, hacker)
+	finding.Chain = "BNB" // case-insensitive
+	finding.Programs = nil
+
+	w := postFinding(t, router, scanTestAdminKey, finding)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for EVM network chain, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Inserted    bool `json:"inserted"`
+		VictimAdded bool `json:"victim_added"`
+		HackerAdded bool `json:"hacker_added"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.Inserted || !resp.VictimAdded || !resp.HackerAdded {
+		t.Errorf("unexpected ingest response: %+v", resp)
+	}
+
+	// Wallets land under the canonical chain.
+	if wlt, _ := env.repo.GetWallet(ctx, victim, "evm"); wlt == nil || wlt.Status != models.StatusDrained {
+		t.Errorf("victim not registered as drained under evm: %+v", wlt)
+	}
+	if wlt, _ := env.repo.GetWallet(ctx, hacker, "evm"); wlt == nil || wlt.Status != models.StatusHacker {
+		t.Errorf("hacker not registered as hacker under evm: %+v", wlt)
+	}
+
+	// The monitoring feed keeps the specific network for display.
+	req := httptest.NewRequest("GET", "/api/monitor/findings", nil)
+	mw := httptest.NewRecorder()
+	router.ServeHTTP(mw, req)
+	var feed struct {
+		Findings []models.ScanFinding `json:"findings"`
+	}
+	if err := json.Unmarshal(mw.Body.Bytes(), &feed); err != nil {
+		t.Fatalf("decode feed: %v", err)
+	}
+	if len(feed.Findings) != 1 || feed.Findings[0].Chain != "bnb" {
+		t.Errorf("expected one feed row with chain bnb, got %+v", feed.Findings)
+	}
+}
+
 // TestIngestScanFinding_MarksAssociated verifies that wallets that sent funds
 // to the drainer operator get the associated_hacker flag: unknown ones are
 // registered as "unknown", existing statuses are never overridden.
@@ -563,6 +618,56 @@ func TestIngestScanFinding_ProgramNotRegisteredAsHacker(t *testing.T) {
 	}
 	if wlt != nil {
 		t.Errorf("program %s must stay out of the wallets table, got status %q", scanAddrSender3, wlt.Status)
+	}
+}
+
+// TestIngestScanFinding_TakeoverProgramNotRegistered: a takeover-only finding
+// (P1, no sweep in the same transaction) names the owning on-chain program as
+// the hacker. The assign instruction never invokes the owner program, so the
+// address may be missing from the programs list — it still must not land in
+// the wallets table as a hacker.
+func TestIngestScanFinding_TakeoverProgramNotRegistered(t *testing.T) {
+	env := setupReportTest(t)
+	router := setupScannerRouter(env)
+
+	finding := models.ScanFindingRequest{
+		Chain:         "solana",
+		Signature:     "sig-takeover-only",
+		Slot:          123456,
+		Verdict:       models.ScanVerdictDrainer,
+		Indicators:    []string{"P1_ACCOUNT_TAKEOVER"},
+		VictimAddress: scanAddrVictim,
+		HackerAddress: scanAddrSender3, // takeover new_owner: a program id
+		AmountSOL:     0,
+		Source:        "watch",
+	}
+
+	w := postFinding(t, router, scanTestAdminKey, finding)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Inserted    bool `json:"inserted"`
+		VictimAdded bool `json:"victim_added"`
+		HackerAdded bool `json:"hacker_added"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.Inserted || !resp.VictimAdded {
+		t.Errorf("unexpected ingest response: %+v", resp)
+	}
+	if resp.HackerAdded {
+		t.Error("takeover program must not be registered as a hacker wallet")
+	}
+
+	wlt, err := env.repo.GetWallet(context.Background(), scanAddrSender3, "solana")
+	if err != nil {
+		t.Fatalf("GetWallet: %v", err)
+	}
+	if wlt != nil {
+		t.Errorf("takeover program %s must stay out of the wallets table, got status %q", scanAddrSender3, wlt.Status)
 	}
 }
 

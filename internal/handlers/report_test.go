@@ -653,6 +653,114 @@ func TestGetReport_TreeMarksProgramNodes(t *testing.T) {
 		t.Errorf("program counterparty must be marked as program, got is_program=%v status=%q", child.IsProgram, child.Status)
 	}
 	if len(child.Children) != 0 {
-		t.Errorf("program node must not be expanded, got %d children", len(child.Children))
+		t.Errorf("program node without indexed payouts must have no children, got %d", len(child.Children))
+	}
+}
+
+// TestGetReport_TreeExpandsProgramPayouts: a takeover-only finding names the
+// owning on-chain program as the hacker (old findings don't list it under
+// programs). The tree must show it as a program, never as a hacker, and
+// expand it to the real payout recipients indexed by flow-trace findings:
+// repeat recipients classify as hacker, one-off recipients as suspicious.
+func TestGetReport_TreeExpandsProgramPayouts(t *testing.T) {
+	env := setupReportTest(t)
+	ctx := context.Background()
+	env.seedHackedWallet(t, reportTestAddr, "evm")
+
+	program := scanAddrSender3
+	// Old-shape takeover finding: hacker is the takeover program, programs empty.
+	if _, inserted, err := env.repo.InsertScanFinding(ctx, models.ScanFindingRequest{
+		Chain:         "solana",
+		Signature:     "sig-takeover-prog",
+		Slot:          1,
+		Verdict:       models.ScanVerdictDrainer,
+		Indicators:    []string{"P1_ACCOUNT_TAKEOVER"},
+		VictimAddress: reportTestAddr,
+		HackerAddress: program,
+		AmountSOL:     0,
+		Source:        "test",
+	}); err != nil || !inserted {
+		t.Fatalf("InsertScanFinding takeover: inserted=%v err=%v", inserted, err)
+	}
+
+	seedFlow := func(sig, recipient string, amount float64, indicator string) {
+		t.Helper()
+		if _, inserted, err := env.repo.InsertScanFinding(ctx, models.ScanFindingRequest{
+			Chain:            "solana",
+			Signature:        sig,
+			Slot:             1,
+			Verdict:          models.ScanVerdictDrainer,
+			Indicators:       []string{indicator},
+			HackerAddress:    recipient,
+			AmountSOL:        amount,
+			ExposedAddresses: []string{program},
+			Source:           "flow-trace",
+		}); err != nil || !inserted {
+			t.Fatalf("InsertScanFinding %s: inserted=%v err=%v", sig, inserted, err)
+		}
+	}
+	// Registered in wallets: F2 recipient is a known hacker.
+	if _, err := env.repo.CreateWallet(ctx, scanAddrHacker, "solana", models.StatusHacker, "", ""); err != nil {
+		t.Fatalf("CreateWallet hacker: %v", err)
+	}
+	seedFlow("sig-flow-f2", scanAddrHacker, 5.0, "F2_REPEAT_DOWNSTREAM")
+	// Not registered: one-off recipient must classify as suspicious…
+	seedFlow("sig-flow-f1a", scanAddrSender4, 1.0, "F1_DOWNSTREAM_TRANSFER")
+	// …and a recipient paid in two separate findings is recurring => hacker.
+	seedFlow("sig-flow-r1", scanAddrSender1, 2.0, "F1_DOWNSTREAM_TRANSFER")
+	seedFlow("sig-flow-r2", scanAddrSender1, 3.0, "F1_DOWNSTREAM_TRANSFER")
+
+	requester := repository.AnonymousRequesterPrefix + "203.0.113.22"
+	if err := env.repo.RecordCheck(ctx, requester, reportTestAddr, "evm", "hacked"); err != nil {
+		t.Fatalf("RecordCheck: %v", err)
+	}
+
+	router := gin.New()
+	router.GET("/api/report", env.handler.GetReport)
+
+	w := doReportRequest(router, reportTestAddr, "evm", "203.0.113.22:1")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	report := decodeReport(t, w)
+
+	root := report.Transactions
+	if root == nil || len(root.Children) != 1 {
+		t.Fatalf("expected the program as the single root child, got %+v", root)
+	}
+	prog := root.Children[0]
+	if prog.Address != program || !prog.IsProgram || prog.Status != models.TreeStatusProgram {
+		t.Fatalf("root child must be the program node, got %+v", prog)
+	}
+
+	// The program node expands to payout recipients only — not to the victims
+	// drained through it.
+	if len(prog.Children) != 3 {
+		t.Fatalf("program node must list 3 payout recipients, got %+v", prog.Children)
+	}
+	byAddr := map[string]*models.ReportTxNode{}
+	for _, ch := range prog.Children {
+		byAddr[ch.Address] = ch
+	}
+	if ch := byAddr[scanAddrHacker]; ch == nil || ch.Status != string(models.StatusHacker) {
+		t.Errorf("F2 recipient registered as hacker must show hacker, got %+v", ch)
+	}
+	if ch := byAddr[scanAddrSender4]; ch == nil || ch.Status != string(models.StatusSuspicious) {
+		t.Errorf("one-off payout recipient must show suspicious, got %+v", ch)
+	}
+	if ch := byAddr[scanAddrSender1]; ch == nil || ch.Status != string(models.StatusHacker) {
+		t.Errorf("recurring payout recipient (2 findings) must show hacker, got %+v", ch)
+	}
+	if ch := byAddr[scanAddrHacker]; ch != nil && ch.Amount != 5.0 {
+		t.Errorf("hacker payout amount must aggregate to 5.0, got %f", ch.Amount)
+	}
+
+	// The funding sources must round-trip through storage.
+	findings, err := env.repo.GetFlowPayoutsForSource(ctx, program, 10)
+	if err != nil || len(findings) != 4 {
+		t.Fatalf("GetFlowPayoutsForSource: %d findings, err=%v", len(findings), err)
+	}
+	if len(findings[0].ExposedAddresses) != 1 || findings[0].ExposedAddresses[0] != program {
+		t.Errorf("exposed addresses not persisted: %+v", findings[0].ExposedAddresses)
 	}
 }
