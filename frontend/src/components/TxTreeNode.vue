@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref, computed } from 'vue'
 import TxTreeNode from './TxTreeNode.vue'
 
 export interface TxNode {
@@ -11,7 +12,31 @@ export interface TxNode {
   children?: TxNode[]
 }
 
-const props = defineProps<{ node: TxNode }>()
+const props = defineProps<{ node: TxNode; depth?: number }>()
+
+const depth = computed(() => props.depth ?? 0)
+
+// Корень разбивается на группы-корзины, чтобы не рендерить сотни детей разом
+const TREE_GROUP_SIZE = 50
+const openGroups = ref<Set<string>>(new Set())
+
+const groups = computed(() => {
+  if (depth.value !== 0 || !props.node.children?.length) return null
+  const out: { key: string; label: string; min: number; max: number }[] = []
+  const count = props.node.children.length
+  for (let start = 0; start < count; start += TREE_GROUP_SIZE) {
+    const min = start + 1
+    const max = Math.min(start + TREE_GROUP_SIZE, count)
+    out.push({ key: `${min}-${max}`, label: `${min}–${max}`, min, max })
+  }
+  return out.length > 1 ? out : null
+})
+
+function toggleGroup(key: string) {
+  if (openGroups.value.has(key)) openGroups.value.delete(key)
+  else openGroups.value.add(key)
+  openGroups.value = new Set(openGroups.value)
+}
 
 function short(addr: string) {
   if (addr.length <= 14) return addr
@@ -72,7 +97,28 @@ const statusIcons: Record<string, string> = {
       <span class="tx-amount">{{ props.node.amount }} {{ props.node.currency }}</span>
     </div>
     <div v-if="props.node.children && props.node.children.length" class="tx-children">
-      <TxTreeNode v-for="child in props.node.children" :key="child.address" :node="child" />
+      <template v-if="groups">
+        <div v-for="g in groups" :key="g.key" class="tx-group">
+          <button class="tx-group-toggle" @click="toggleGroup(g.key)">
+            <span class="tx-group-arrow" :class="{ open: openGroups.has(g.key) }">▾</span>
+            children {{ g.label }} / {{ props.node.children!.length }}
+          </button>
+          <template v-if="openGroups.has(g.key)">
+            <TxTreeNode
+              v-for="child in props.node.children!.slice(g.min - 1, g.max)"
+              :key="child.address"
+              :node="child"
+              :depth="depth + 1" />
+          </template>
+        </div>
+      </template>
+      <template v-else>
+        <TxTreeNode
+          v-for="child in props.node.children"
+          :key="child.address"
+          :node="child"
+          :depth="depth + 1" />
+      </template>
     </div>
   </div>
 </template>
@@ -161,5 +207,42 @@ const statusIcons: Record<string, string> = {
   gap: 0.3rem;
   padding-top: 0.3rem;
   min-width: 0;
+}
+
+.tx-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.tx-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.6rem;
+  background: #151a24;
+  border: 1px dashed #2a3548;
+  border-radius: 7px;
+  color: #4c5a7a;
+  font-size: 0.72rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.tx-group-toggle:hover {
+  color: #98a8ce;
+  border-color: #4c5a7a;
+}
+
+.tx-group-arrow {
+  transition: transform 0.15s ease;
+}
+
+.tx-group-arrow.open {
+  transform: rotate(0deg);
+}
+
+.tx-group-arrow:not(.open) {
+  transform: rotate(-90deg);
 }
 </style>
