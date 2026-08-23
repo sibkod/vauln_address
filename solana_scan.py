@@ -37,7 +37,14 @@ SOLANA_EXCHANGES_FILE) — точки кэшаута: цепочка на них
 Режимы watch и scan-wallet с флагом --api-url (env VAULN_API_URL) отправляют
 каждую находку (victim + hacker) в БД через API бэкенда
 (POST /api/admin/scanner/findings, заголовок X-Admin-Key = --api-key /
-env ADMIN_API_KEY). Находки видны на странице живого мониторинга.
+env ADMIN_API_KEY). Находки видны на странице живого мониторинга. Дубли
+отсекаются дважды: локально по signature за прогон и на бэкенде
+(scan_findings.signature UNIQUE).
+
+Многопоточность: загрузка транзакций, трейсинг потоков и отправка находок
+в API выполняются пулом потоков (--threads, по умолчанию 8) — рассчитано на
+платные RPC с высоким rate limit (Helius и т.п., --rpc-url / env
+SOLANA_RPC_URL). Для публичных RPC: --threads 1 --rpc-delay 0.8.
 
 Только stdlib. Кэширует транзакции в <cache_dir>/<address>.json
 """
@@ -47,9 +54,11 @@ import datetime
 import json
 import os
 import sys
+import threading
 import time
 import urllib.request
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor
 
 # PyNaCl — проверка Ed25519 (on-curve). libsodium crypto_core_ed25519_is_valid_point
 # отвергает точки в малой подгруппе (y<8), тогда как Solana findProgramAddress их
@@ -279,6 +288,49 @@ def post_finding(api_url, api_key, payload):
         return None
 
 
+class FindingPoster:
+    """Параллельная отправка находок в API с дедупликацией по signature.
+
+    Одна и та же транзакция может всплыть несколько раз за прогон
+    (несколько жертв в одной tx в scan-wallet, совпадающие последние
+    подписи у downstream-находок, повторный блок в watch) — повторные
+    POST'ы бессмысленны и под параллельной отправкой гоняются за UNIQUE
+    constraint на бэкенде. Дубли режем локально; бэкенд дополнительно
+    дедупит по scan_findings.signature UNIQUE между прогонами.
+    """
+
+    def __init__(self, api_url, api_key, threads=8):
+        self.api_url = api_url
+        self.api_key = api_key
+        self.threads = max(1, threads)
+        self._seen = set()
+        self._lock = threading.Lock()
+
+    def submit_all(self, payloads):
+        """Отправляет payload'ы пулом потоков; дубли по signature скипаются.
+
+        Возвращает (responses, пропущено_дублей): responses — список ответов
+        API (None при ошибке отправки) в порядке уникальных payload'ов.
+        """
+        unique = []
+        skipped = 0
+        for p in payloads:
+            sig = p.get("signature") or ""
+            with self._lock:
+                if sig in self._seen:
+                    skipped += 1
+                    continue
+                self._seen.add(sig)
+            unique.append(p)
+        if not unique:
+            return [], skipped
+        with ThreadPoolExecutor(max_workers=self.threads) as pool:
+            responses = list(pool.map(
+                lambda p: post_finding(self.api_url, self.api_key, p),
+                unique))
+        return responses, skipped
+
+
 def finding_programs(details, takeovers=None):
     """Program id'ы, которые бэкенд обязан считать программами, а не
     кошельками: вызванные неизвестные программы + программы, ставшие новым
@@ -313,17 +365,36 @@ def make_finding_payload(signature, slot, verdict, indicators, details,
 
 
 class Rpc:
-    """RPC-клиент с ротацией эндпоинтов и ретраями."""
+    """RPC-клиент с ротацией эндпоинтов, ретраями и пулом потоков.
 
-    def __init__(self, timeout=60):
+    Потокобезопасен: ротация эндпоинтов под локом, счётчики прогресса —
+    под отдельным локом. Параллелизм рассчитан на платные RPC (Helius и
+    т.п. с высоким rate limit); для публичных узлов threads=1 + delay 0.8
+    воспроизводит старое последовательное поведение.
+    """
+
+    def __init__(self, endpoints=None, timeout=60, threads=8, delay=0.0):
+        self.endpoints = list(endpoints or RPC_ENDPOINTS)
         self.ep_idx = 0
         self.timeout = timeout
+        self.threads = max(1, threads)
+        self.delay = max(0.0, delay)
+        self._ep_lock = threading.Lock()
+        self._print_lock = threading.Lock()
+
+    def _next_endpoint(self):
+        with self._ep_lock:
+            ep = self.endpoints[self.ep_idx % len(self.endpoints)]
+            self.ep_idx += 1
+            return ep
 
     def call(self, method, params, retries=6):
         last_err = None
         for attempt in range(retries):
-            ep = RPC_ENDPOINTS[self.ep_idx % len(RPC_ENDPOINTS)]
+            ep = self._next_endpoint()
             try:
+                if self.delay:
+                    time.sleep(self.delay)
                 payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
                 req = urllib.request.Request(ep, data=json.dumps(payload).encode(), headers=HEADERS)
                 r = json.load(urllib.request.urlopen(req, timeout=self.timeout))
@@ -334,7 +405,6 @@ class Rpc:
                 return r
             except Exception as e:  # noqa: BLE001
                 last_err = e
-                self.ep_idx += 1
                 time.sleep(1.5 + attempt * 1.5)
         raise RuntimeError(f"RPC {method} failed after {retries} tries: {last_err}")
 
@@ -353,7 +423,11 @@ class Rpc:
         return r.get("result")
 
     def get_signatures(self, address, limit=None):
-        """Все подписи адреса (или до limit), новые первыми."""
+        """Все подписи адреса (или до limit), новые первыми.
+
+        Пагинация по курсору `before` по своей природе последовательна —
+        параллелится только загрузка самих транзакций.
+        """
         out, before = [], None
         while True:
             page = 1000 if limit is None else min(1000, limit - len(out))
@@ -367,39 +441,46 @@ class Rpc:
             if len(r) < page:
                 break
             before = r[-1]["signature"]
-            time.sleep(0.4)
         return out
 
+    def _fetch_tx(self, s):
+        try:
+            r = self.call(
+                "getTransaction",
+                [s, {"encoding": "jsonParsed",
+                     "maxSupportedTransactionVersion": 0}])
+            return s, r.get("result")
+        except Exception:  # noqa: BLE001
+            return s, None
+
     def get_transactions(self, signatures, progress=False):
-        """Выкачивает транзакции по одной — публичные узлы режут батчи."""
+        """Выкачивает транзакции пулом потоков (по одной на запрос — батчи
+        не используем, чтобы не зависеть от лимитов конкретного узла)."""
         result = {}
-        missing = list(signatures)
-        for i, s in enumerate(missing):
-            try:
-                r = self.call(
-                    "getTransaction",
-                    [s, {"encoding": "jsonParsed",
-                         "maxSupportedTransactionVersion": 0}])
-                result[s] = r.get("result")
-            except Exception:  # noqa: BLE001
-                result[s] = None
-            time.sleep(0.8)
-            if progress and (i + 1) % 40 == 0:
-                print(f"  txs: {i + 1}/{len(missing)}", flush=True)
+        missing = list(dict.fromkeys(signatures))  # дубли подписей не качаем
+        total = len(missing)
+        done = [0]
+
+        def tracked(s):
+            sig, tx = self._fetch_tx(s)
+            if progress:
+                with self._print_lock:
+                    done[0] += 1
+                    if done[0] % 40 == 0 or done[0] == total:
+                        print(f"  txs: {done[0]}/{total}", flush=True)
+            return sig, tx
+
+        with ThreadPoolExecutor(max_workers=self.threads) as pool:
+            for sig, tx in pool.map(tracked, missing):
+                result[sig] = tx
         # вторая попытка для null'ов — первый прогон мог упасть по rate limit
         nulls = [s for s, v in result.items() if not v]
         if nulls:
             time.sleep(5)
-            for s in nulls:
-                try:
-                    r = self.call(
-                        "getTransaction",
-                        [s, {"encoding": "jsonParsed",
-                             "maxSupportedTransactionVersion": 0}])
-                    result[s] = r.get("result")
-                except Exception:  # noqa: BLE001
-                    pass
-                time.sleep(0.8)
+            with ThreadPoolExecutor(max_workers=self.threads) as pool:
+                for sig, tx in pool.map(self._fetch_tx, nulls):
+                    if tx:
+                        result[sig] = tx
         return result
 
 
@@ -645,6 +726,8 @@ def mode_watch(rpc, watch_programs, full_blocks=False, out_file=None,
     stats = {"blocks": 0, "txs_scanned": 0, "prefilter_hits": 0,
              "drainer": 0, "suspicious": 0, "candidates": 0}
     log_fp = open(out_file, "a") if out_file else None
+    poster = (FindingPoster(api_url, api_key, threads=rpc.threads)
+              if api_url else None)
     t_start = time.time()
     print(f"  стартовый слот: {slot} (RPC-лаг ~100 слотов)", flush=True)
 
@@ -659,12 +742,12 @@ def mode_watch(rpc, watch_programs, full_blocks=False, out_file=None,
             print(f"      TAKEOVER: {t['account']} -> {t['new_owner']}")
         for d in entry.get("sweeps", []):
             print(f"      SWEEP: {d['from']} -> {d['to']} {d['amount_sol']:.6f} SOL")
-        if api_url:
+        if poster:
             hacker = entry.get("hacker", "")
             exposed = sorted({d["from"] for d in entry.get("sweeps", [])
                               if hacker and d.get("to") == hacker} |
                              {t["account"] for t in entry.get("takeovers", [])})
-            resp = post_finding(api_url, api_key, {
+            responses, skipped = poster.submit_all([{
                 "chain": "solana",
                 "signature": entry["signature"],
                 "slot": slot_,
@@ -679,8 +762,11 @@ def mode_watch(rpc, watch_programs, full_blocks=False, out_file=None,
                     takeovers=entry.get("takeovers", [])),
                 "exposed_addresses": exposed,
                 "source": "watch",
-            })
-            if resp is not None:
+            }])
+            if skipped:
+                print("      API: дубль signature за прогон, пропущен")
+            elif responses and responses[0] is not None:
+                resp = responses[0]
                 print(f"      API: id={resp.get('id')} victim={entry.get('victim', '')[:12]}..."
                       f" hacker={entry.get('hacker', '')[:12]}...")
 
@@ -814,39 +900,49 @@ def trace_fund_flows(rpc, seeds, cache_dir, depth=1, max_txs=100, max_wallets=10
     frontier = [a for a in dict.fromkeys(seeds)
                 if a and a not in KNOWN_EXCHANGES][:max_wallets]
     level = 1  # уровень 0 — ребро victim -> operator из основного анализа
-    while frontier and level <= depth + 1:
-        nxt = []
-        for src in frontier:
-            if src in visited or src in KNOWN_EXCHANGES:
+
+    def trace_one(src, lvl):
+        """Исходящие потоки одного кошелька: (рёбра, кандидаты на раскрытие)."""
+        print(f"  [trace] уровень {lvl}: исходящие потоки {src[:12]}...",
+              flush=True)
+        try:
+            sigs, cache = load_wallet_txs(rpc, src, cache_dir, max_txs,
+                                          verbose=False)
+        except Exception as e:  # noqa: BLE001 — один узел не роняет трейс
+            print(f"  [trace] !! не удалось загрузить {src[:12]}...: {e}")
+            return [], []
+        agg = {}
+        for s in sigs:
+            tx = cache.get(s["signature"])
+            if not tx:
                 continue
-            visited.add(src)
-            print(f"  [trace] уровень {level}: исходящие потоки {src[:12]}...",
-                  flush=True)
-            try:
-                sigs, cache = load_wallet_txs(rpc, src, cache_dir, max_txs,
-                                              verbose=False)
-            except Exception as e:  # noqa: BLE001 — один узел не роняет трейс
-                print(f"  [trace] !! не удалось загрузить {src[:12]}...: {e}")
-                continue
-            agg = {}
-            for s in sigs:
-                tx = cache.get(s["signature"])
-                if not tx:
-                    continue
-                for o in outgoing_transfers(tx, src, s["signature"]):
-                    a = agg.setdefault(o["to"], {"sol": 0.0, "txs": 0, "sigs": []})
-                    a["sol"] += o["amount_sol"]
-                    a["txs"] += 1
-                    a["sigs"].append(o["tx"])
-            for dst, a in agg.items():
-                edges.append({"from": src, "to": dst, "level": level,
+            for o in outgoing_transfers(tx, src, s["signature"]):
+                a = agg.setdefault(o["to"], {"sol": 0.0, "txs": 0, "sigs": []})
+                a["sol"] += o["amount_sol"]
+                a["txs"] += 1
+                a["sigs"].append(o["tx"])
+        src_edges, expand = [], []
+        for dst, a in agg.items():
+            src_edges.append({"from": src, "to": dst, "level": lvl,
                               "sol": round(a["sol"], 6), "txs": a["txs"],
                               "signatures": a["sigs"]})
-                # сообщник с 2+ переводами — раскрываем его исходящие дальше
-                if (a["txs"] >= 2 and dst not in visited
-                        and dst not in KNOWN_EXCHANGES
-                        and dst not in KNOWN_PROGRAMS and is_on_curve(dst)):
-                    nxt.append(dst)
+            # сообщник с 2+ переводами — раскрываем его исходящие дальше
+            if (a["txs"] >= 2 and dst not in KNOWN_EXCHANGES
+                    and dst not in KNOWN_PROGRAMS and is_on_curve(dst)):
+                expand.append(dst)
+        return src_edges, expand
+
+    while frontier and level <= depth + 1:
+        wave = [s for s in frontier
+                if s not in visited and s not in KNOWN_EXCHANGES]
+        visited.update(wave)
+        nxt = []
+        # кошельки одного уровня независимы — трейсим параллельно
+        with ThreadPoolExecutor(max_workers=rpc.threads) as pool:
+            for src_edges, expand in pool.map(
+                    lambda s: trace_one(s, level), wave):
+                edges.extend(src_edges)
+                nxt.extend(expand)
         frontier = [d for d in dict.fromkeys(nxt)
                     if d not in visited][:max_wallets]
         level += 1
@@ -1114,7 +1210,8 @@ def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
     # аккаунта); сканируемый кошелёк считается оператором только если он сам
     # получил sweep-перевод в этой транзакции.
     if api_url:
-        sent = 0
+        poster = FindingPoster(api_url, api_key, threads=rpc.threads)
+        payloads = []
         for item in report["hijacked_accounts"]:
             tx = cache.get(item["tx"])
             if not tx:
@@ -1129,7 +1226,7 @@ def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
                     hacker = address
             if hacker == victim:
                 hacker = ""
-            resp = post_finding(api_url, api_key, {
+            payloads.append({
                 "chain": "solana",
                 "signature": item["tx"],
                 "slot": tx.get("slot") or 0,
@@ -1143,15 +1240,17 @@ def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
                 "exposed_addresses": drainer_sources.get(item["tx"], []),
                 "source": "scan-wallet",
             })
-            if resp is not None:
-                sent += 1
-        print(f"  Отправлено находок в API: {sent}/{len(report['hijacked_accounts'])}")
+        responses, skipped = poster.submit_all(payloads)
+        sent = sum(1 for r in responses if r is not None)
+        total = len(report['hijacked_accounts'])
+        print(f"  Отправлено находок в API: {sent}/{total}"
+              + (f" (дублей пропущено: {skipped})" if skipped else ""))
 
         # Downstream-находки: получатель одного перевода от оператора —
         # SUSPICIOUS, 2+ переводов — hacker (verdict DRAINER с пустой жертвой:
         # поток, а не дрейн — бэкенд регистрирует только сторону хакера).
         # Биржи/обменники и программы не отправляем — это не злоумышленники.
-        flow_sent = 0
+        flow_payloads = []
         for e in downstream:
             if e["label"] == "suspicious":
                 f_verdict, f_ind = "SUSPICIOUS", ["F1_DOWNSTREAM_TRANSFER"]
@@ -1159,7 +1258,7 @@ def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
                 f_verdict, f_ind = "DRAINER", ["F2_REPEAT_DOWNSTREAM"]
             else:
                 continue
-            resp = post_finding(api_url, api_key, {
+            flow_payloads.append({
                 "chain": "solana",
                 "signature": e["signatures"][-1],
                 "slot": 0,
@@ -1172,12 +1271,13 @@ def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
                 "exposed_addresses": e["sources"],
                 "source": "flow-trace",
             })
-            if resp is not None:
-                flow_sent += 1
-        flow_total = sum(1 for e in downstream
-                         if e["label"] in ("suspicious", "hacker"))
+        flow_total = len(flow_payloads)
         if flow_total:
-            print(f"  Отправлено downstream-находок в API: {flow_sent}/{flow_total}")
+            responses, skipped = poster.submit_all(flow_payloads)
+            flow_sent = sum(1 for r in responses if r is not None)
+            print(f"  Отправлено downstream-находок в API: "
+                  f"{flow_sent}/{flow_total}"
+                  + (f" (дублей пропущено: {skipped})" if skipped else ""))
     return report
 
 
@@ -1225,6 +1325,21 @@ def main():
     for p in (p_tx, p_qs, p_sw, p_w):
         p.add_argument("--watch-program", action="append", default=[],
                        help="добавить programId в список вредоносных")
+        p.add_argument("--rpc-url", action="append",
+                       default=([u] if (u := os.environ.get("SOLANA_RPC_URL"))
+                                else None),
+                       help="RPC-эндпоинт Solana (можно несколько раз; env "
+                            "SOLANA_RPC_URL). Например Helius: "
+                            "https://mainnet.helius-rpc.com/?api-key=KEY. "
+                            "По умолчанию — публичные узлы")
+        p.add_argument("--threads", type=int,
+                       default=int(os.environ.get("SOLANA_SCAN_THREADS", "8")),
+                       help="потоков для загрузки tx/трейсинга/отправки в API "
+                            "(env SOLANA_SCAN_THREADS, по умолчанию 8; "
+                            "для публичных RPC ставьте 1)")
+        p.add_argument("--rpc-delay", type=float, default=0.0,
+                       help="пауза перед каждым RPC-вызовом, сек "
+                            "(для публичных RPC: --threads 1 --rpc-delay 0.8)")
         p.add_argument("--programs-file",
                        default=os.environ.get("SOLANA_PROGRAMS_FILE",
                                               DEFAULT_PROGRAMS_FILE),
@@ -1249,7 +1364,8 @@ def main():
         load_known_programs(args.programs_file)
     if args.exchanges_file:
         load_known_exchanges(args.exchanges_file)
-    rpc = Rpc()
+    rpc = Rpc(endpoints=args.rpc_url, threads=args.threads,
+              delay=args.rpc_delay)
 
     if args.mode == "check-tx":
         sys.exit(mode_check_tx(rpc, args.signature, args.watch_program))
