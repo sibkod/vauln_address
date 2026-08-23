@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+
+	"vauln-address/internal/config"
 )
 
 func init() {
@@ -234,6 +236,44 @@ func TestGetNonce_Success(t *testing.T) {
 				t.Error("Expected non-empty message")
 			}
 		})
+	}
+}
+
+// The amount charged by CreateOrder must equal the price shown on the
+// pricing page for every package, not just the first one.
+func TestPriceForOrder_MatchesPackagePrices(t *testing.T) {
+	cfg := &config.Config{PricePerCheckUSD: 0.10}
+	h := &Handler{serverCfg: cfg, packages: getDefaultPackages(cfg)}
+
+	for _, pkg := range h.packages {
+		checks := pkg["checks"].(int)
+		want := pkg["price_usd"].(float64)
+		if got := h.priceForOrder(checks); got != want {
+			t.Errorf("package %v: priceForOrder(%d) = %v, want displayed price %v", pkg["id"], checks, got, want)
+		}
+	}
+}
+
+func TestPriceForChecks_DiscountTiers(t *testing.T) {
+	const pricePerCheck = 0.10
+	tests := []struct {
+		checks int
+		want   float64
+	}{
+		{1, 0.10},
+		{10, 1.00},
+		{49, 4.90},
+		{50, 4.75},   // 5% off
+		{149, 14.16}, // 5% off
+		{150, 12.75}, // 15% off
+		{499, 42.42}, // 15% off
+		{500, 37.50}, // 25% off
+		{1000, 75.0}, // 25% off
+	}
+	for _, tt := range tests {
+		if got := priceForChecks(tt.checks, pricePerCheck); got != tt.want {
+			t.Errorf("priceForChecks(%d) = %v, want %v", tt.checks, got, tt.want)
+		}
 	}
 }
 
