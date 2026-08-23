@@ -27,8 +27,24 @@ func splitTags(s string) []string {
 	return out
 }
 
+// isUniqueViolation reports whether err is a duplicate-key error from any
+// supported driver (sqlite3 / mysql / postgres). String matching avoids
+// importing driver-specific error types.
+func isUniqueViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "UNIQUE constraint failed") || // sqlite3
+		strings.Contains(msg, "Duplicate entry") || // mysql 1062
+		strings.Contains(msg, "duplicate key value") // postgres 23505
+}
+
 // InsertScanFinding stores one scanner detection. The signature is unique,
-// so duplicates are skipped (second return value = false).
+// so duplicates are skipped (second return value = false). The
+// select-then-insert race (two concurrent ingests of the same signature,
+// e.g. from the multithreaded scanner) is resolved by treating the
+// resulting unique violation as a duplicate instead of an error.
 func (r *Repository) InsertScanFinding(ctx context.Context, req models.ScanFindingRequest) (int64, bool, error) {
 	chain := req.Chain
 	if chain == "" {
@@ -56,6 +72,15 @@ func (r *Repository) InsertScanFinding(ctx context.Context, req models.ScanFindi
 		req.Source, time.Now().UTC(),
 	)
 	if err != nil {
+		if isUniqueViolation(err) {
+			// lost the concurrent-insert race: the other request's row
+			// wins, report this one as a duplicate
+			if qerr := r.db.QueryRowContext(ctx,
+				`SELECT id FROM scan_findings WHERE signature = ?`,
+				req.Signature).Scan(&existing); qerr == nil {
+				return existing, false, nil
+			}
+		}
 		return 0, false, err
 	}
 	id, err := res.LastInsertId()
