@@ -27,6 +27,7 @@ func setupScannerRouter(env *reportTestEnv) *gin.Engine {
 	admin := router.Group("/api/admin")
 	admin.Use(middleware.AdminMiddleware(scanTestAdminKey))
 	admin.POST("/scanner/findings", env.handler.IngestScanFinding)
+	admin.GET("/wallets", env.handler.ListAdminWallets)
 	router.GET("/api/monitor/findings", env.handler.GetMonitorFindings)
 	router.GET("/api/monitor/stats", env.handler.GetMonitorStats)
 	router.GET("/api/captcha", env.handler.GetCaptcha)

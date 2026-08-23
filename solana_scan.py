@@ -41,6 +41,12 @@ env ADMIN_API_KEY). Находки видны на странице живого
 отсекаются дважды: локально по signature за прогон и на бэкенде
 (scan_findings.signature UNIQUE).
 
+Watch отслеживает не только кражи, но и ДВИЖЕНИЕ украденного: исходящие
+переводы с хакерских кошельков. Множество сеется из БД бэкенда
+(GET /api/admin/wallets?status=hacker) и --hacker-file, пополняется на лету
+(оператор DRAINER-находки и F2-получатель сразу под наблюдением) — цепочка
+увода средств раскручивается рекурсивно в реальном времени.
+
 Многопоточность: загрузка транзакций, трейсинг потоков, отправка находок
 в API и обработка блоков в watch (скользящее окно слотов, --window)
 выполняются пулом потоков (--threads, по умолчанию 8) — рассчитано на
@@ -288,6 +294,50 @@ def post_finding(api_url, api_key, payload):
     except Exception as e:  # noqa: BLE001
         print(f"  !! не удалось отправить находку в API: {e}", flush=True)
         return None
+
+
+DEFAULT_HACKERS_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "solana_hackers.json")
+
+
+def fetch_hacker_wallets(api_url, api_key, chain="solana", limit=50000):
+    """Известные хакерские кошельки из БД бэкенда (GET /api/admin/wallets).
+
+    Сид watch-множества: перезапущенный watch продолжает следить за всеми
+    операторами, найденными за всё время (scan-wallet, watch, flow-trace),
+    а не только за теми, кого он увидит в текущей сессии.
+    """
+    url = (api_url.rstrip("/") + "/api/admin/wallets?chain=" + chain
+           + "&status=hacker&limit=" + str(limit))
+    headers = dict(HEADERS)
+    if api_key:
+        headers["X-Admin-Key"] = api_key
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.load(resp)
+        return [a for a in data.get("addresses") or [] if a]
+    except Exception as e:  # noqa: BLE001
+        print(f"[!] не удалось загрузить хакерские кошельки из API: {e}",
+              file=sys.stderr)
+        return []
+
+
+def load_hacker_file(path):
+    """Локальный список хакерских кошельков (JSON: [...] или {"hackers": [...]})."""
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        hackers = data.get("hackers", data) if isinstance(data, dict) else data
+        out = [a.strip() for a in hackers if isinstance(a, str) and a.strip()]
+        if out:
+            print(f"[i] хакерских кошельков из файла: {len(out)} ({path})")
+        return out
+    except FileNotFoundError:
+        return []  # файл опционален — сидит основной список из БД
+    except Exception as e:  # noqa: BLE001
+        print(f"[!] ошибка загрузки {path}: {e}", file=sys.stderr)
+        return []
 
 
 class FindingPoster:
@@ -701,7 +751,7 @@ def prefilter_block_tx(tx, watch_programs):
 
 def mode_watch(rpc, watch_programs, full_blocks=False, out_file=None,
                stats_every=20, start_slot=None, api_url=None, api_key=None,
-               window=None):
+               window=None, hacker_file=None):
     """Живой мониторинг блоков Solana на паттерн дрейнера.
 
     Стратегия по умолчанию (лёгкая):
@@ -709,6 +759,15 @@ def mode_watch(rpc, watch_programs, full_blocks=False, out_file=None,
       2. detect_patterns — полный разбор только подозрительных
     С --full-blocks: анализ всех транзакций блока (без prefilter).
     С --api-url: каждая находка отправляется в БД через API бэкенда.
+
+    Кроме краж (DRAINER-паттерн) watch отслеживает ДВИЖЕНИЕ украденного:
+    исходящие переводы с известных хакерских кошельков. Множество сеется
+    из БД бэкенда (GET /api/admin/wallets?status=hacker — все операторы,
+    найденные scan-wallet/watch/flow-trace за всё время) и из
+    --hacker-file, и пополняется на лету: оператор каждой DRAINER-находки
+    и получатель F2-перевода сразу попадают под наблюдение, поэтому цепочка
+    раскручивается рекурсивно в реальном времени. Классификация получателя
+    как в flow-trace: 1 перевод — SUSPICIOUS (F1), 2+ — hacker (F2).
 
     Блоки обрабатываются скользящим окном: --threads воркеров параллельно
     забирают следующие слоты (round-robin по эндпоинтам --rpc-url), анализ
@@ -738,6 +797,21 @@ def mode_watch(rpc, watch_programs, full_blocks=False, out_file=None,
     poster = (FindingPoster(api_url, api_key, threads=rpc.threads)
               if api_url else None)
     t_start = time.time()
+
+    # Множество хакерских кошельков под наблюдением (движение украденного):
+    # сид из БД (все найденные ранее операторы) + локальный файл, далее
+    # пополняется находками этой сессии. Под общим локом — воркеры
+    # читают/пополняют его параллельно.
+    hackers_lock = threading.Lock()
+    hacker_wallets = set(load_hacker_file(hacker_file)) if hacker_file else set()
+    if api_url:
+        hacker_wallets.update(fetch_hacker_wallets(api_url, api_key))
+    hacker_wallets = {a for a in hacker_wallets
+                      if a and a not in KNOWN_PROGRAMS
+                      and a not in KNOWN_EXCHANGES and is_on_curve(a)}
+    movement_state = {}  # получатель -> {"txs": n, "sources": set}
+    print(f"  хакерских кошельков под наблюдением: {len(hacker_wallets)}",
+          flush=True)
 
     # Общее состояние окна. Курсор next выдаёт слоты воркерам; слот
     # считается обработанным после завершения process_slot. Стартовать
@@ -791,6 +865,49 @@ def mode_watch(rpc, watch_programs, full_blocks=False, out_file=None,
                 print(f"      API: id={resp.get('id')} victim={entry.get('victim', '')[:12]}..."
                       f" hacker={entry.get('hacker', '')[:12]}...")
 
+    def watch_hacker(addr):
+        """Поставить кошелёк под наблюдение (движение украденного)."""
+        if (addr and addr not in KNOWN_PROGRAMS
+                and addr not in KNOWN_EXCHANGES and is_on_curve(addr)):
+            with hackers_lock:
+                hacker_wallets.add(addr)
+
+    def record_movement(slot_, sig, moves):
+        """Движение украденного с хакерского кошелька: классификация
+        получателя (1 перевод — SUSPICIOUS/F1, 2+ — hacker/F2) и отправка
+        находки. F2-получатель сразу попадает под наблюдение — цепочка
+        раскручивается рекурсивно."""
+        for m in moves:
+            with hackers_lock:
+                st = movement_state.setdefault(
+                    m["to"], {"txs": 0, "sources": set()})
+                st["txs"] += 1
+                st["sources"].add(m["from"])
+                repeat = st["txs"] >= 2 or len(st["sources"]) >= 2
+                if repeat:
+                    hacker_wallets.add(m["to"])
+            stats["movements"] += 1
+            label = "F2_REPEAT_DOWNSTREAM" if repeat else "F1_DOWNSTREAM_TRANSFER"
+            print(f"\n  >>> ДВИЖЕНИЕ С ХАКЕРСКОГО slot {slot_}: "
+                  f"{m['from'][:12]}... -> {m['to'][:12]}... "
+                  f"{m['amount_sol']:.6f} SOL [{label}]", flush=True)
+            if poster:
+                poster.submit_all([{
+                    "chain": "solana",
+                    "signature": sig,
+                    "slot": slot_,
+                    "verdict": "DRAINER" if repeat else "SUSPICIOUS",
+                    "indicators": [label],
+                    # поток, а не дрейн: жертвы нет, бэкенд регистрирует
+                    # только сторону хакера (получателя украденного)
+                    "victim_address": "",
+                    "hacker_address": m["to"],
+                    "amount_sol": round(m["amount_sol"], 9),
+                    "programs": [],
+                    "exposed_addresses": [m["from"]],
+                    "source": "watch",
+                }])
+
     def process_slot(slot_):
         """Загрузка и анализ одного блока (выполняется в воркере пула)."""
         try:
@@ -811,13 +928,23 @@ def mode_watch(rpc, watch_programs, full_blocks=False, out_file=None,
         print(f"  block {slot_}: {len(txs)} tx "
               f"(всего {stats['blocks']} блок., {bps:.2f} блок/с, "
               f"chain ~2.5 блок/с)", flush=True)
+        # снимок множества хакеров на блок: пополнение внутри блока
+        # подхватывается со следующего
+        with hackers_lock:
+            hacker_snapshot = set(hacker_wallets)
         for tx in txs:
             if (tx.get("meta") or {}).get("err"):
                 continue
+            sig = (tx.get("transaction", {}).get("signatures") or [""])[0]
+            # движение украденного: исходящие переводы с хакерских кошельков
+            # видны независимо от prefilter — смотрим каждую транзакцию
+            if hacker_snapshot:
+                moves = hacker_movements(tx, hacker_snapshot)
+                if moves:
+                    record_movement(slot_, sig, moves)
             if not full_blocks and not prefilter_block_tx(tx, watch):
                 continue
             stats["candidates"] += 1
-            sig = (tx.get("transaction", {}).get("signatures") or [""])[0]
             verdict, indicators, details = detect_patterns(tx, watch_programs)
             # В живом мониторинге показываем только DRAINER (P1 — полный
             # захват аккаунта). SUSPICIOUS (sweeps без захвата) — скипаем:
@@ -825,6 +952,9 @@ def mode_watch(rpc, watch_programs, full_blocks=False, out_file=None,
             if verdict == "DRAINER":
                 stats["drainer"] += 1
                 victim, hacker = extract_parties(details, signers(tx))
+                # оператор находки сразу под наблюдением: его дальнейшие
+                # переводы — движение украденного
+                watch_hacker(hacker)
                 record_finding(slot_, {
                     "slot": slot_, "signature": sig, "verdict": verdict,
                     "indicators": indicators,
@@ -947,6 +1077,34 @@ def outgoing_transfers(tx, address, signature=""):
         if not dst or dst == address or amt < TRACE_MIN_SOL:
             continue
         outs.append({"to": dst, "amount_sol": amt, "tx": signature})
+    return outs
+
+
+def hacker_movements(tx, hackers):
+    """Исходящие SOL-переводы с известных хакерских кошельков внутри tx.
+
+    Увод украденного дальше по цепочке: получатель — новый узел сети.
+    Биржи/программы/PDA-получатели пропускаются — как и в flow-trace, они
+    не регистрируются как злоумышленники (кэшаут — конец цепочки).
+    """
+    outs = []
+    for ix in iter_instructions(tx):
+        if ix.get("program") != "system":
+            continue
+        p = ix.get("parsed") or {}
+        if p.get("type") != "transfer":
+            continue
+        info = p.get("info") or {}
+        src, dst = info.get("source"), info.get("destination")
+        if src not in hackers or not dst or dst == src:
+            continue
+        amt = int(info.get("lamports") or 0) / 1e9
+        if amt < TRACE_MIN_SOL:
+            continue
+        if (dst in KNOWN_EXCHANGES or dst in KNOWN_PROGRAMS
+                or not is_on_curve(dst)):
+            continue
+        outs.append({"from": src, "to": dst, "amount_sol": amt})
     return outs
 
 
@@ -1391,6 +1549,13 @@ def main():
                      help="скользящее окно слотов в watch (по умолчанию "
                           "4*threads): дальше окна от минимального "
                           "необработанного слота воркеры не стартуют")
+    p_w.add_argument("--hacker-file",
+                     default=os.environ.get("SOLANA_HACKERS_FILE",
+                                            DEFAULT_HACKERS_FILE),
+                     help="JSON с хакерскими кошельками для отслеживания "
+                          "движения украденного (дополняет список из БД "
+                          "бэкенда; по умолчанию solana_hackers.json рядом "
+                          "со скриптом)")
 
     for p in (p_tx, p_qs, p_sw, p_w):
         p.add_argument("--watch-program", action="append", default=[],
@@ -1453,6 +1618,7 @@ def main():
         mode_watch(rpc, args.watch_program, full_blocks=args.full_blocks,
                    out_file=args.out, stats_every=args.stats_every,
                    start_slot=args.start_slot, window=args.window,
+                   hacker_file=args.hacker_file,
                    api_url=args.api_url, api_key=args.api_key)
 
 

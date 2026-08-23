@@ -123,6 +123,7 @@ func main() {
 	admin.POST("/wallets", h.AddWallet)
 	admin.POST("/wallets/async", h.AddWalletAsync)
 	admin.GET("/wallets/jobs/:id", h.GetWalletJob)
+	admin.GET("/wallets", h.ListAdminWallets)
 	admin.POST("/scanner/findings", h.IngestScanFinding)
 
 	server := &http.Server{Addr: ":" + cfg.ServerPort, Handler: router, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
