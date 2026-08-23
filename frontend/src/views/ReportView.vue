@@ -558,7 +558,10 @@ async function submitBug() {
             </p>
             <textarea v-model="bugMessage" rows="4" maxlength="2000" placeholder="Describe what's wrong (verdict, amounts, missing wallet…)"></textarea>
             <div class="captcha-row">
-              <div class="captcha-img" v-if="bugCaptchaImage" v-html="bugCaptchaImage"></div>
+              <div class="captcha-img" :class="{ loading: bugCaptchaLoading }">
+                <img v-if="bugCaptchaImage" :src="bugCaptchaImage" alt="captcha" />
+                <span v-else>…</span>
+              </div>
               <button type="button" class="refresh-btn" @click="loadBugCaptcha" title="new captcha">↻</button>
               <input v-model="bugCaptchaAnswer" :disabled="bugCaptchaLoading" maxlength="8" placeholder="captcha code" @keyup.enter="bugCanSubmit && submitBug()" />
             </div>
@@ -1237,9 +1240,24 @@ async function submitBug() {
   flex-shrink: 0;
   border-radius: 4px;
   overflow: hidden;
-  min-width: 120px;
-  min-height: 40px;
+  width: 220px;
+  height: 64px;
   background: #0e1322;
+}
+
+.captcha-img img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.captcha-img.loading span {
+  color: #4c5a7a;
+  font-size: 0.8rem;
+}
+
+.captcha-img span {
+  color: #4c5a7a;
 }
 
 .captcha-row input {
