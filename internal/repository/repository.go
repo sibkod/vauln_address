@@ -687,8 +687,14 @@ func (r *Repository) migration006(ctx context.Context) {
 			log.Printf("Migration note (wallets association): %v", err)
 		}
 	}
-	if _, err := r.db.ExecContext(ctx,
-		"CREATE INDEX IF NOT EXISTS idx_wallets_associated_hacker ON wallets(associated_hacker)"); err != nil {
+	// MySQL does not support CREATE INDEX IF NOT EXISTS; a duplicate index
+	// there surfaces as "Duplicate key name" and is safe to ignore.
+	createIndexSQL := "CREATE INDEX IF NOT EXISTS idx_wallets_associated_hacker ON wallets(associated_hacker)"
+	if r.dbType == config.DBTypeMySQL {
+		createIndexSQL = "CREATE INDEX idx_wallets_associated_hacker ON wallets(associated_hacker)"
+	}
+	if _, err := r.db.ExecContext(ctx, createIndexSQL); err != nil &&
+		!strings.Contains(err.Error(), "Duplicate key name") {
 		log.Printf("Migration note (wallets association index): %v", err)
 	}
 }

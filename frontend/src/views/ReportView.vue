@@ -478,6 +478,7 @@ async function submitBug() {
 
       <!-- Leaks -->
       <CollapsibleSection v-if="report.leaks && report.leaks.length" title="Leaky records">
+        <div class="table-scroll">
         <table class="leaks-table">
           <thead>
             <tr><th>Type</th><th>Source</th><th>Discovered</th></tr>
@@ -490,6 +491,7 @@ async function submitBug() {
             </tr>
           </tbody>
         </table>
+        </div>
       </CollapsibleSection>
 
       <!-- Money-flow analytics -->
@@ -498,33 +500,37 @@ async function submitBug() {
         <div class="flows-grid">
           <div class="flow-col" v-if="report.fund_flows.inflow.length">
             <h3 class="flow-title inflow">Received from</h3>
-            <div v-for="entry in report.fund_flows.inflow" :key="'in-' + entry.address" class="flow-item" :class="{ expanded: expandedFlow === 'in-' + entry.address }">
-              <button class="flow-row" @click="toggleFlow('in-' + entry.address)">
-                <span class="dot" :class="statusDotCls(entry.status)"></span>
-                <span class="flow-addr" :title="entry.address">{{ shortAddr(entry.address) }}</span>
-                <span v-if="entry.associated_hacker" class="assoc-badge" title="flagged as linked to a hacker">🕸️</span>
-                <span class="flow-tx">{{ entry.tx_count }} tx</span>
-                <span class="flow-amount">{{ entry.amount.toFixed(4) }} {{ report.fund_flows.currency }}</span>
-              </button>
-              <div v-show="expandedFlow === 'in-' + entry.address" class="flow-sigs">
-                <p v-if="!entry.signatures?.length" class="no-sigs">No signatures recorded.</p>
-                <a v-for="sig in entry.signatures" :key="sig" class="sig-link" :href="solscanTx(sig)" target="_blank" rel="noopener">{{ sig }}</a>
+            <div class="scroll-block">
+              <div v-for="entry in report.fund_flows.inflow" :key="'in-' + entry.address" class="flow-item" :class="{ expanded: expandedFlow === 'in-' + entry.address }">
+                <button class="flow-row" @click="toggleFlow('in-' + entry.address)">
+                  <span class="dot" :class="statusDotCls(entry.status)"></span>
+                  <span class="flow-addr" :title="entry.address">{{ shortAddr(entry.address) }}</span>
+                  <span v-if="entry.associated_hacker" class="assoc-badge" title="flagged as linked to a hacker">🕸️</span>
+                  <span class="flow-tx">{{ entry.tx_count }} tx</span>
+                  <span class="flow-amount">{{ entry.amount.toFixed(4) }} {{ report.fund_flows.currency }}</span>
+                </button>
+                <div v-show="expandedFlow === 'in-' + entry.address" class="flow-sigs">
+                  <p v-if="!entry.signatures?.length" class="no-sigs">No signatures recorded.</p>
+                  <a v-for="sig in entry.signatures" :key="sig" class="sig-link" :href="solscanTx(sig)" target="_blank" rel="noopener">{{ sig }}</a>
+                </div>
               </div>
             </div>
           </div>
           <div class="flow-col" v-if="report.fund_flows.outflow.length">
             <h3 class="flow-title outflow">Sent to</h3>
-            <div v-for="entry in report.fund_flows.outflow" :key="'out-' + entry.address" class="flow-item" :class="{ expanded: expandedFlow === 'out-' + entry.address }">
-              <button class="flow-row" @click="toggleFlow('out-' + entry.address)">
-                <span class="dot" :class="statusDotCls(entry.status)"></span>
-                <span class="flow-addr" :title="entry.address">{{ shortAddr(entry.address) }}</span>
-                <span v-if="entry.associated_hacker" class="assoc-badge" title="flagged as linked to a hacker">🕸️</span>
-                <span class="flow-tx">{{ entry.tx_count }} tx</span>
-                <span class="flow-amount">{{ entry.amount.toFixed(4) }} {{ report.fund_flows.currency }}</span>
-              </button>
-              <div v-show="expandedFlow === 'out-' + entry.address" class="flow-sigs">
-                <p v-if="!entry.signatures?.length" class="no-sigs">No signatures recorded.</p>
-                <a v-for="sig in entry.signatures" :key="sig" class="sig-link" :href="solscanTx(sig)" target="_blank" rel="noopener">{{ sig }}</a>
+            <div class="scroll-block">
+              <div v-for="entry in report.fund_flows.outflow" :key="'out-' + entry.address" class="flow-item" :class="{ expanded: expandedFlow === 'out-' + entry.address }">
+                <button class="flow-row" @click="toggleFlow('out-' + entry.address)">
+                  <span class="dot" :class="statusDotCls(entry.status)"></span>
+                  <span class="flow-addr" :title="entry.address">{{ shortAddr(entry.address) }}</span>
+                  <span v-if="entry.associated_hacker" class="assoc-badge" title="flagged as linked to a hacker">🕸️</span>
+                  <span class="flow-tx">{{ entry.tx_count }} tx</span>
+                  <span class="flow-amount">{{ entry.amount.toFixed(4) }} {{ report.fund_flows.currency }}</span>
+                </button>
+                <div v-show="expandedFlow === 'out-' + entry.address" class="flow-sigs">
+                  <p v-if="!entry.signatures?.length" class="no-sigs">No signatures recorded.</p>
+                  <a v-for="sig in entry.signatures" :key="sig" class="sig-link" :href="solscanTx(sig)" target="_blank" rel="noopener">{{ sig }}</a>
+                </div>
               </div>
             </div>
           </div>
@@ -534,7 +540,9 @@ async function submitBug() {
       <!-- Transaction tree -->
       <CollapsibleSection v-if="report.transactions" title="Transaction flows">
         <p class="tree-hint">Counterparties indexed by the scanner and the status of each wallet</p>
-        <TxTreeNode v-if="report.transactions.children?.length" :node="report.transactions" />
+        <div v-if="report.transactions.children?.length" class="scroll-block tree-scroll">
+          <TxTreeNode :node="report.transactions" />
+        </div>
         <p v-else class="tree-empty">No indexed transactions for this address yet — the scanner has not observed it on-chain.</p>
       </CollapsibleSection>
 
@@ -919,7 +927,8 @@ async function submitBug() {
   margin: 0;
 }
 
-.evidence-scroll {
+.evidence-scroll,
+.scroll-block {
   max-height: 340px;
   overflow-y: auto;
   padding-right: 0.4rem;
@@ -927,17 +936,30 @@ async function submitBug() {
   scrollbar-color: #2a3548 transparent;
 }
 
-.evidence-scroll::-webkit-scrollbar {
+.evidence-scroll::-webkit-scrollbar,
+.scroll-block::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
 
-.evidence-scroll::-webkit-scrollbar-thumb {
+.evidence-scroll::-webkit-scrollbar-thumb,
+.scroll-block::-webkit-scrollbar-thumb {
   background: #2a3548;
   border-radius: 3px;
 }
 
-.evidence-scroll::-webkit-scrollbar-track {
+.evidence-scroll::-webkit-scrollbar-track,
+.scroll-block::-webkit-scrollbar-track {
   background: transparent;
+}
+
+.tree-scroll {
+  max-height: 480px;
+  overflow-x: auto;
+}
+
+.table-scroll {
+  overflow-x: auto;
 }
 
 .evidence-chain {
