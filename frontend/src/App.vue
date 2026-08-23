@@ -673,7 +673,7 @@ function getTotal() {
     <div class="nav-center">
       <RouterLink to="/" class="nav-link">Home</RouterLink>
       <RouterLink to="/monitor" class="nav-link">Monitor</RouterLink>
-      <RouterLink to="/report-drainer" class="nav-link">Report Drainer</RouterLink>
+      <RouterLink to="/submit-report" class="nav-link">Report</RouterLink>
       <RouterLink to="/pricing" class="nav-link">Pricing</RouterLink>
       <RouterLink to="/roadmap" class="nav-link">Roadmap</RouterLink>
       <RouterLink to="/about" class="nav-link">About</RouterLink>

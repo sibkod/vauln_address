@@ -1,8 +1,16 @@
 <script setup lang="ts">
 import { ref, computed, inject, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 
 const apiBase = inject<string>('apiBase', '')
 const wallet = inject<any>('wallet')
+
+const route = useRoute()
+
+type Tab = 'drainer' | 'leak'
+
+// Which tab is open — deep-linkable: /submit-report?tab=leak
+const tab = ref<Tab>(route.query.tab === 'leak' ? 'leak' : 'drainer')
 
 const chains = ['solana', 'evm', 'btc', 'sui', 'tron']
 
@@ -11,6 +19,12 @@ const chain = ref('solana')
 const siteUrl = ref('')
 const description = ref('')
 
+// leak tab
+const leakChain = ref('solana')
+const secretType = ref<'private_key' | 'seed_phrase'>('private_key')
+const secret = ref('')
+const leakDescription = ref('')
+
 const captchaId = ref('')
 const captchaImage = ref('')
 const captchaAnswer = ref('')
@@ -18,7 +32,6 @@ const captchaLoading = ref(false)
 
 const submitting = ref(false)
 const error = ref('')
-const errorCode = ref('')
 const successId = ref<number | null>(null)
 const telegramSent = ref(false)
 
@@ -40,15 +53,27 @@ async function loadCaptcha() {
   }
 }
 
-const canSubmit = computed(() =>
+const canSubmitDrainer = computed(() =>
   txSignature.value.trim().length >= 40 &&
   captchaAnswer.value.trim().length >= 4 &&
   !submitting.value
 )
 
-async function submit() {
+const canSubmitLeak = computed(() =>
+  secret.value.trim().length >= 16 &&
+  captchaAnswer.value.trim().length >= 4 &&
+  !submitting.value
+)
+
+function switchTab(next: Tab) {
+  if (tab.value === next) return
+  tab.value = next
   error.value = ''
-  errorCode.value = ''
+  loadCaptcha()
+}
+
+async function submitDrainer() {
+  error.value = ''
   submitting.value = true
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
@@ -71,9 +96,45 @@ async function submit() {
     })
     const data = await res.json()
     if (!res.ok) {
-      errorCode.value = data.code || 'ERROR'
       error.value = data.details || data.error || 'Submission failed'
-      if (errorCode.value === 'CAPTCHA_INVALID') loadCaptcha()
+      if (data.code === 'CAPTCHA_INVALID') loadCaptcha()
+      return
+    }
+    successId.value = data.id
+    telegramSent.value = !!data.telegram_sent
+  } catch {
+    error.value = 'Request failed. Is the backend running?'
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function submitLeak() {
+  error.value = ''
+  submitting.value = true
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (wallet?.authToken?.value) {
+    headers['Authorization'] = `Bearer ${wallet.authToken.value}`
+  }
+
+  try {
+    const res = await fetch(`${apiBase}/api/leak-reports`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        chain: leakChain.value,
+        secret_type: secretType.value,
+        secret: secret.value.trim(),
+        description: leakDescription.value.trim(),
+        captcha_id: captchaId.value,
+        captcha_answer: captchaAnswer.value.trim()
+      })
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      error.value = data.details || data.error || 'Submission failed'
+      if (data.code === 'CAPTCHA_INVALID') loadCaptcha()
       return
     }
     successId.value = data.id
@@ -89,6 +150,8 @@ function resetForm() {
   txSignature.value = ''
   siteUrl.value = ''
   description.value = ''
+  secret.value = ''
+  leakDescription.value = ''
   successId.value = null
   telegramSent.value = false
   loadCaptcha()
@@ -100,11 +163,17 @@ onMounted(loadCaptcha)
 <template>
   <div class="drainer-report-page">
     <div class="page-header">
-      <h1>Report a Drainer</h1>
-      <p class="subtitle">
-        Were your funds stolen by a drainer? Submit the theft transaction and any details —
-        our analysts will review it and add the attackers to the threat database.
-      </p>
+      <h1>Submit a Report</h1>
+      <p class="subtitle">Report a stolen-funds drainer or a leaked private key / seed phrase.</p>
+
+      <div class="tabs">
+        <button class="tab" :class="{ active: tab === 'drainer' }" @click="switchTab('drainer')">
+          🚨 Drainer
+        </button>
+        <button class="tab" :class="{ active: tab === 'leak' }" @click="switchTab('leak')">
+          🔑 Leaked key / seed
+        </button>
+      </div>
     </div>
 
     <div v-if="successId !== null" class="success-box">
@@ -118,7 +187,8 @@ onMounted(loadCaptcha)
       <button class="btn-secondary" @click="resetForm">Submit another report</button>
     </div>
 
-    <form v-else class="report-form" @submit.prevent="submit">
+    <!-- Drainer tab -->
+    <form v-else-if="tab === 'drainer'" class="report-form" @submit.prevent="submitDrainer">
       <label class="field">
         <span class="field-label">Theft transaction signature / hash <em>*</em></span>
         <span class="field-hint">The transaction in which coins were stolen from your wallet</span>
@@ -181,13 +251,94 @@ onMounted(loadCaptcha)
 
       <div v-if="error" class="form-error">{{ error }}</div>
 
-      <button type="submit" class="submit-btn" :disabled="!canSubmit">
+      <button type="submit" class="submit-btn" :disabled="!canSubmitDrainer">
         {{ submitting ? 'Submitting…' : '🚨 Submit report' }}
       </button>
 
       <p class="privacy-note">
         Reports are sent to our analysts{{ isConnected ? '' : ' anonymously' }}.
         {{ isConnected ? '' : 'Connect a wallet to link the report to your account.' }}
+      </p>
+    </form>
+
+    <!-- Leak tab -->
+    <form v-else class="report-form" @submit.prevent="submitLeak">
+      <label class="field">
+        <span class="field-label">Chain</span>
+        <select v-model="leakChain">
+          <option v-for="c in chains" :key="c" :value="c">{{ c.toUpperCase() }}</option>
+        </select>
+      </label>
+
+      <label class="field">
+        <span class="field-label">What was leaked <em>*</em></span>
+        <div class="secret-types">
+          <label class="radio">
+            <input type="radio" value="private_key" v-model="secretType" />
+            <span>Private key</span>
+          </label>
+          <label class="radio">
+            <input type="radio" value="seed_phrase" v-model="secretType" />
+            <span>Seed phrase (mnemonic)</span>
+          </label>
+        </div>
+      </label>
+
+      <label class="field">
+        <span class="field-label">The leaked secret <em>*</em></span>
+        <span class="field-hint">
+          It is forwarded to our analyst chat; the server never stores it — only a
+          SHA-256 fingerprint for deduplication.
+        </span>
+        <textarea
+          class="secret-input"
+          v-model="secret"
+          rows="3"
+          maxlength="512"
+          placeholder="Private key (Base58 / hex) or the full mnemonic"
+          required
+        ></textarea>
+      </label>
+
+      <label class="field">
+        <span class="field-label">Source / details</span>
+        <textarea
+          v-model="leakDescription"
+          rows="3"
+          maxlength="2000"
+          placeholder="Where did you find it? Paste the channel, site, or wallet address."
+        ></textarea>
+      </label>
+
+      <div class="field captcha-field">
+        <span class="field-label">Captcha <em>*</em></span>
+        <div class="captcha-row">
+          <div class="captcha-image" :class="{ loading: captchaLoading }">
+            <img v-if="captchaImage" :src="captchaImage" alt="captcha" />
+            <span v-else>…</span>
+          </div>
+          <button type="button" class="captcha-refresh" @click="loadCaptcha" title="New captcha">⟳</button>
+          <input
+            v-model="captchaAnswer"
+            type="text"
+            class="captcha-input"
+            placeholder="Code from image"
+            maxlength="6"
+            autocomplete="off"
+            required
+          />
+        </div>
+      </div>
+
+      <div v-if="error" class="form-error">{{ error }}</div>
+
+      <button type="submit" class="submit-btn" :disabled="!canSubmitLeak">
+        {{ submitting ? 'Submitting…' : '🔑 Submit leak' }}
+      </button>
+
+      <p class="privacy-note">
+        Reports are sent to our analysts{{ isConnected ? '' : ' anonymously' }}. The leaked
+        secret is hashed for deduplication — never stored in plaintext.
       </p>
     </form>
   </div>
@@ -218,6 +369,62 @@ onMounted(loadCaptcha)
   color: #6b7a9e;
   font-size: 0.95rem;
   line-height: 1.5;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 1.1rem;
+}
+
+.tab {
+  flex: 1;
+  background: #141a2c;
+  border: 1px solid #2a3548;
+  color: #8a98bb;
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tab:hover {
+  color: #e7ecf5;
+}
+
+.tab.active {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.18), rgba(102, 126, 234, 0.06));
+  border-color: #667eea;
+  color: #e7ecf5;
+}
+
+.secret-types {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.radio {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: #0c111b;
+  border: 1px solid #2a3548;
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  cursor: pointer;
+  color: #c9d4ea;
+  font-size: 0.85rem;
+}
+
+.radio:has(input:checked) {
+  border-color: #667eea;
+}
+
+.radio input {
+  accent-color: #667eea;
 }
 
 .report-form {
@@ -274,6 +481,11 @@ onMounted(loadCaptcha)
 
 .field input {
   font-family: monospace;
+}
+
+.field .secret-input {
+  font-family: monospace;
+  word-break: break-all;
 }
 
 .field textarea {

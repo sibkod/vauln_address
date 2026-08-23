@@ -20,6 +20,23 @@ interface StatusEvidence {
   detected_at?: string
 }
 
+interface FlowEntry {
+  address: string
+  chain: string
+  status: string
+  associated_hacker?: boolean
+  is_program?: boolean
+  tx_count: number
+  amount: number
+  signatures?: string[]
+}
+
+interface FundFlows {
+  inflow: FlowEntry[]
+  outflow: FlowEntry[]
+  currency: string
+}
+
 interface Report {
   address: string
   chain: string
@@ -35,6 +52,7 @@ interface Report {
   leaks?: LeakInfo[]
   evidence?: StatusEvidence[]
   transactions?: TxNode
+  fund_flows?: FundFlows
   expires_at?: string
   public?: boolean
   created_at: string
@@ -245,6 +263,112 @@ function evidenceDate(e: StatusEvidence): string {
   const d = new Date(e.detected_at)
   return isNaN(d.getTime()) ? '' : d.toLocaleDateString()
 }
+
+function statusLabel(status: string): string {
+  if (status === 'program') return 'program'
+  if (status === 'potential_hacker') return 'potential hacker'
+  return status.replace(/_/g, ' ')
+}
+
+function statusDotCls(status: string): string {
+  switch (status) {
+    case 'hacked':
+    case 'hacker':
+    case 'drained':
+    case 'phishing':
+    case 'scam':
+    case 'sanctioned':
+      return 'danger'
+    case 'potential_hacker':
+    case 'program':
+    case 'vulnerable':
+    case 'suspicious':
+    case 'mixer':
+    case 'frozen':
+      return 'vulnerable'
+    default:
+      return 'success'
+  }
+}
+
+// ---- Fund flows (click a counterparty to reveal its transactions) ----
+const expandedFlow = ref('')
+
+function toggleFlow(addr: string) {
+  expandedFlow.value = expandedFlow.value === addr ? '' : addr
+}
+
+// ---- Report an error ----
+const bugOpen = ref(false)
+const bugMessage = ref('')
+const bugSending = ref(false)
+const bugDone = ref(false)
+const bugError = ref('')
+const bugCaptchaId = ref('')
+const bugCaptchaImage = ref('')
+const bugCaptchaAnswer = ref('')
+const bugCaptchaLoading = ref(false)
+
+async function loadBugCaptcha() {
+  bugCaptchaLoading.value = true
+  bugCaptchaAnswer.value = ''
+  try {
+    const res = await fetch(`${apiBase}/api/captcha`)
+    if (!res.ok) throw new Error()
+    const data = await res.json()
+    bugCaptchaId.value = data.captcha_id
+    bugCaptchaImage.value = data.image
+  } catch {
+    bugError.value = 'Failed to load captcha. Is the backend running?'
+  } finally {
+    bugCaptchaLoading.value = false
+  }
+}
+
+function openBugForm() {
+  bugOpen.value = true
+  bugDone.value = false
+  bugError.value = ''
+  bugMessage.value = ''
+  loadBugCaptcha()
+}
+
+const bugCanSubmit = computed(() =>
+  bugMessage.value.trim().length >= 3 && bugCaptchaAnswer.value.trim().length >= 4 && !bugSending.value
+)
+
+async function submitBug() {
+  bugSending.value = true
+  bugError.value = ''
+  try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (wallet?.authToken?.value) {
+      headers['Authorization'] = `Bearer ${wallet.authToken.value}`
+    }
+    const res = await fetch(`${apiBase}/api/bug-reports`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        address: address.value,
+        chain: chain.value,
+        message: bugMessage.value.trim(),
+        captcha_id: bugCaptchaId.value,
+        captcha_answer: bugCaptchaAnswer.value.trim()
+      })
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      bugError.value = data.details || data.error || 'Submission failed'
+      if (data.code === 'CAPTCHA_INVALID') loadBugCaptcha()
+      return
+    }
+    bugDone.value = true
+  } catch {
+    bugError.value = 'Request failed. Is the backend running?'
+  } finally {
+    bugSending.value = false
+  }
+}
 </script>
 
 <template>
@@ -368,6 +492,45 @@ function evidenceDate(e: StatusEvidence): string {
         </table>
       </CollapsibleSection>
 
+      <!-- Money-flow analytics -->
+      <CollapsibleSection v-if="report.fund_flows" title="Money flows">
+        <p class="tree-hint">Where the funds came from / went to. Click a counterparty to see the exact transactions.</p>
+        <div class="flows-grid">
+          <div class="flow-col" v-if="report.fund_flows.inflow.length">
+            <h3 class="flow-title inflow">Received from</h3>
+            <div v-for="entry in report.fund_flows.inflow" :key="'in-' + entry.address" class="flow-item" :class="{ expanded: expandedFlow === 'in-' + entry.address }">
+              <button class="flow-row" @click="toggleFlow('in-' + entry.address)">
+                <span class="dot" :class="statusDotCls(entry.status)"></span>
+                <span class="flow-addr" :title="entry.address">{{ shortAddr(entry.address) }}</span>
+                <span v-if="entry.associated_hacker" class="assoc-badge" title="flagged as linked to a hacker">🕸️</span>
+                <span class="flow-tx">{{ entry.tx_count }} tx</span>
+                <span class="flow-amount">{{ entry.amount.toFixed(4) }} {{ report.fund_flows.currency }}</span>
+              </button>
+              <div v-show="expandedFlow === 'in-' + entry.address" class="flow-sigs">
+                <p v-if="!entry.signatures?.length" class="no-sigs">No signatures recorded.</p>
+                <a v-for="sig in entry.signatures" :key="sig" class="sig-link" :href="solscanTx(sig)" target="_blank" rel="noopener">{{ sig }}</a>
+              </div>
+            </div>
+          </div>
+          <div class="flow-col" v-if="report.fund_flows.outflow.length">
+            <h3 class="flow-title outflow">Sent to</h3>
+            <div v-for="entry in report.fund_flows.outflow" :key="'out-' + entry.address" class="flow-item" :class="{ expanded: expandedFlow === 'out-' + entry.address }">
+              <button class="flow-row" @click="toggleFlow('out-' + entry.address)">
+                <span class="dot" :class="statusDotCls(entry.status)"></span>
+                <span class="flow-addr" :title="entry.address">{{ shortAddr(entry.address) }}</span>
+                <span v-if="entry.associated_hacker" class="assoc-badge" title="flagged as linked to a hacker">🕸️</span>
+                <span class="flow-tx">{{ entry.tx_count }} tx</span>
+                <span class="flow-amount">{{ entry.amount.toFixed(4) }} {{ report.fund_flows.currency }}</span>
+              </button>
+              <div v-show="expandedFlow === 'out-' + entry.address" class="flow-sigs">
+                <p v-if="!entry.signatures?.length" class="no-sigs">No signatures recorded.</p>
+                <a v-for="sig in entry.signatures" :key="sig" class="sig-link" :href="solscanTx(sig)" target="_blank" rel="noopener">{{ sig }}</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </CollapsibleSection>
+
       <!-- Transaction tree -->
       <CollapsibleSection v-if="report.transactions" title="Transaction flows">
         <p class="tree-hint">Counterparties indexed by the scanner and the status of each wallet</p>
@@ -376,7 +539,38 @@ function evidenceDate(e: StatusEvidence): string {
       </CollapsibleSection>
 
       <div class="section footer-note">
-        Report created {{ new Date(report.created_at).toLocaleString() }}
+        <span>Report created {{ new Date(report.created_at).toLocaleString() }}</span>
+        <button class="bug-btn" @click="openBugForm">Report an error</button>
+      </div>
+
+      <!-- Report an error -->
+      <div v-if="bugOpen" class="bug-overlay" @click.self="bugOpen = false">
+        <div class="bug-modal">
+          <h2>Report an error</h2>
+          <div v-if="bugDone" class="bug-success">
+            ✅ Thank you! The report has been forwarded to our analysts.
+            <button class="btn-secondary" @click="bugOpen = false">Close</button>
+          </div>
+          <template v-else>
+            <p class="bug-sub">
+              Something is wrong with this report for <code>{{ shortAddr(address) }}</code>? Tell us
+              what — the message goes straight to our analysts on Telegram.
+            </p>
+            <textarea v-model="bugMessage" rows="4" maxlength="2000" placeholder="Describe what's wrong (verdict, amounts, missing wallet…)"></textarea>
+            <div class="captcha-row">
+              <div class="captcha-img" v-if="bugCaptchaImage" v-html="bugCaptchaImage"></div>
+              <button type="button" class="refresh-btn" @click="loadBugCaptcha" title="new captcha">↻</button>
+              <input v-model="bugCaptchaAnswer" :disabled="bugCaptchaLoading" maxlength="8" placeholder="captcha code" @keyup.enter="bugCanSubmit && submitBug()" />
+            </div>
+            <p v-if="bugError" class="error-box">{{ bugError }}</p>
+            <div class="bug-actions">
+              <button class="btn-primary" :disabled="!bugCanSubmit" @click="submitBug">
+                {{ bugSending ? 'Sending…' : 'Send report' }}
+              </button>
+              <button class="btn-secondary" @click="bugOpen = false">Cancel</button>
+            </div>
+          </template>
+        </div>
       </div>
     </div>
   </div>
@@ -852,5 +1046,276 @@ function evidenceDate(e: StatusEvidence): string {
   color: #4c5a7a;
   font-size: 0.75rem;
   padding: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+/* ---- Money flows ---- */
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.dot.danger { background: #e15a5a; box-shadow: 0 0 8px #e15a5a40; }
+.dot.vulnerable { background: #d9a24b; box-shadow: 0 0 8px #d9a24b40; }
+.dot.success { background: #4bc9a0; box-shadow: 0 0 8px #4bc9a040; }
+
+.flows-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.flow-title {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 0.5rem;
+}
+
+.flow-title.inflow { color: #2fbf71; }
+.flow-title.outflow { color: #ff6b6b; }
+
+.flow-item {
+  border: 1px solid #232c4a;
+  border-radius: 6px;
+  margin-bottom: 0.4rem;
+  overflow: hidden;
+}
+
+.flow-item.expanded {
+  border-color: #3a4a82;
+}
+
+.flow-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.45rem 0.6rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #c9d4ea;
+  font-size: 0.82rem;
+}
+
+.flow-row:hover {
+  background: #1a2036;
+}
+
+.flow-addr {
+  font-family: monospace;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.flow-tx {
+  color: #6b7a9e;
+  font-size: 0.72rem;
+  flex-shrink: 0;
+}
+
+.flow-amount {
+  font-family: monospace;
+  font-weight: 700;
+  color: #e7ecf5;
+  flex-shrink: 0;
+}
+
+.assoc-badge {
+  font-size: 0.8rem;
+}
+
+.flow-sigs {
+  padding: 0.4rem 0.6rem 0.55rem;
+  background: #12172b;
+  border-top: 1px solid #232c4a;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.sig-link {
+  display: block;
+  color: #7ea2ff;
+  font-family: monospace;
+  font-size: 0.72rem;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0.15rem 0;
+}
+
+.sig-link:hover {
+  text-decoration: underline;
+}
+
+.no-sigs {
+  color: #4c5a7a;
+  font-size: 0.72rem;
+  margin: 0;
+}
+
+/* ---- Report an error ---- */
+.bug-btn {
+  background: none;
+  border: 1px solid #3a4a82;
+  color: #7ea2ff;
+  border-radius: 6px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.bug-btn:hover {
+  background: #1a2036;
+}
+
+.bug-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 12, 24, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 100;
+}
+
+.bug-modal {
+  background: #141930;
+  border: 1px solid #2a3455;
+  border-radius: 10px;
+  padding: 1.25rem;
+  width: 100%;
+  max-width: 440px;
+}
+
+.bug-modal h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.1rem;
+  color: #e7ecf5;
+}
+
+.bug-sub {
+  color: #8a98bb;
+  font-size: 0.8rem;
+  margin-bottom: 0.75rem;
+}
+
+.bug-modal textarea {
+  width: 100%;
+  background: #0e1322;
+  border: 1px solid #2a3455;
+  border-radius: 6px;
+  color: #e7ecf5;
+  padding: 0.55rem;
+  font-size: 0.85rem;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.captcha-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.6rem 0;
+}
+
+.captcha-img {
+  flex-shrink: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  min-width: 120px;
+  min-height: 40px;
+  background: #0e1322;
+}
+
+.captcha-row input {
+  flex: 1;
+  min-width: 0;
+  background: #0e1322;
+  border: 1px solid #2a3455;
+  border-radius: 6px;
+  color: #e7ecf5;
+  padding: 0.45rem 0.6rem;
+  font-family: monospace;
+}
+
+.refresh-btn {
+  background: none;
+  border: 1px solid #2a3455;
+  color: #8a98bb;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0.35rem 0.55rem;
+}
+
+.refresh-btn:hover {
+  color: #e7ecf5;
+}
+
+.bug-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+.bug-actions button {
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background: #667eea;
+  border: none;
+  color: white;
+  font-weight: 700;
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn-secondary {
+  background: none;
+  border: 1px solid #2a3455;
+  color: #c9d4ea;
+}
+
+.bug-success {
+  color: #2fbf71;
+  font-size: 0.88rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.bug-success .btn-secondary {
+  align-self: flex-start;
+}
+
+.error-box {
+  background: rgba(255, 107, 107, 0.12);
+  border: 1px solid #ff6b6b;
+  color: #ffb3b3;
+  border-radius: 6px;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.78rem;
 }
 </style>

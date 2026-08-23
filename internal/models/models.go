@@ -502,7 +502,28 @@ type ReportTxNode struct {
 	Status           string          `json:"status"`
 	AssociatedHacker bool            `json:"associated_hacker,omitempty"`
 	IsProgram        bool            `json:"is_program,omitempty"`
+	Signatures       []string        `json:"signatures,omitempty"` // findings linking this node to its parent
 	Children         []*ReportTxNode `json:"children,omitempty"`
+}
+
+// ReportFlowEntry is one counterparty of the reported wallet: how much came
+// in from / went out to it, how many findings, and the exact signatures.
+type ReportFlowEntry struct {
+	Address          string   `json:"address"`
+	Chain            string   `json:"chain"`
+	Status           string   `json:"status"`
+	AssociatedHacker bool     `json:"associated_hacker,omitempty"`
+	IsProgram        bool     `json:"is_program,omitempty"`
+	TxCount          int      `json:"tx_count"`
+	Amount           float64  `json:"amount"`
+	Signatures       []string `json:"signatures,omitempty"`
+}
+
+// ReportFundFlows is the directional money-flow analytics of a report.
+type ReportFundFlows struct {
+	Inflow   []ReportFlowEntry `json:"inflow"`  // wallets this report received funds from
+	Outflow  []ReportFlowEntry `json:"outflow"` // wallets this report sent funds to
+	Currency string            `json:"currency"`
 }
 
 // ReportResponse is the full report payload for a found address.
@@ -521,6 +542,7 @@ type ReportResponse struct {
 	Leaks            []LeakedKeyInfo  `json:"leaks,omitempty"`
 	Evidence         []StatusEvidence `json:"evidence,omitempty"`
 	Transactions     *ReportTxNode    `json:"transactions,omitempty"`
+	FundFlows        *ReportFundFlows `json:"fund_flows,omitempty"`
 	ExpiresAt        *time.Time       `json:"expires_at,omitempty"`
 	Public           bool             `json:"public,omitempty"`
 	CreatedAt        time.Time        `json:"created_at"`
@@ -550,16 +572,16 @@ const (
 // VictimAddress is the drained/hijacked wallet, HackerAddress is the sweep
 // destination or the program that took over the account.
 type ScanFinding struct {
-	ID            int64     `json:"id"`
-	Chain         string    `json:"chain"`
-	Signature     string    `json:"signature"`
-	Slot          int64     `json:"slot"`
-	Verdict       string    `json:"verdict"`
-	Indicators    []string  `json:"indicators"`
-	VictimAddress string    `json:"victim_address,omitempty"`
-	HackerAddress string    `json:"hacker_address,omitempty"`
-	AmountSOL     float64   `json:"amount_sol"`
-	Programs      []string  `json:"programs,omitempty"`
+	ID            int64    `json:"id"`
+	Chain         string   `json:"chain"`
+	Signature     string   `json:"signature"`
+	Slot          int64    `json:"slot"`
+	Verdict       string   `json:"verdict"`
+	Indicators    []string `json:"indicators"`
+	VictimAddress string   `json:"victim_address,omitempty"`
+	HackerAddress string   `json:"hacker_address,omitempty"`
+	AmountSOL     float64  `json:"amount_sol"`
+	Programs      []string `json:"programs,omitempty"`
 	// ExposedAddresses are the funding sources of this finding: for
 	// flow-trace findings (F1/F2) they are the operator wallets that paid
 	// the hacker_address, so reports can link payouts back to the payer.
@@ -626,6 +648,54 @@ type DrainerReportRequest struct {
 type CaptchaResponse struct {
 	CaptchaID string `json:"captcha_id"`
 	Image     string `json:"image"` // data URI with the captcha SVG
+}
+
+// BugReport is a user-submitted report about a wrong report/check result.
+type BugReport struct {
+	ID           int64     `json:"id"`
+	Address      string    `json:"address"`
+	Chain        string    `json:"chain"`
+	Message      string    `json:"message"`
+	Reporter     string    `json:"-"` // wallet address or "ip:<ip>"
+	Status       string    `json:"status"`
+	TelegramSent bool      `json:"telegram_sent"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// BugReportRequest is the public payload for "report an error" on a report
+// page. Address/chain are optional context (the report being viewed).
+type BugReportRequest struct {
+	Address       string `json:"address" binding:"omitempty,max=120"`
+	Chain         string `json:"chain" binding:"omitempty,max=20"`
+	Message       string `json:"message" binding:"required,min=3,max=2000"`
+	CaptchaID     string `json:"captcha_id" binding:"required"`
+	CaptchaAnswer string `json:"captcha_answer" binding:"required"`
+}
+
+// LeakReport is a user-submitted report about a leaked private key or seed
+// phrase. The secret itself is NEVER stored — only a SHA-256 fingerprint.
+type LeakReport struct {
+	ID           int64     `json:"id"`
+	Chain        string    `json:"chain"`
+	SecretType   string    `json:"secret_type"` // "private_key" | "seed_phrase"
+	SecretHash   string    `json:"-"`           // sha256 hex, dedup only
+	Description  string    `json:"description,omitempty"`
+	Reporter     string    `json:"-"` // wallet address or "ip:<ip>"
+	Status       string    `json:"status"`
+	TelegramSent bool      `json:"telegram_sent"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// LeakReportRequest is the public payload of the leak tab. The secret is
+// required; it is hashed for dedup and forwarded to the team chat, never
+// persisted.
+type LeakReportRequest struct {
+	Chain         string `json:"chain"`
+	SecretType    string `json:"secret_type" binding:"required,oneof=private_key seed_phrase"`
+	Secret        string `json:"secret" binding:"required,min=16,max=512"`
+	Description   string `json:"description" binding:"omitempty,max=2000"`
+	CaptchaID     string `json:"captcha_id" binding:"required"`
+	CaptchaAnswer string `json:"captcha_answer" binding:"required"`
 }
 
 // ==================== Status evidence chain ====================

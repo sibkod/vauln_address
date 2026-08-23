@@ -238,6 +238,29 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		);
 		CREATE INDEX idx_drainer_reports_created ON drainer_reports(created_at);
+		CREATE TABLE IF NOT EXISTS bug_reports (
+				id BIGINT PRIMARY KEY AUTO_INCREMENT,
+				address VARCHAR(120) DEFAULT '',
+				chain VARCHAR(20) DEFAULT '',
+				message TEXT NOT NULL,
+				reporter VARCHAR(100) DEFAULT '',
+				status VARCHAR(20) DEFAULT 'new',
+				telegram_sent TINYINT(1) DEFAULT 0,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE INDEX idx_bug_reports_created ON bug_reports(created_at);
+		CREATE TABLE IF NOT EXISTS leak_reports (
+				id BIGINT PRIMARY KEY AUTO_INCREMENT,
+				chain VARCHAR(20) NOT NULL DEFAULT 'solana',
+				secret_type VARCHAR(20) NOT NULL,
+				secret_hash VARCHAR(64) NOT NULL,
+				description TEXT,
+				reporter VARCHAR(100) DEFAULT '',
+				status VARCHAR(20) DEFAULT 'new',
+				telegram_sent TINYINT(1) DEFAULT 0,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE INDEX idx_leak_reports_created ON leak_reports(created_at);
 		`
 
 	case config.DBTypeSQLite:
@@ -365,6 +388,29 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
 		CREATE INDEX IF NOT EXISTS idx_drainer_reports_created ON drainer_reports(created_at);
+		CREATE TABLE IF NOT EXISTS bug_reports (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				address TEXT DEFAULT '',
+				chain TEXT DEFAULT '',
+				message TEXT NOT NULL,
+				reporter TEXT DEFAULT '',
+				status TEXT DEFAULT 'new',
+				telegram_sent INTEGER DEFAULT 0,
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE INDEX IF NOT EXISTS idx_bug_reports_created ON bug_reports(created_at);
+		CREATE TABLE IF NOT EXISTS leak_reports (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				chain TEXT NOT NULL DEFAULT 'solana',
+				secret_type TEXT NOT NULL,
+				secret_hash TEXT NOT NULL,
+				description TEXT,
+				reporter TEXT DEFAULT '',
+				status TEXT DEFAULT 'new',
+				telegram_sent INTEGER DEFAULT 0,
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE INDEX IF NOT EXISTS idx_leak_reports_created ON leak_reports(created_at);
 		`
 
 	default: // PostgreSQL
@@ -492,6 +538,29 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 			created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 		);
 		CREATE INDEX IF NOT EXISTS idx_drainer_reports_created ON drainer_reports(created_at);
+		CREATE TABLE IF NOT EXISTS bug_reports (
+				id BIGSERIAL PRIMARY KEY,
+				address VARCHAR(120) DEFAULT '',
+				chain VARCHAR(20) DEFAULT '',
+				message TEXT NOT NULL,
+				reporter VARCHAR(100) DEFAULT '',
+				status VARCHAR(20) DEFAULT 'new',
+				telegram_sent BOOLEAN DEFAULT FALSE,
+				created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+		);
+		CREATE INDEX IF NOT EXISTS idx_bug_reports_created ON bug_reports(created_at);
+		CREATE TABLE IF NOT EXISTS leak_reports (
+				id BIGSERIAL PRIMARY KEY,
+				chain VARCHAR(20) NOT NULL DEFAULT 'solana',
+				secret_type VARCHAR(20) NOT NULL,
+				secret_hash VARCHAR(64) NOT NULL,
+				description TEXT,
+				reporter VARCHAR(100) DEFAULT '',
+				status VARCHAR(20) DEFAULT 'new',
+				telegram_sent BOOLEAN DEFAULT FALSE,
+				created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+		);
+		CREATE INDEX IF NOT EXISTS idx_leak_reports_created ON leak_reports(created_at);
 		`
 	}
 

@@ -227,3 +227,63 @@ func (r *Repository) MarkDrainerReportTelegram(ctx context.Context, id int64, se
 		`UPDATE drainer_reports SET telegram_sent = ? WHERE id = ?`, sent, id)
 	return err
 }
+
+// InsertBugReport stores a user-submitted report about a wrong result.
+func (r *Repository) InsertBugReport(ctx context.Context, rep *models.BugReport) (int64, error) {
+	res, err := r.db.ExecContext(ctx,
+		`INSERT INTO bug_reports
+		 (address, chain, message, reporter, status, telegram_sent, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		rep.Address, rep.Chain, rep.Message,
+		rep.Reporter, rep.Status, rep.TelegramSent, time.Now().UTC(),
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// MarkBugReportTelegram updates the telegram-sent flag after dispatch.
+func (r *Repository) MarkBugReportTelegram(ctx context.Context, id int64, sent bool) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE bug_reports SET telegram_sent = ? WHERE id = ?`, sent, id)
+	return err
+}
+
+// InsertLeakReport stores a user-submitted leak report. Only the secret
+// fingerprint is persisted — never the secret itself.
+func (r *Repository) InsertLeakReport(ctx context.Context, rep *models.LeakReport) (int64, error) {
+	res, err := r.db.ExecContext(ctx,
+		`INSERT INTO leak_reports
+		 (chain, secret_type, secret_hash, description, reporter, status, telegram_sent, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		rep.Chain, rep.SecretType, rep.SecretHash, rep.Description,
+		rep.Reporter, rep.Status, rep.TelegramSent, time.Now().UTC(),
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// MarkLeakReportTelegram updates the telegram-sent flag after dispatch.
+func (r *Repository) MarkLeakReportTelegram(ctx context.Context, id int64, sent bool) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE leak_reports SET telegram_sent = ? WHERE id = ?`, sent, id)
+	return err
+}
+
+// LeakReportHashSeen reports whether a secret fingerprint was already
+// submitted — used for dedup and by tests to verify only the hash is stored.
+func (r *Repository) LeakReportHashSeen(ctx context.Context, hash string) (bool, error) {
+	var id int64
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id FROM leak_reports WHERE secret_hash = ?`, hash).Scan(&id)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}

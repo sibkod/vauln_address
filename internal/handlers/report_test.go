@@ -764,3 +764,76 @@ func TestGetReport_TreeExpandsProgramPayouts(t *testing.T) {
 		t.Errorf("exposed addresses not persisted: %+v", findings[0].ExposedAddresses)
 	}
 }
+
+// TestGetReport_FundFlows verifies the directional money-flow analytics:
+// for a victim the drain target is outflow (with signatures), for the
+// hacker wallet the victim shows up as inflow.
+func TestGetReport_FundFlows(t *testing.T) {
+	env := setupReportTest(t)
+	ctx := context.Background()
+	env.seedHackedWallet(t, reportTestAddr, "evm")
+
+	const hackerAddr = scanAddrHacker
+	const otherVictim = scanAddrVictim
+	if _, err := env.repo.CreateWallet(ctx, hackerAddr, "solana", models.StatusHacker, "", ""); err != nil {
+		t.Fatalf("CreateWallet hacker: %v", err)
+	}
+	env.seedFinding(t, "sig-1", reportTestAddr, hackerAddr, 1.5)
+	env.seedFinding(t, "sig-2", reportTestAddr, hackerAddr, 0.5)
+	env.seedFinding(t, "sig-3", otherVictim, hackerAddr, 2.0)
+
+	router := gin.New()
+	router.GET("/api/report", env.handler.GetReport)
+
+	requester := repository.AnonymousRequesterPrefix + "203.0.113.16"
+	if err := env.repo.RecordCheck(ctx, requester, reportTestAddr, "evm", "hacked"); err != nil {
+		t.Fatalf("RecordCheck: %v", err)
+	}
+	w := doReportRequest(router, reportTestAddr, "evm", "203.0.113.16:1")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	report := decodeReport(t, w)
+
+	flows := report.FundFlows
+	if flows == nil {
+		t.Fatal("report must include fund flows")
+	}
+	if len(flows.Outflow) != 1 {
+		t.Fatalf("victim report must list the drain destination as outflow, got %+v", flows.Outflow)
+	}
+	out := flows.Outflow[0]
+	if out.Address != hackerAddr || out.Amount != 2.0 || out.TxCount != 2 {
+		t.Errorf("outflow to hacker over 2 tx / 2.0 SOL expected, got %s %d / %f", out.Address, out.TxCount, out.Amount)
+	}
+	if len(out.Signatures) != 2 {
+		t.Errorf("outflow must carry both signatures, got %v", out.Signatures)
+	}
+	if out.Status != string(models.StatusHacker) {
+		t.Errorf("outflow status must come from the wallets table, got %q", out.Status)
+	}
+	if len(flows.Inflow) != 0 {
+		t.Errorf("a drained victim has no inflow counterparties, got %+v", flows.Inflow)
+	}
+
+	// viewing the hacker address: the victims become inflow, the drain destinations become outflow
+	requester2 := repository.AnonymousRequesterPrefix + "203.0.113.17"
+	if err := env.repo.RecordCheck(ctx, requester2, hackerAddr, "solana", "hacker"); err != nil {
+		t.Fatalf("RecordCheck hacker: %v", err)
+	}
+	w = doReportRequest(router, hackerAddr, "solana", "203.0.113.17:1")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	report = decodeReport(t, w)
+	flows = report.FundFlows
+	if flows == nil || len(flows.Inflow) != 1 {
+		t.Fatalf("hacker report must list the victim as inflow, got %+v", flows)
+	}
+	if report.Transactions == nil || len(report.Transactions.Children) != 1 {
+		t.Fatalf("tree children must mirror the victim, got %+v", report.Transactions)
+	}
+	if len(report.Transactions.Children[0].Signatures) != 1 {
+		t.Errorf("tree child must carry the signatures that link it, got %v", report.Transactions.Children[0].Signatures)
+	}
+}
