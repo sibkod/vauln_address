@@ -434,13 +434,14 @@ func (h *Handler) buildFundFlows(c *gin.Context, address, chain string) *models.
 	flatten := func(m map[string]*agg) []models.ReportFlowEntry {
 		list := make([]models.ReportFlowEntry, 0, len(m))
 		for _, a := range m {
-			a.entry.Amount = roundAmount(a.entry.Amount)
-			a.entry.IsProgram = a.programs
+			// Programs are not money recipients: a takeover assigns the
+			// account to the drainer program, but the funds go to real
+			// wallets. Showing the program here hides the actual recipient.
 			if a.programs {
-				a.entry.Status = models.TreeStatusProgram
-			} else {
-				a.entry.Status = h.treeNodeStatus(c, a.entry.Address, a.entry.Chain)
+				continue
 			}
+			a.entry.Amount = roundAmount(a.entry.Amount)
+			a.entry.Status = h.treeNodeStatus(c, a.entry.Address, a.entry.Chain)
 			a.entry.AssociatedHacker = h.repo.GetWalletAssociation(c.Request.Context(), a.entry.Address, a.entry.Chain)
 			list = append(list, a.entry)
 		}
