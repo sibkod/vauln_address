@@ -155,8 +155,10 @@ const statusIcons: Record<string, string> = {
 .tx-addr {
   color: #98a8ce;
   font-family: monospace;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1 1 100%;
+  overflow-wrap: anywhere;
+  word-break: break-all;
 }
 
 .tx-badge {
