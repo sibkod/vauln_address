@@ -3,6 +3,8 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -29,6 +31,8 @@ func setupScannerRouter(env *reportTestEnv) *gin.Engine {
 	router.GET("/api/monitor/stats", env.handler.GetMonitorStats)
 	router.GET("/api/captcha", env.handler.GetCaptcha)
 	router.POST("/api/drainer-reports", env.handler.SubmitDrainerReport)
+	router.POST("/api/bug-reports", env.handler.SubmitBugReport)
+	router.POST("/api/leak-reports", env.handler.SubmitLeakReport)
 	router.GET("/api/report", env.handler.GetReport)
 	return router
 }
@@ -621,6 +625,72 @@ func TestIngestScanFinding_ProgramNotRegisteredAsHacker(t *testing.T) {
 	}
 }
 
+// TestIngestScanFinding_NoAssociationFromProgram: program findings (the
+// hacker address is the on-chain program, takeover-only or listed under
+// programs) never mark anyone as associated — their exposed addresses are
+// hijacked victims, not wallets funding an operator. Also the victim is
+// never flagged as associated with its own drainer operator.
+func TestIngestScanFinding_NoAssociationFromProgram(t *testing.T) {
+	env := setupReportTest(t)
+	router := setupScannerRouter(env)
+
+	// Takeover-only finding: hacker = owning program, exposed = victims.
+	finding := models.ScanFindingRequest{
+		Chain:            "solana",
+		Signature:        "sig-takeover-assoc",
+		Slot:             123456,
+		Verdict:          models.ScanVerdictDrainer,
+		Indicators:       []string{"P1_ACCOUNT_TAKEOVER"},
+		VictimAddress:    scanAddrVictim,
+		HackerAddress:    scanAddrSender3, // program id
+		ExposedAddresses: []string{scanAddrVictim, scanAddrSender1},
+		Source:           "watch",
+	}
+	w := postFinding(t, router, scanTestAdminKey, finding)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Associated int `json:"associated"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Associated != 0 {
+		t.Errorf("program findings must create no associations, got %d", resp.Associated)
+	}
+	for _, addr := range []string{scanAddrVictim, scanAddrSender1} {
+		wlt, err := env.repo.GetWallet(context.Background(), addr, "solana")
+		if err != nil {
+			t.Fatalf("GetWallet %s: %v", addr, err)
+		}
+		if wlt != nil && wlt.AssociatedHacker {
+			t.Errorf("%s must not be flagged by a takeover program finding", addr)
+		}
+	}
+
+	// Sweep finding with a real operator: the victim wallet itself is never
+	// flagged as associated, a third-party funder is.
+	payload := sampleFinding("sig-sweep-assoc", scanAddrVictim, scanAddrHacker)
+	payload.ExposedAddresses = []string{scanAddrVictim, scanAddrSender1}
+	w = postFinding(t, router, scanTestAdminKey, payload)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Associated != 1 {
+		t.Errorf("expected exactly the funder to be associated, got %d", resp.Associated)
+	}
+	if wlt, _ := env.repo.GetWallet(context.Background(), scanAddrSender1, "solana"); wlt == nil || !wlt.AssociatedHacker {
+		t.Errorf("the funder must be flagged as associated: %+v", wlt)
+	}
+	if wlt, _ := env.repo.GetWallet(context.Background(), scanAddrVictim, "solana"); wlt != nil && wlt.AssociatedHacker {
+		t.Error("the victim must never be flagged as associated with its own drainer")
+	}
+}
+
 // TestIngestScanFinding_TakeoverProgramNotRegistered: a takeover-only finding
 // (P1, no sweep in the same transaction) names the owning on-chain program as
 // the hacker. The assign instruction never invokes the owner program, so the
@@ -711,5 +781,132 @@ func TestIngestScanFinding_ReviewForwarding(t *testing.T) {
 	inserted, review = decode(w)
 	if !inserted || review {
 		t.Errorf("P5 finding must not need review, inserted=%v review=%v", inserted, review)
+	}
+}
+
+// solveCaptcha returns a fresh captcha id and its answer (test hook).
+func solveCaptcha(t *testing.T, env *reportTestEnv, router *gin.Engine) (string, string) {
+	t.Helper()
+	req := httptest.NewRequest("GET", "/api/captcha", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("captcha: expected 200, got %d", w.Code)
+	}
+	var captcha models.CaptchaResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &captcha); err != nil {
+		t.Fatalf("decode captcha: %v", err)
+	}
+	answer, ok := env.handler.captcha.Answer(captcha.CaptchaID)
+	if !ok {
+		t.Fatal("captcha challenge not found in service")
+	}
+	return captcha.CaptchaID, answer
+}
+
+// TestSubmitBugReport covers the full captcha flow for the "report an
+// error" button: stored, forwarded attempt recorded.
+func TestSubmitBugReport(t *testing.T) {
+	env := setupReportTest(t)
+	router := setupScannerRouter(env)
+
+	// wrong captcha -> 403
+	bad, _ := json.Marshal(map[string]string{
+		"message": "the verdict looks wrong", "captcha_id": "nope", "captcha_answer": "XXXXX",
+	})
+	req := httptest.NewRequest("POST", "/api/bug-reports", bytes.NewReader(bad))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for invalid captcha, got %d", w.Code)
+	}
+
+	id, answer := solveCaptcha(t, env, router)
+	payload, _ := json.Marshal(map[string]string{
+		"address":        scanAddrVictim,
+		"chain":          "solana",
+		"message":        "the report shows this wallet as hacker but it is a program",
+		"captcha_id":     id,
+		"captcha_answer": answer,
+	})
+	req = httptest.NewRequest("POST", "/api/bug-reports", bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "203.0.113.60:1234"
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		ID           int64 `json:"id"`
+		TelegramSent bool  `json:"telegram_sent"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.ID == 0 {
+		t.Error("expected a stored report id")
+	}
+	if resp.TelegramSent {
+		t.Error("telegram bot is not configured in tests, must be false")
+	}
+}
+
+// TestSubmitLeakReport covers the leak tab: the secret is hashed (never
+// stored verbatim) and the report is stored behind a captcha.
+func TestSubmitLeakReport(t *testing.T) {
+	env := setupReportTest(t)
+	router := setupScannerRouter(env)
+
+	// invalid secret type -> 400 even with a valid captcha
+	id, answer := solveCaptcha(t, env, router)
+	bad, _ := json.Marshal(map[string]string{
+		"secret_type": "password", "secret": "short secret",
+		"captcha_id": id, "captcha_answer": answer,
+	})
+	req := httptest.NewRequest("POST", "/api/leak-reports", bytes.NewReader(bad))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid secret_type, got %d: %s", w.Code, w.Body.String())
+	}
+
+	id, answer = solveCaptcha(t, env, router)
+	payload, _ := json.Marshal(map[string]string{
+		"chain": "solana", "secret_type": "seed_phrase",
+		"secret":      "witch collapse practice feed shame open despair creek road again ice least",
+		"description": "found in a telegram scam channel",
+		"captcha_id":  id, "captcha_answer": answer,
+	})
+	req = httptest.NewRequest("POST", "/api/leak-reports", bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "203.0.113.61:1234"
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.ID == 0 {
+		t.Error("expected a stored leak report id")
+	}
+
+	// the raw secret must never land in the database — only its sha256
+	// fingerprint is stored (queried via the repository so the check does
+	// not depend on internal fields).
+	sum := sha256.Sum256([]byte("witch collapse practice feed shame open despair creek road again ice least"))
+	stored, err := env.repo.LeakReportHashSeen(context.Background(), hex.EncodeToString(sum[:]))
+	if err != nil {
+		t.Fatalf("lookup leak hash: %v", err)
+	}
+	if !stored {
+		t.Error("expected the sha256 fingerprint of the secret to be stored")
 	}
 }

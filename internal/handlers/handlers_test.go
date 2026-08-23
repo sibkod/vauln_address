@@ -114,8 +114,8 @@ func TestGetPricing(t *testing.T) {
 				basePrice := float64(checks) * pricePerCheck
 
 				c.JSON(http.StatusOK, gin.H{
-					"checks":                checks,
-					"price_per_check_usd":   pricePerCheck,
+					"checks":              checks,
+					"price_per_check_usd": pricePerCheck,
 					"payment_methods": []gin.H{
 						{"currency": "usdc", "price_usd": basePrice},
 						{"currency": "usdt", "price_usd": basePrice},
@@ -263,7 +263,7 @@ func TestCreateOrder_InvalidRequest(t *testing.T) {
 	router.POST("/api/orders", func(c *gin.Context) {
 		// Simulate invalid request body
 		var req struct {
-			Checks int `json:"checks"`
+			Checks int    `json:"checks"`
 			Chain  string `json:"chain"`
 		}
 		if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil || req.Checks == 0 {
@@ -306,12 +306,12 @@ func TestCreateOrder_Success(t *testing.T) {
 	router.POST("/api/orders", func(c *gin.Context) {
 		// Simulate successful order creation
 		c.JSON(http.StatusCreated, gin.H{
-			"order_id":         "test-order-uuid-123",
-			"checks_count":     50,
-			"total_usd":        5.0,
-			"amount":           "0.0100",
-			"payment_address":  "7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV",
-			"status":           "pending",
+			"order_id":        "test-order-uuid-123",
+			"checks_count":    50,
+			"total_usd":       5.0,
+			"amount":          "0.0100",
+			"payment_address": "7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV",
+			"status":          "pending",
 		})
 	})
 
@@ -368,11 +368,11 @@ func TestCheckWallet_InvalidAddress(t *testing.T) {
 
 		// Simulate safe wallet
 		c.JSON(http.StatusOK, gin.H{
-			"address": req.Address,
-			"chain":   req.Chain,
-			"status":  "not_found",
-			"found":   false,
-			"has_pk":  false,
+			"address":  req.Address,
+			"chain":    req.Chain,
+			"status":   "not_found",
+			"found":    false,
+			"has_pk":   false,
 			"has_seed": false,
 		})
 	})
@@ -412,12 +412,12 @@ func TestCheckWallet_Success(t *testing.T) {
 		json.NewDecoder(c.Request.Body).Decode(&req)
 
 		c.JSON(http.StatusOK, gin.H{
-			"address":     req.Address,
-			"chain":       req.Chain,
-			"status":      "not_found",
-			"found":       false,
-			"has_pk":      false,
-			"has_seed":    false,
+			"address":  req.Address,
+			"chain":    req.Chain,
+			"status":   "not_found",
+			"found":    false,
+			"has_pk":   false,
+			"has_seed": false,
 		})
 	})
 
@@ -555,7 +555,7 @@ func TestGetRecentChecks(t *testing.T) {
 
 	var resp struct {
 		Checks []map[string]interface{} `json:"checks"`
-		Count  int                       `json:"count"`
+		Count  int                      `json:"count"`
 	}
 	json.Unmarshal(w.Body.Bytes(), &resp)
 
@@ -580,21 +580,21 @@ func fmtScan(s string, result *int) {
 
 func TestGetBalance_AnonymousUser_NoUsage(t *testing.T) {
 	router := gin.New()
-	
+
 	// Middleware that does NOT set userAddress (anonymous user)
 	router.Use(func(c *gin.Context) {
 		c.Next()
 	})
-	
+
 	router.GET("/api/user/balance", func(c *gin.Context) {
 		walletAddress, exists := c.Get("userAddress")
-		
+
 		if exists && walletAddress != nil && walletAddress != "" {
 			// Authenticated user
 			c.JSON(http.StatusOK, gin.H{"balance": 60, "source": "purchased"})
 			return
 		}
-		
+
 		// Anonymous user with 3 free checks
 		c.JSON(http.StatusOK, gin.H{
 			"balance":              3,
@@ -624,13 +624,13 @@ func TestGetBalance_AnonymousUser_NoUsage(t *testing.T) {
 
 func TestGetBalance_AuthenticatedUser_NoPurchase(t *testing.T) {
 	router := gin.New()
-	
+
 	router.Use(func(c *gin.Context) {
 		c.Set("userAddress", "7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV")
 		c.Set("userChain", "solana")
 		c.Next()
 	})
-	
+
 	router.GET("/api/user/balance", func(c *gin.Context) {
 		walletAddress, exists := c.Get("userAddress")
 		chain, _ := c.Get("userChain")
@@ -639,14 +639,14 @@ func TestGetBalance_AuthenticatedUser_NoPurchase(t *testing.T) {
 		if exists && walletAddress != nil && walletAddress != "" && chainStr != "" {
 			// Authenticated but no purchases - show rate limit (3 remaining)
 			c.JSON(http.StatusOK, gin.H{
-				"balance":               0,
-				"purchased_balance":     0,
+				"balance":              0,
+				"purchased_balance":    0,
 				"rate_limit_remaining": 3,
-				"source":                "rate_limit",
+				"source":               "rate_limit",
 			})
 			return
 		}
-		
+
 		c.JSON(http.StatusOK, gin.H{"balance": 3, "source": "rate_limit"})
 	})
 
@@ -670,13 +670,13 @@ func TestGetBalance_AuthenticatedUser_NoPurchase(t *testing.T) {
 
 func TestGetBalance_AuthenticatedUser_WithPurchase(t *testing.T) {
 	router := gin.New()
-	
+
 	router.Use(func(c *gin.Context) {
 		c.Set("userAddress", "7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV")
 		c.Set("userChain", "solana")
 		c.Next()
 	})
-	
+
 	router.GET("/api/user/balance", func(c *gin.Context) {
 		walletAddress, exists := c.Get("userAddress")
 		chain, _ := c.Get("userChain")
@@ -685,14 +685,14 @@ func TestGetBalance_AuthenticatedUser_WithPurchase(t *testing.T) {
 		if exists && walletAddress != nil && walletAddress != "" && chainStr != "" {
 			// User has purchased 60 checks
 			c.JSON(http.StatusOK, gin.H{
-				"balance":               60,
-				"purchased_balance":     60,
-				"rate_limit_remaining":  0,
-				"source":                "purchased",
+				"balance":              60,
+				"purchased_balance":    60,
+				"rate_limit_remaining": 0,
+				"source":               "purchased",
 			})
 			return
 		}
-		
+
 		c.JSON(http.StatusOK, gin.H{"balance": 3, "source": "rate_limit"})
 	})
 
@@ -716,13 +716,13 @@ func TestGetBalance_AuthenticatedUser_WithPurchase(t *testing.T) {
 
 func TestGetBalance_AuthenticatedUser_PartialPurchase(t *testing.T) {
 	router := gin.New()
-	
+
 	router.Use(func(c *gin.Context) {
 		c.Set("userAddress", "7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV")
 		c.Set("userChain", "solana")
 		c.Next()
 	})
-	
+
 	router.GET("/api/user/balance", func(c *gin.Context) {
 		walletAddress, exists := c.Get("userAddress")
 		chain, _ := c.Get("userChain")
@@ -731,14 +731,14 @@ func TestGetBalance_AuthenticatedUser_PartialPurchase(t *testing.T) {
 		if exists && walletAddress != nil && walletAddress != "" && chainStr != "" {
 			// User has purchased 10 checks (more than 0, so show purchased)
 			c.JSON(http.StatusOK, gin.H{
-				"balance":               10,
-				"purchased_balance":     10,
-				"rate_limit_remaining":  0,
-				"source":                "purchased",
+				"balance":              10,
+				"purchased_balance":    10,
+				"rate_limit_remaining": 0,
+				"source":               "purchased",
 			})
 			return
 		}
-		
+
 		c.JSON(http.StatusOK, gin.H{"balance": 3, "source": "rate_limit"})
 	})
 
@@ -762,7 +762,7 @@ func TestGetBalance_AuthenticatedUser_PartialPurchase(t *testing.T) {
 
 func TestGetBalance_InvalidAuthToken(t *testing.T) {
 	router := gin.New()
-	
+
 	router.Use(func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		// Token present but invalid - don't set userAddress
@@ -772,7 +772,7 @@ func TestGetBalance_InvalidAuthToken(t *testing.T) {
 		}
 		c.Next()
 	})
-	
+
 	router.GET("/api/user/balance", func(c *gin.Context) {
 		walletAddress, exists := c.Get("userAddress")
 		chain, _ := c.Get("userChain")
@@ -782,7 +782,7 @@ func TestGetBalance_InvalidAuthToken(t *testing.T) {
 			c.JSON(http.StatusOK, gin.H{"balance": 60, "source": "purchased"})
 			return
 		}
-		
+
 		// Invalid/missing auth - return rate limit
 		c.JSON(http.StatusOK, gin.H{
 			"balance":              3,

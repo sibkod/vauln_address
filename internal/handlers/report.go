@@ -134,6 +134,7 @@ func (h *Handler) assembleReport(c *gin.Context, address, chain string) (*models
 	report.Details = buildReportDetails(report, leaks)
 	report.Evidence = h.buildStatusEvidence(c, report)
 	report.Transactions = h.buildTxTree(c, address, chain)
+	report.FundFlows = h.buildFundFlows(c, address, chain)
 	return report, http.StatusOK
 }
 
@@ -204,13 +205,14 @@ func (h *Handler) fillTxNode(c *gin.Context, node *models.ReportTxNode, chain st
 	}
 
 	type counterparty struct {
-		address   string
-		chain     string
-		txCount   int
-		amount    float64
-		isProgram bool
-		payout    bool // wallet received payouts FROM this node (fund flow)
-		repeat    bool // recurring payouts (2+ transfers) => hacker
+		address    string
+		chain      string
+		txCount    int
+		amount     float64
+		isProgram  bool
+		payout     bool // wallet received payouts FROM this node (fund flow)
+		repeat     bool // recurring payouts (2+ transfers) => hacker
+		signatures []string
 	}
 	byAddr := map[string]*counterparty{}
 	total := 0.0
@@ -232,6 +234,9 @@ func (h *Handler) fillTxNode(c *gin.Context, node *models.ReportTxNode, chain st
 		}
 		cp.txCount++
 		cp.amount += f.AmountSOL
+		if f.Signature != "" {
+			cp.signatures = append(cp.signatures, f.Signature)
+		}
 		// A takeover-only finding names the owning program as the hacker:
 		// the assign instruction never invokes the owner program, so older
 		// findings don't list it under programs.
@@ -284,6 +289,9 @@ func (h *Handler) fillTxNode(c *gin.Context, node *models.ReportTxNode, chain st
 			}
 			cp.txCount++
 			cp.amount += f.AmountSOL
+			if f.Signature != "" {
+				cp.signatures = append(cp.signatures, f.Signature)
+			}
 			if counts[f.HackerAddress] >= 2 || hasIndicator(f.Indicators, "F2_REPEAT_DOWNSTREAM") {
 				cp.repeat = true
 			}
@@ -318,6 +326,7 @@ func (h *Handler) fillTxNode(c *gin.Context, node *models.ReportTxNode, chain st
 			Status:           h.treeNodeStatus(c, cp.address, cp.chain),
 			AssociatedHacker: h.repo.GetWalletAssociation(c.Request.Context(), cp.address, cp.chain),
 			IsProgram:        cp.isProgram,
+			Signatures:       cp.signatures,
 		}
 		if cp.isProgram {
 			child.Status = models.TreeStatusProgram
@@ -356,6 +365,96 @@ func scanCounterparty(address string, f models.ScanFinding) string {
 		return f.VictimAddress
 	}
 	return ""
+}
+
+// buildFundFlows aggregates the directional money-flow analytics of a
+// report: per counterparty — how much this wallet received from / sent to
+// it, how many findings link them, and the exact transaction signatures.
+// Returns nil when nothing is indexed for the address.
+func (h *Handler) buildFundFlows(c *gin.Context, address, chain string) *models.ReportFundFlows {
+	findings, err := h.repo.GetScanFindingsForAddress(c.Request.Context(), address, reportTreeFindingsCap)
+	if err != nil {
+		return nil
+	}
+	payouts, err := h.repo.GetFlowPayoutsForSource(c.Request.Context(), address, reportTreeFindingsCap)
+	if err != nil {
+		payouts = nil
+	}
+	if len(findings) == 0 && len(payouts) == 0 {
+		return nil
+	}
+
+	type agg struct {
+		entry    models.ReportFlowEntry
+		programs bool
+	}
+	out := map[string]*agg{}
+	in := map[string]*agg{}
+
+	add := func(dst map[string]*agg, addr, fchain string, f models.ScanFinding) {
+		if addr == "" || addr == address {
+			return
+		}
+		// плейсхолдеры прошлых прогонов сканера не должны попадать в отчёт
+		if ok, _ := validators.ValidateAddress(treeValidationChain(fchain, chain), addr); !ok {
+			return
+		}
+		a := dst[addr]
+		if a == nil {
+			a = &agg{entry: models.ReportFlowEntry{Address: addr, Chain: fchain}}
+			dst[addr] = a
+		}
+		a.entry.TxCount++
+		a.entry.Amount += f.AmountSOL
+		if f.Signature != "" {
+			a.entry.Signatures = append(a.entry.Signatures, f.Signature)
+		}
+		if isProgramAddress(addr, f.Programs) ||
+			(addr == f.HackerAddress && isTakeoverOnlyFinding(f.Indicators)) {
+			a.programs = true
+		}
+	}
+
+	for _, f := range findings {
+		switch {
+		case f.VictimAddress == address:
+			// this wallet was drained: funds went OUT to the counterparty
+			add(out, f.HackerAddress, f.Chain, f)
+		case f.HackerAddress == address:
+			// this wallet is the operator: funds came IN from the victim
+			add(in, f.VictimAddress, f.Chain, f)
+		}
+	}
+	for _, f := range payouts {
+		// flow-trace findings record payouts FROM this wallet downstream
+		add(out, f.HackerAddress, f.Chain, f)
+	}
+
+	flows := &models.ReportFundFlows{Currency: currencyOf(chain)}
+	flatten := func(m map[string]*agg) []models.ReportFlowEntry {
+		list := make([]models.ReportFlowEntry, 0, len(m))
+		for _, a := range m {
+			a.entry.Amount = roundAmount(a.entry.Amount)
+			a.entry.IsProgram = a.programs
+			if a.programs {
+				a.entry.Status = models.TreeStatusProgram
+			} else {
+				a.entry.Status = h.treeNodeStatus(c, a.entry.Address, a.entry.Chain)
+			}
+			a.entry.AssociatedHacker = h.repo.GetWalletAssociation(c.Request.Context(), a.entry.Address, a.entry.Chain)
+			list = append(list, a.entry)
+		}
+		sort.Slice(list, func(i, j int) bool {
+			if list[i].Amount != list[j].Amount {
+				return list[i].Amount > list[j].Amount
+			}
+			return list[i].Address < list[j].Address
+		})
+		return list
+	}
+	flows.Inflow = flatten(in)
+	flows.Outflow = flatten(out)
+	return flows
 }
 
 // treeNodeStatus resolves a tree address against the wallets table;

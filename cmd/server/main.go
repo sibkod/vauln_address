@@ -108,6 +108,8 @@ func main() {
 	api.GET("/monitor/stats", h.GetMonitorStats)
 	api.GET("/captcha", h.GetCaptcha)
 	api.POST("/drainer-reports", h.SubmitDrainerReport)
+	api.POST("/bug-reports", h.SubmitBugReport)
+	api.POST("/leak-reports", h.SubmitLeakReport)
 	api.POST("/contact", h.SubmitContact)
 	api.GET("/api-keys", middleware.RequireAuth(), h.ListAPIKeys)
 	api.POST("/api-keys", middleware.RequireAuth(), h.CreateAPIKey)
