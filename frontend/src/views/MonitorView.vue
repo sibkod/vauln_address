@@ -14,6 +14,7 @@ interface Finding {
   hacker_address?: string
   amount_sol: number
   programs?: string[]
+  exposed_addresses?: string[]
   source: string
   created_at: string
 }
@@ -90,6 +91,12 @@ function toggleLive() {
 function shortAddr(addr?: string): string {
   if (!addr) return '—'
   return addr.length <= 16 ? addr : `${addr.slice(0, 6)}…${addr.slice(-6)}`
+}
+
+// Flow-trace findings (F1/F2) store no victim: the operator wallet is the
+// first exposed source address.
+function fromAddr(f: Finding): string {
+  return f.victim_address || f.exposed_addresses?.[0] || ''
 }
 
 function txUrl(f: Finding): string {
@@ -172,8 +179,8 @@ onUnmounted(() => {
         <div class="parties">
           <div class="party">
             <span class="party-label">{{ operationType(f).from }}</span>
-            <a v-if="f.victim_address" :href="accountUrl(f, f.victim_address)" target="_blank" rel="noopener" class="addr victim">
-              {{ shortAddr(f.victim_address) }}
+            <a v-if="fromAddr(f)" :href="accountUrl(f, fromAddr(f))" target="_blank" rel="noopener" class="addr victim">
+              {{ shortAddr(fromAddr(f)) }}
             </a>
             <span v-else class="addr none">—</span>
           </div>

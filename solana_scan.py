@@ -247,7 +247,9 @@ def extract_parties(details, signer_list):
     if details["takeovers"]:
         victim = details["takeovers"][0].get("account") or ""
     if details["drain_transfers"]:
-        sweep = details["drain_transfers"][0]
+        # при дробном выводе оператор — получатель крупнейшего перевода
+        sweep = max(details["drain_transfers"],
+                    key=lambda d: d.get("amount_sol") or 0)
         if not victim:
             victim = sweep.get("from") or ""
         hacker = sweep.get("to") or ""
@@ -458,6 +460,7 @@ def detect_patterns(tx, watch_programs=None):
             post_tok_by_owner[owner] = post_tok_by_owner.get(owner, 0) + ui
 
     signer_set = set(signers(tx))
+    sweep_by_src = {}
     for owner, pre_ui in pre_tok_by_owner.items():
         if owner not in signer_set or post_tok_by_owner.get(owner, 0) != 0:
             continue
@@ -499,23 +502,33 @@ def detect_patterns(tx, watch_programs=None):
                 details["created_control_accounts"].append(
                     {"account": info.get("newAccount"), "owner": info.get("owner")})
 
-            # P2: перевод >=90% баланса, остаток <0.01 SOL.
-            # Off-curve участник (PDA: пул, эскроу, служебный аккаунт
-            # программы) — это маршрутизация ликвидности, не кража.
+            # P2: исходящие переводы >=90% баланса суммарно, остаток <0.01 SOL.
+            # Дрейнеры дробят вывод на несколько переводов (в т.ч. через CPI),
+            # чтобы каждый по отдельности не достигал порога — поэтому суммируем
+            # по источнику. Off-curve участник (PDA: пул, эскроу, служебный
+            # аккаунт программы) — это маршрутизация ликвидности, не кража.
             if itype == "transfer":
                 src = info.get("source")
                 dst = info.get("destination")
                 lamports = int(info.get("lamports") or 0)
-                if src in key_list and is_on_curve(src) and is_on_curve(dst):
-                    idx = key_list.index(src)
-                    if idx < len(pre) and idx < len(post) and pre[idx] > 0:
-                        ratio = lamports / pre[idx]
-                        if ratio >= 0.9 and post[idx] < 10_000_000 and lamports > 1_000_000:
-                            details["drain_transfers"].append({
-                                "from": src, "to": dst,
-                                "amount_sol": lamports / 1e9,
-                                "left_sol": post[idx] / 1e9,
-                                "ratio": round(ratio, 4)})
+                if (src in key_list and is_on_curve(src) and is_on_curve(dst)
+                        and lamports > 1_000_000):
+                    st = sweep_by_src.setdefault(src, {"lamports": 0, "transfers": []})
+                    st["lamports"] += lamports
+                    st["transfers"].append(
+                        {"from": src, "to": dst, "amount_sol": lamports / 1e9})
+
+    # агрегированный P2: сумма переводов источника против его баланса
+    for src, st in sweep_by_src.items():
+        idx = key_list.index(src)
+        if idx >= len(pre) or idx >= len(post) or pre[idx] <= 0:
+            continue
+        ratio = st["lamports"] / pre[idx]
+        if ratio >= 0.9 and post[idx] < 10_000_000:
+            for t in st["transfers"]:
+                t["left_sol"] = post[idx] / 1e9
+                t["ratio"] = round(ratio, 4)
+                details["drain_transfers"].append(t)
 
     # P3: вызванные программы вне белого списка
     unknown = set()
@@ -928,6 +941,7 @@ def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
     drainer_sources = {}  # signature -> set of senders funding the operator
     operators = Counter()  # operator (hacker) wallets: sweep destination / takeover new owner
     operator_sol = defaultdict(float)  # swept SOL received per operator
+    takeover_owners = set()  # программы, ставшие владельцами захваченных аккаунтов
     unknown_progs = Counter()
     drainer_tx_count = 0
     theft_edges = {}  # (victim, operator) -> {sol, txs, sigs}: ребра уровня 0
@@ -959,6 +973,7 @@ def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
                                               "time": tx.get("blockTime")}
             if t.get("new_owner"):
                 operators[t["new_owner"]] += 1
+                takeover_owners.add(t["new_owner"])
         for p in details["unknown_programs"]:
             unknown_progs[p] += 1
         for ix in iter_instructions(tx):
@@ -985,8 +1000,15 @@ def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
     # 2+ перевода — hacker; hacker-получатели раскрываются рекурсивно
     # до trace_depth уровней (полный путь движения средств).
     downstream, flow_edges = [], []
-    seeds = [a for a, _ in operators.most_common(trace_wallets)]
-    if address not in seeds:
+    # Программы (в т.ч. программа-владелец захваченных аккаунтов) не являются
+    # кошельками операторов: их история — это чужие вызовы, а не потоки
+    # средств. Сканируемый кошелёк трейсим, только если он сам получил sweep
+    # (является оператором) — иначе его легитимные переводы попали бы в
+    # монитор как "downstream".
+    seeds = [a for a, _ in operators.most_common(trace_wallets)
+             if a not in takeover_owners
+             and a not in KNOWN_PROGRAMS and is_on_curve(a)]
+    if operators.get(address) and address not in seeds:
         seeds.insert(0, address)
     if trace_depth >= 0 and seeds:
         print(f"[trace] трейсинг исходящих потоков: {len(seeds)} операторов, "
