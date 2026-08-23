@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -910,4 +911,156 @@ func TestSubmitLeakReport(t *testing.T) {
 	if !stored {
 		t.Error("expected the sha256 fingerprint of the secret to be stored")
 	}
+}
+
+// A split drain (the stolen funds divided between several recipients in one
+// transaction) registers every recipient: the primary one as hacker, the
+// rest as suspicious, and stores the per-recipient breakdown.
+func TestIngestScanFinding_SplitSweepRegistersRecipients(t *testing.T) {
+	env := setupReportTest(t)
+	router := setupScannerRouter(env)
+	ctx := context.Background()
+
+	finding := sampleFinding("sig-split-1", scanAddrVictim, scanAddrHacker)
+	finding.AmountSOL = 1.4962
+	finding.Sweeps = []models.SweepTransfer{
+		{Address: scanAddrHacker, AmountSOL: 0.7481},
+		{Address: scanAddrSender1, AmountSOL: 0.7481},
+		{Address: scanAddrVictim, AmountSOL: 0.1},       // victim is never its own recipient
+		{Address: scanAddrSender1, AmountSOL: 0.2},      // duplicate recipient
+		{Address: "not-a-real-address", AmountSOL: 0.3}, // fails validation
+		{Address: scanAddrSender2, AmountSOL: 0},        // zero share
+	}
+
+	w := postFinding(t, router, scanTestAdminKey, finding)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Inserted    bool `json:"inserted"`
+		VictimAdded bool `json:"victim_added"`
+		HackerAdded bool `json:"hacker_added"`
+		SweepsAdded int  `json:"sweeps_added"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.Inserted || !resp.VictimAdded || !resp.HackerAdded {
+		t.Errorf("unexpected ingest response: %+v", resp)
+	}
+	if resp.SweepsAdded != 1 {
+		t.Errorf("only the one extra recipient must be registered, got %d", resp.SweepsAdded)
+	}
+
+	second, err := env.repo.GetWallet(ctx, scanAddrSender1, "solana")
+	if err != nil || second == nil {
+		t.Fatalf("secondary recipient not registered: %v", err)
+	}
+	if second.Status != models.StatusSuspicious {
+		t.Errorf("secondary recipient must be suspicious, got %q", second.Status)
+	}
+
+	// the stored finding keeps only the valid sweep legs
+	findings, err := env.repo.GetScanFindingsForAddress(ctx, scanAddrVictim, 10)
+	if err != nil || len(findings) != 1 {
+		t.Fatalf("finding not stored: %v (%d)", err, len(findings))
+	}
+	if len(findings[0].Sweeps) != 2 {
+		t.Errorf("invalid sweep legs must be filtered, got %+v", findings[0].Sweeps)
+	}
+
+	// the secondary recipient finds the finding by its own address
+	findings, err = env.repo.GetScanFindingsForAddress(ctx, scanAddrSender1, 10)
+	if err != nil || len(findings) != 1 {
+		t.Fatalf("secondary recipient must see the finding: %v (%d)", err, len(findings))
+	}
+}
+
+// A live-block inflow finding (L1_WATCHED_INFLOW) flags the senders funding
+// a threat-listed address as associated, exactly like senders funding a
+// drainer operator.
+func TestIngestScanFinding_LiveInflowMarksAssociated(t *testing.T) {
+	env := setupReportTest(t)
+	router := setupScannerRouter(env)
+	ctx := context.Background()
+
+	finding := models.ScanFindingRequest{
+		Chain:            "solana",
+		Signature:        "sig-l1-inflow",
+		Slot:             42,
+		Verdict:          models.ScanVerdictSuspicious,
+		Indicators:       []string{"L1_WATCHED_INFLOW"},
+		VictimAddress:    scanAddrSender1,
+		HackerAddress:    scanAddrHacker,
+		AmountSOL:        0.25,
+		ExposedAddresses: []string{scanAddrSender1},
+		Source:           "live-blocks",
+	}
+	w := postFinding(t, router, scanTestAdminKey, finding)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	if !env.repo.GetWalletAssociation(ctx, scanAddrSender1, "solana") {
+		t.Error("sender funding a threat-listed address must be flagged as associated")
+	}
+	sender, err := env.repo.GetWallet(ctx, scanAddrSender1, "solana")
+	if err != nil || sender == nil {
+		t.Fatalf("sender wallet must be registered: %v", err)
+	}
+	if sender.Status != models.StatusUnknown {
+		t.Errorf("association never escalates status, got %q", sender.Status)
+	}
+}
+
+// EVM wallet identity is case-insensitive: a finding naming the lowercase
+// form of a checksummed registry entry must not create a duplicate row.
+func TestIngestScanFinding_EVMCaseInsensitiveDedup(t *testing.T) {
+	env := setupReportTest(t)
+	router := setupScannerRouter(env)
+	ctx := context.Background()
+
+	const checksummed = "0x742d35Cc6634C0532925a3b844Bc9e7595f5B2a1"
+	if _, err := env.repo.CreateWallet(ctx, checksummed, "evm", models.StatusPhishing, "", ""); err != nil {
+		t.Fatalf("CreateWallet: %v", err)
+	}
+
+	finding := models.ScanFindingRequest{
+		Chain:         "bnb",
+		Signature:     "sig-evm-case",
+		Slot:          1,
+		Verdict:       models.ScanVerdictSuspicious,
+		Indicators:    []string{"L1_WATCHED_INFLOW"},
+		VictimAddress: "0x00000000000000000000000000000000000000bb",
+		HackerAddress: strings.ToLower(checksummed),
+		AmountSOL:     0.5,
+		Source:        "live-blocks",
+	}
+	w := postFinding(t, router, scanTestAdminKey, finding)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		HackerAdded bool `json:"hacker_added"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.HackerAdded {
+		t.Error("lowercase form of an existing checksummed wallet must not be re-registered")
+	}
+
+	// the registry keeps exactly one row, with its original status
+	wallet, err := env.repo.GetWallet(ctx, checksummed, "evm")
+	if err != nil || wallet == nil {
+		t.Fatalf("original wallet missing: %v", err)
+	}
+	if wallet.Status != models.StatusPhishing {
+		t.Errorf("original status must be untouched, got %q", wallet.Status)
+	}
+	dup, err := env.repo.GetWallet(ctx, strings.ToLower(checksummed), "evm")
+	if err != nil {
+		t.Fatalf("GetWallet lowercase: %v", err)
+	}
+	_ = dup // exact-match lookup may or may not find it; the registry must hold one row
 }

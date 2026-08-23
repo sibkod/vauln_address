@@ -108,3 +108,52 @@ func TestInsertScanFinding_ConcurrentDedup(t *testing.T) {
 		t.Fatalf("expected 1 row for signature, got %d", rowCount)
 	}
 }
+
+// The per-recipient breakdown of a split drain is persisted and every
+// recipient (not only victim/hacker) finds the finding by its address.
+func TestScanFindingSweeps_Persistence(t *testing.T) {
+	repo := setupScanTest(t)
+	ctx := context.Background()
+	req := models.ScanFindingRequest{
+		Chain:         "solana",
+		Signature:     "sig-sweeps-1",
+		Verdict:       models.ScanVerdictDrainer,
+		VictimAddress: "victimA",
+		HackerAddress: "hackerA",
+		AmountSOL:     1.4962,
+		Sweeps: []models.SweepTransfer{
+			{Address: "hackerA", AmountSOL: 0.7481},
+			{Address: "recipientB", AmountSOL: 0.7481},
+		},
+	}
+	if _, inserted, err := repo.InsertScanFinding(ctx, req); err != nil || !inserted {
+		t.Fatalf("insert: inserted=%v err=%v", inserted, err)
+	}
+
+	for _, addr := range []string{"victimA", "hackerA", "recipientB"} {
+		findings, err := repo.GetScanFindingsForAddress(ctx, addr, 10)
+		if err != nil {
+			t.Fatalf("GetScanFindingsForAddress %s: %v", addr, err)
+		}
+		if len(findings) != 1 {
+			t.Fatalf("%s must see the finding, got %d", addr, len(findings))
+		}
+		sweeps := findings[0].Sweeps
+		if len(sweeps) != 2 {
+			t.Fatalf("sweeps must round-trip, got %+v", sweeps)
+		}
+		if sweeps[0].Address != "hackerA" || sweeps[0].AmountSOL != 0.7481 ||
+			sweeps[1].Address != "recipientB" || sweeps[1].AmountSOL != 0.7481 {
+			t.Errorf("unexpected sweeps: %+v", sweeps)
+		}
+	}
+
+	// a prefix of a recipient address must not match the CSV element
+	findings, err := repo.GetScanFindingsForAddress(ctx, "recipient", 10)
+	if err != nil {
+		t.Fatalf("GetScanFindingsForAddress prefix: %v", err)
+	}
+	if len(findings) != 0 {
+		t.Errorf("prefix of a sweep recipient must not match, got %d findings", len(findings))
+	}
+}

@@ -398,6 +398,23 @@ def finding_programs(details, takeovers=None):
     return sorted(progs)
 
 
+def sweep_breakdown(drain_transfers):
+    """Разбивка sweep-переводов по получателям (поле sweeps находки).
+
+    Дрейнеры дробят вывод на несколько получателей в одной транзакции;
+    hacker_address — только крупнейший из них. Суммируем переводы по
+    адресу назначения, крупнейший получатель идёт первым.
+    """
+    by_to = {}
+    for d in drain_transfers or []:
+        to = d.get("to") or ""
+        if not to:
+            continue
+        by_to[to] = by_to.get(to, 0.0) + (d.get("amount_sol") or 0)
+    return [{"address": to, "amount_sol": round(amt, 9)}
+            for to, amt in sorted(by_to.items(), key=lambda kv: -kv[1])]
+
+
 def make_finding_payload(signature, slot, verdict, indicators, details,
                          signer_list, source):
     victim, hacker = extract_parties(details, signer_list)
@@ -411,6 +428,7 @@ def make_finding_payload(signature, slot, verdict, indicators, details,
         "hacker_address": hacker,
         "amount_sol": round(sum(d.get("amount_sol") or 0
                                 for d in details["drain_transfers"]), 9),
+        "sweeps": sweep_breakdown(details["drain_transfers"]),
         "programs": finding_programs(details),
         "source": source,
     }
@@ -852,6 +870,7 @@ def mode_watch(rpc, watch_programs, full_blocks=False, out_file=None,
                 "hacker_address": hacker,
                 "amount_sol": round(sum(d.get("amount_sol") or 0
                                         for d in entry.get("sweeps", [])), 9),
+                "sweeps": sweep_breakdown(entry.get("sweeps", [])),
                 "programs": finding_programs(
                     {"unknown_programs": entry.get("unknown_programs", [])},
                     takeovers=entry.get("takeovers", [])),
@@ -1460,6 +1479,7 @@ def mode_scan_wallet(rpc, address, cache_dir, watch_programs=None, max_txs=None,
                 "hacker_address": hacker,
                 "amount_sol": round(sum(d.get("amount_sol") or 0
                                         for d in details["drain_transfers"]), 9),
+                "sweeps": sweep_breakdown(details["drain_transfers"]),
                 "programs": finding_programs(details),
                 "exposed_addresses": drainer_sources.get(item["tx"], []),
                 "source": "scan-wallet",

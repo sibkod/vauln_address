@@ -217,8 +217,58 @@ func (h *Handler) fillTxNode(c *gin.Context, node *models.ReportTxNode, chain st
 	byAddr := map[string]*counterparty{}
 	total := 0.0
 	for _, f := range findings {
-		total += f.AmountSOL
+		// The node's own share of the finding: the victim sees the full
+		// drained amount, a sweep recipient only what it actually received.
+		amount := f.AmountSOL
+		if f.VictimAddress != node.Address {
+			for _, sw := range f.Sweeps {
+				if sw.Address == node.Address {
+					amount = sw.AmountSOL
+					break
+				}
+			}
+		}
+		total += amount
+		// A drained wallet has the full per-recipient breakdown of a split
+		// drain: every wallet that got a share of its funds becomes a child
+		// with its exact amount, not just the primary recipient.
+		if f.VictimAddress == node.Address && len(f.Sweeps) > 0 {
+			for _, sw := range f.Sweeps {
+				other := sw.Address
+				if other == "" || other == node.Address || visited[other] {
+					continue
+				}
+				if ok, _ := validators.ValidateAddress(treeValidationChain(f.Chain, chain), other); !ok {
+					continue
+				}
+				cp := byAddr[other]
+				if cp == nil {
+					cp = &counterparty{address: other, chain: f.Chain}
+					byAddr[other] = cp
+				}
+				cp.txCount++
+				cp.amount += sw.AmountSOL
+				if f.Signature != "" {
+					cp.signatures = append(cp.signatures, f.Signature)
+				}
+				if isProgramAddress(other, f.Programs) ||
+					(other == f.HackerAddress && isTakeoverOnlyFinding(f.Indicators)) {
+					cp.isProgram = true
+				}
+			}
+			continue
+		}
 		other := scanCounterparty(node.Address, f)
+		if other == "" {
+			// A secondary recipient of a split drain: the counterparty is
+			// the drained wallet it received the share from.
+			for _, sw := range f.Sweeps {
+				if sw.Address == node.Address {
+					other = f.VictimAddress
+					break
+				}
+			}
+		}
 		if other == "" || other == node.Address || visited[other] {
 			continue
 		}
@@ -233,7 +283,7 @@ func (h *Handler) fillTxNode(c *gin.Context, node *models.ReportTxNode, chain st
 			byAddr[other] = cp
 		}
 		cp.txCount++
-		cp.amount += f.AmountSOL
+		cp.amount += amount
 		if f.Signature != "" {
 			cp.signatures = append(cp.signatures, f.Signature)
 		}
@@ -391,7 +441,7 @@ func (h *Handler) buildFundFlows(c *gin.Context, address, chain string) *models.
 	out := map[string]*agg{}
 	in := map[string]*agg{}
 
-	add := func(dst map[string]*agg, addr, fchain string, f models.ScanFinding) {
+	add := func(dst map[string]*agg, addr, fchain string, f models.ScanFinding, amount float64) {
 		if addr == "" || addr == address {
 			return
 		}
@@ -405,7 +455,7 @@ func (h *Handler) buildFundFlows(c *gin.Context, address, chain string) *models.
 			dst[addr] = a
 		}
 		a.entry.TxCount++
-		a.entry.Amount += f.AmountSOL
+		a.entry.Amount += amount
 		if f.Signature != "" {
 			a.entry.Signatures = append(a.entry.Signatures, f.Signature)
 		}
@@ -418,16 +468,41 @@ func (h *Handler) buildFundFlows(c *gin.Context, address, chain string) *models.
 	for _, f := range findings {
 		switch {
 		case f.VictimAddress == address:
-			// this wallet was drained: funds went OUT to the counterparty
-			add(out, f.HackerAddress, f.Chain, f)
+			// this wallet was drained: funds went OUT to the counterparties.
+			// With a recorded split breakdown every recipient gets its exact
+			// share; otherwise the primary recipient carries the finding.
+			if len(f.Sweeps) > 0 {
+				for _, sw := range f.Sweeps {
+					add(out, sw.Address, f.Chain, f, sw.AmountSOL)
+				}
+			} else {
+				add(out, f.HackerAddress, f.Chain, f, f.AmountSOL)
+			}
 		case f.HackerAddress == address:
-			// this wallet is the operator: funds came IN from the victim
-			add(in, f.VictimAddress, f.Chain, f)
+			// this wallet is the operator: funds came IN from the victim.
+			// With a recorded split it received only its own share.
+			amount := f.AmountSOL
+			for _, sw := range f.Sweeps {
+				if sw.Address == address {
+					amount = sw.AmountSOL
+					break
+				}
+			}
+			add(in, f.VictimAddress, f.Chain, f, amount)
+		default:
+			// this wallet is a secondary recipient of a split drain: it
+			// received only its own share from the victim.
+			for _, sw := range f.Sweeps {
+				if sw.Address == address {
+					add(in, f.VictimAddress, f.Chain, f, sw.AmountSOL)
+					break
+				}
+			}
 		}
 	}
 	for _, f := range payouts {
 		// flow-trace findings record payouts FROM this wallet downstream
-		add(out, f.HackerAddress, f.Chain, f)
+		add(out, f.HackerAddress, f.Chain, f, f.AmountSOL)
 	}
 
 	flows := &models.ReportFundFlows{Currency: currencyOf(chain)}

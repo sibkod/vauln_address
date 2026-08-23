@@ -837,3 +837,177 @@ func TestGetReport_FundFlows(t *testing.T) {
 		t.Errorf("tree child must carry the signatures that link it, got %v", report.Transactions.Children[0].Signatures)
 	}
 }
+
+// seedSplitFinding inserts one finding whose drain is split between two
+// recipients: the primary hacker and a second wallet, 0.7481 SOL each.
+func (e *reportTestEnv) seedSplitFinding(t *testing.T, signature, victim, hacker, second string) {
+	t.Helper()
+	_, inserted, err := e.repo.InsertScanFinding(context.Background(), models.ScanFindingRequest{
+		Chain:         "solana",
+		Signature:     signature,
+		Slot:          1,
+		Verdict:       models.ScanVerdictDrainer,
+		Indicators:    []string{"P2_FULL_BALANCE_SWEEP"},
+		VictimAddress: victim,
+		HackerAddress: hacker,
+		AmountSOL:     1.4962,
+		Sweeps: []models.SweepTransfer{
+			{Address: hacker, AmountSOL: 0.7481},
+			{Address: second, AmountSOL: 0.7481},
+		},
+		Source: "test",
+	})
+	if err != nil || !inserted {
+		t.Fatalf("InsertScanFinding %s: inserted=%v err=%v", signature, inserted, err)
+	}
+}
+
+// A split drain shows every recipient in the victim's transaction tree and
+// fund flows, each with the exact share it received — not only the primary
+// hacker with the full amount.
+func TestGetReport_TreeSplitSweep(t *testing.T) {
+	env := setupReportTest(t)
+	ctx := context.Background()
+
+	const victim = scanAddrVictim
+	const hacker = scanAddrHacker
+	const second = scanAddrSender1
+	if _, err := env.repo.CreateWallet(ctx, victim, "solana", models.StatusDrained, "", ""); err != nil {
+		t.Fatalf("CreateWallet victim: %v", err)
+	}
+	if _, err := env.repo.CreateWallet(ctx, hacker, "solana", models.StatusHacker, "", ""); err != nil {
+		t.Fatalf("CreateWallet hacker: %v", err)
+	}
+	env.seedSplitFinding(t, "sig-split-tree", victim, hacker, second)
+
+	requester := repository.AnonymousRequesterPrefix + "203.0.113.30"
+	if err := env.repo.RecordCheck(ctx, requester, victim, "solana", "drained"); err != nil {
+		t.Fatalf("RecordCheck: %v", err)
+	}
+
+	router := gin.New()
+	router.GET("/api/report", env.handler.GetReport)
+
+	w := doReportRequest(router, victim, "solana", "203.0.113.30:1")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	report := decodeReport(t, w)
+
+	root := report.Transactions
+	if root == nil {
+		t.Fatal("report must include the transaction tree")
+	}
+	if root.TxCount != 1 || root.Amount != 1.4962 {
+		t.Errorf("root must aggregate the finding total 1 tx / 1.4962, got %d / %f", root.TxCount, root.Amount)
+	}
+	if len(root.Children) != 2 {
+		t.Fatalf("split drain must show both recipients, got %d children", len(root.Children))
+	}
+	byAddr := map[string]*models.ReportTxNode{}
+	for _, child := range root.Children {
+		byAddr[child.Address] = child
+	}
+	hackerNode := byAddr[hacker]
+	if hackerNode == nil {
+		t.Fatalf("primary recipient missing from the tree: %+v", root.Children)
+	}
+	if hackerNode.TxCount != 1 || hackerNode.Amount != 0.7481 {
+		t.Errorf("hacker node must carry its own share 1 tx / 0.7481, got %d / %f", hackerNode.TxCount, hackerNode.Amount)
+	}
+	if hackerNode.Status != string(models.StatusHacker) {
+		t.Errorf("hacker node status must come from the DB, got %q", hackerNode.Status)
+	}
+	secondNode := byAddr[second]
+	if secondNode == nil {
+		t.Fatalf("second recipient missing from the tree: %+v", root.Children)
+	}
+	if secondNode.TxCount != 1 || secondNode.Amount != 0.7481 {
+		t.Errorf("second recipient must carry its own share 1 tx / 0.7481, got %d / %f", secondNode.TxCount, secondNode.Amount)
+	}
+
+	flows := report.FundFlows
+	if flows == nil || len(flows.Outflow) != 2 {
+		t.Fatalf("fund flows must list both recipients, got %+v", flows)
+	}
+	for _, entry := range flows.Outflow {
+		if entry.Amount != 0.7481 {
+			t.Errorf("each outflow entry must carry its own share 0.7481, got %s %f", entry.Address, entry.Amount)
+		}
+	}
+}
+
+// The secondary recipient of a split drain sees the finding in its own
+// report: the drained wallet as counterparty with the share it received,
+// and the evidence chain names it a recipient — not the victim.
+func TestGetReport_SplitSweepRecipientView(t *testing.T) {
+	env := setupReportTest(t)
+	ctx := context.Background()
+
+	const victim = scanAddrVictim
+	const hacker = scanAddrHacker
+	const second = scanAddrSender1
+	if _, err := env.repo.CreateWallet(ctx, victim, "solana", models.StatusDrained, "", ""); err != nil {
+		t.Fatalf("CreateWallet victim: %v", err)
+	}
+	if _, err := env.repo.CreateWallet(ctx, second, "solana", models.StatusSuspicious, "", ""); err != nil {
+		t.Fatalf("CreateWallet second: %v", err)
+	}
+	env.seedSplitFinding(t, "sig-split-view", victim, hacker, second)
+
+	requester := repository.AnonymousRequesterPrefix + "203.0.113.31"
+	if err := env.repo.RecordCheck(ctx, requester, second, "solana", "suspicious"); err != nil {
+		t.Fatalf("RecordCheck: %v", err)
+	}
+
+	router := gin.New()
+	router.GET("/api/report", env.handler.GetReport)
+
+	w := doReportRequest(router, second, "solana", "203.0.113.31:1")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	report := decodeReport(t, w)
+
+	root := report.Transactions
+	if root == nil || len(root.Children) != 1 {
+		t.Fatalf("recipient tree must link back to the victim, got %+v", root)
+	}
+	child := root.Children[0]
+	if child.Address != victim {
+		t.Errorf("counterparty must be the drained wallet, got %s", child.Address)
+	}
+	// a node shows its own totals: the victim was drained of 1.4962 in
+	// full, and its children carry the per-recipient shares
+	if child.Amount != 1.4962 {
+		t.Errorf("victim node must show its own drained total 1.4962, got %f", child.Amount)
+	}
+	if len(child.Children) != 1 || child.Children[0].Address != hacker ||
+		child.Children[0].Amount != 0.7481 {
+		t.Errorf("victim node must expand to the primary recipient with its share, got %+v", child.Children)
+	}
+
+	flows := report.FundFlows
+	if flows == nil || len(flows.Inflow) != 1 {
+		t.Fatalf("recipient report must list the victim as inflow, got %+v", flows)
+	}
+	if flows.Inflow[0].Address != victim || flows.Inflow[0].Amount != 0.7481 {
+		t.Errorf("inflow must be the victim with the received share, got %+v", flows.Inflow[0])
+	}
+
+	var found bool
+	for _, ev := range report.Evidence {
+		if ev.TxSignature == "sig-split-view" {
+			found = true
+			if ev.Counterparty != victim {
+				t.Errorf("evidence counterparty must be the victim, got %q", ev.Counterparty)
+			}
+			if ev.AmountSOL != 0.7481 {
+				t.Errorf("evidence amount must be the received share 0.7481, got %f", ev.AmountSOL)
+			}
+		}
+	}
+	if !found {
+		t.Error("evidence chain must reference the split-drain transaction")
+	}
+}

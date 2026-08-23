@@ -219,6 +219,7 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 			amount_sol DECIMAL(20, 9) DEFAULT 0,
 			programs TEXT,
 			exposed_addresses TEXT,
+			sweeps TEXT,
 			source VARCHAR(20),
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE KEY uk_scan_signature (signature)
@@ -369,6 +370,7 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 			amount_sol REAL DEFAULT 0,
 			programs TEXT,
 			exposed_addresses TEXT,
+			sweeps TEXT,
 			source TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
@@ -519,6 +521,7 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 			amount_sol DECIMAL(20, 9) DEFAULT 0,
 			programs TEXT,
 			exposed_addresses TEXT,
+			sweeps TEXT,
 			source VARCHAR(20),
 			created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 		);
@@ -600,6 +603,9 @@ func (r *Repository) runMigrations(ctx context.Context) error {
 
 	// Migration 007: scanner funding sources on scan_findings
 	r.migration007(ctx)
+
+	// Migration 008: per-recipient sweep breakdown on scan_findings
+	r.migration008(ctx)
 
 	return nil
 }
@@ -709,6 +715,19 @@ func (r *Repository) migration007(ctx context.Context) {
 		!strings.Contains(err.Error(), "duplicate column") &&
 		!strings.Contains(err.Error(), "no such column") {
 		log.Printf("Migration note (scan_findings exposed_addresses): %v", err)
+	}
+}
+
+// migration008 adds the sweeps column to scan_findings: the per-recipient
+// breakdown of a split drain (CSV of "address:amount_sol" pairs), so reports
+// can show every wallet that received a share of the stolen funds.
+func (r *Repository) migration008(ctx context.Context) {
+	_, err := r.db.ExecContext(ctx,
+		"ALTER TABLE scan_findings ADD COLUMN sweeps TEXT")
+	if err != nil && !strings.Contains(err.Error(), "Duplicate column") &&
+		!strings.Contains(err.Error(), "duplicate column") &&
+		!strings.Contains(err.Error(), "no such column") {
+		log.Printf("Migration note (scan_findings sweeps): %v", err)
 	}
 }
 
@@ -1551,10 +1570,62 @@ func (r *Repository) SaveSeed(ctx context.Context, seedPhrase string) (int64, bo
 }
 
 // GetWalletByAddressAndChain checks if a wallet exists for address+chain and returns its ID
+// GetWalletsByAddresses returns the threat-database rows for a batch of
+// addresses of one chain (powers POST /api/check/bulk). EVM addresses match
+// case-insensitively; the stored (original-case) address is returned.
+func (r *Repository) GetWalletsByAddresses(ctx context.Context, chain string, addresses []string) ([]models.BulkCheckResult, error) {
+	if len(addresses) == 0 {
+		return nil, nil
+	}
+	column := "address"
+	args := make([]interface{}, 0, len(addresses)+1)
+	args = append(args, chain)
+	placeholders := make([]string, 0, len(addresses))
+	for _, addr := range addresses {
+		if chain == string(models.ChainEVM) {
+			addr = strings.ToLower(addr)
+		}
+		placeholders = append(placeholders, "?")
+		args = append(args, addr)
+	}
+	if chain == string(models.ChainEVM) {
+		column = "LOWER(address)"
+	}
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT address, status, has_pk, has_seed,
+			COALESCE(associated_hacker, false),
+			COALESCE(reason, ''), COALESCE(source, '')
+		 FROM wallets
+		 WHERE chain = ? AND `+column+` IN (`+strings.Join(placeholders, ",")+`)`,
+		args...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.BulkCheckResult
+	for rows.Next() {
+		var res models.BulkCheckResult
+		if err := rows.Scan(&res.Address, &res.Status, &res.HasPK, &res.HasSeed,
+			&res.AssociatedHacker, &res.Reason, &res.Source); err != nil {
+			return nil, err
+		}
+		out = append(out, res)
+	}
+	return out, rows.Err()
+}
+
 func (r *Repository) GetWalletByAddressAndChain(ctx context.Context, address, chain string) (int64, bool, error) {
+	// EVM addresses are case-insensitive: a scanner reporting the lowercase
+	// form of a checksummed registry entry must not create a duplicate row.
+	where := `address = ? AND chain = ?`
+	if chain == string(models.ChainEVM) {
+		where = `LOWER(address) = LOWER(?) AND chain = ?`
+	}
 	var id int64
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id FROM wallets WHERE address = ? AND chain = ?`,
+		`SELECT id FROM wallets WHERE `+where,
 		address, chain,
 	).Scan(&id)
 	if err == sql.ErrNoRows {

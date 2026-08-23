@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,6 +24,40 @@ func splitTags(s string) []string {
 	out := strings.Split(s, ",")
 	for i := range out {
 		out[i] = strings.TrimSpace(out[i])
+	}
+	return out
+}
+
+// joinSweeps / splitSweeps convert the per-recipient sweep breakdown to a
+// CSV of "address:amount_sol" pairs and back. Base58/hex addresses never
+// contain ':' or ',', so the format is unambiguous and stays searchable
+// with the same whole-element LIKE trick as exposed_addresses.
+func joinSweeps(sweeps []models.SweepTransfer) string {
+	parts := make([]string, 0, len(sweeps))
+	for _, sw := range sweeps {
+		if sw.Address == "" {
+			continue
+		}
+		parts = append(parts, sw.Address+":"+strconv.FormatFloat(sw.AmountSOL, 'f', -1, 64))
+	}
+	return strings.Join(parts, ",")
+}
+
+func splitSweeps(s string) []models.SweepTransfer {
+	if s == "" {
+		return nil
+	}
+	var out []models.SweepTransfer
+	for _, part := range strings.Split(s, ",") {
+		addr, amount, found := strings.Cut(part, ":")
+		if !found || addr == "" {
+			continue
+		}
+		v, err := strconv.ParseFloat(amount, 64)
+		if err != nil {
+			continue
+		}
+		out = append(out, models.SweepTransfer{Address: addr, AmountSOL: v})
 	}
 	return out
 }
@@ -64,11 +99,12 @@ func (r *Repository) InsertScanFinding(ctx context.Context, req models.ScanFindi
 	res, err := r.db.ExecContext(ctx,
 		`INSERT INTO scan_findings
 		 (chain, signature, slot, verdict, indicators, victim_address,
-		  hacker_address, amount_sol, programs, exposed_addresses, source, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		  hacker_address, amount_sol, programs, sweeps, exposed_addresses, source, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		chain, req.Signature, req.Slot, req.Verdict,
 		joinTags(req.Indicators), req.VictimAddress, req.HackerAddress,
-		req.AmountSOL, joinTags(req.Programs), joinTags(req.ExposedAddresses),
+		req.AmountSOL, joinTags(req.Programs), joinSweeps(req.Sweeps),
+		joinTags(req.ExposedAddresses),
 		req.Source, time.Now().UTC(),
 	)
 	if err != nil {
@@ -93,10 +129,10 @@ func (r *Repository) InsertScanFinding(ctx context.Context, req models.ScanFindi
 // scanFindingScanner maps a scan_findings row to the model.
 func scanFindingRow(scan func(dest ...interface{}) error) (*models.ScanFinding, error) {
 	var f models.ScanFinding
-	var indicators, programs, victim, hacker, exposed, source sql.NullString
+	var indicators, programs, victim, hacker, sweeps, exposed, source sql.NullString
 	err := scan(&f.ID, &f.Chain, &f.Signature, &f.Slot, &f.Verdict,
-		&indicators, &victim, &hacker, &f.AmountSOL, &programs, &exposed,
-		&source, &f.CreatedAt)
+		&indicators, &victim, &hacker, &f.AmountSOL, &programs, &sweeps,
+		&exposed, &source, &f.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -104,13 +140,14 @@ func scanFindingRow(scan func(dest ...interface{}) error) (*models.ScanFinding, 
 	f.Programs = splitTags(programs.String)
 	f.VictimAddress = victim.String
 	f.HackerAddress = hacker.String
+	f.Sweeps = splitSweeps(sweeps.String)
 	f.ExposedAddresses = splitTags(exposed.String)
 	f.Source = source.String
 	return &f, nil
 }
 
 const scanFindingCols = `id, chain, signature, slot, verdict, indicators,
-	victim_address, hacker_address, amount_sol, programs, exposed_addresses, source, created_at`
+	victim_address, hacker_address, amount_sol, programs, sweeps, exposed_addresses, source, created_at`
 
 // GetScanFindings lists findings. With afterID > 0 it returns newer rows
 // ascending (live polling); with beforeID > 0 it returns older rows
@@ -149,13 +186,22 @@ func (r *Repository) GetScanFindings(ctx context.Context, afterID, beforeID int6
 }
 
 // GetScanFindingsForAddress returns findings where the address is the
-// victim or the hacker (powers the report evidence chain).
+// victim, the hacker, or one of the sweep recipients of a split drain
+// (powers the report evidence chain).
 func (r *Repository) GetScanFindingsForAddress(ctx context.Context, address string, limit int) ([]models.ScanFinding, error) {
+	// sweeps is a CSV of "address:amount" pairs; match the address only as a
+	// whole element (the trailing ':' also guards against prefix collisions).
+	var sweepMatch string
+	if r.dbType == config.DBTypeMySQL {
+		sweepMatch = "CONCAT(',', COALESCE(sweeps, ''), ',') LIKE CONCAT('%,', ?, ':%')"
+	} else {
+		sweepMatch = "',' || COALESCE(sweeps, '') || ',' LIKE '%,' || ? || ':%'"
+	}
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT `+scanFindingCols+` FROM scan_findings
-		 WHERE victim_address = ? OR hacker_address = ?
+		 WHERE victim_address = ? OR hacker_address = ? OR `+sweepMatch+`
 		 ORDER BY id DESC LIMIT ?`,
-		address, address, limit,
+		address, address, address, limit,
 	)
 	if err != nil {
 		return nil, err

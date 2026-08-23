@@ -313,6 +313,33 @@ type CheckResponse struct {
 	BalanceLeft int    `json:"balance_left,omitempty"`
 }
 
+// BulkCheckRequest is the payload of POST /api/check/bulk: one chain and a
+// batch of addresses to look up in the threat database.
+type BulkCheckRequest struct {
+	Chain     string   `json:"chain" binding:"required"`
+	Addresses []string `json:"addresses" binding:"required"`
+}
+
+// BulkCheckResult is one address found in the threat database.
+type BulkCheckResult struct {
+	Address          string `json:"address"`
+	Status           string `json:"status"`
+	HasPK            bool   `json:"has_pk"`
+	HasSeed          bool   `json:"has_seed"`
+	AssociatedHacker bool   `json:"associated_hacker"`
+	Reason           string `json:"reason,omitempty"`
+	Source           string `json:"source,omitempty"`
+}
+
+// BulkCheckResponse lists only the addresses present in the database;
+// unknown addresses are omitted (checked = valid unique inputs).
+type BulkCheckResponse struct {
+	Chain   string            `json:"chain"`
+	Checked int               `json:"checked"`
+	Found   int               `json:"found"`
+	Results []BulkCheckResult `json:"results"`
+}
+
 type ContactRequest struct {
 	Name    string `json:"name" binding:"required"`
 	Email   string `json:"email" binding:"required,email"`
@@ -568,6 +595,14 @@ const (
 	ScanVerdictSuspicious = "SUSPICIOUS"
 )
 
+// SweepTransfer is one recipient leg of a balance sweep: drainers split the
+// stolen funds across several wallets in a single transaction, so a finding
+// can have more recipients than the primary HackerAddress.
+type SweepTransfer struct {
+	Address   string  `json:"address"`
+	AmountSOL float64 `json:"amount_sol"`
+}
+
 // ScanFinding is one drainer-pattern detection reported by solana_scan.py.
 // VictimAddress is the drained/hijacked wallet, HackerAddress is the sweep
 // destination or the program that took over the account.
@@ -582,6 +617,10 @@ type ScanFinding struct {
 	HackerAddress string   `json:"hacker_address,omitempty"`
 	AmountSOL     float64  `json:"amount_sol"`
 	Programs      []string `json:"programs,omitempty"`
+	// Sweeps is the per-recipient breakdown of the drained funds
+	// (aggregated by destination). Empty for findings indexed before
+	// split sweeps were recorded and for flow-trace findings.
+	Sweeps []SweepTransfer `json:"sweeps,omitempty"`
 	// ExposedAddresses are the funding sources of this finding: for
 	// flow-trace findings (F1/F2) they are the operator wallets that paid
 	// the hacker_address, so reports can link payouts back to the payer.
@@ -602,6 +641,9 @@ type ScanFindingRequest struct {
 	AmountSOL     float64  `json:"amount_sol"`
 	Programs      []string `json:"programs"`
 	Source        string   `json:"source"`
+	// Sweeps is the per-recipient breakdown of a split drain: every
+	// destination wallet with the exact amount it received.
+	Sweeps []SweepTransfer `json:"sweeps"`
 	// ExposedAddresses are wallets that sent funds to the hacker in this
 	// drainer transaction. They get flagged as associated with a hacker
 	// without their status being escalated automatically.
