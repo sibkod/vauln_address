@@ -41,10 +41,18 @@ env ADMIN_API_KEY). Находки видны на странице живого
 отсекаются дважды: локально по signature за прогон и на бэкенде
 (scan_findings.signature UNIQUE).
 
-Многопоточность: загрузка транзакций, трейсинг потоков и отправка находок
-в API выполняются пулом потоков (--threads, по умолчанию 8) — рассчитано на
+Watch отслеживает не только кражи, но и ДВИЖЕНИЕ украденного: исходящие
+переводы с хакерских кошельков. Множество сеется из БД бэкенда
+(GET /api/admin/wallets?status=hacker) и --hacker-file, пополняется на лету
+(оператор DRAINER-находки и F2-получатель сразу под наблюдением) — цепочка
+увода средств раскручивается рекурсивно в реальном времени.
+
+Многопоточность: загрузка транзакций, трейсинг потоков, отправка находок
+в API и обработка блоков в watch (скользящее окно слотов, --window)
+выполняются пулом потоков (--threads, по умолчанию 8) — рассчитано на
 платные RPC с высоким rate limit (Helius и т.п., --rpc-url / env
-SOLANA_RPC_URL). Для публичных RPC: --threads 1 --rpc-delay 0.8.
+SOLANA_RPC_URL, можно указать несколько эндпоинтов — round-robin). Для
+публичных RPC: --threads 1 --rpc-delay 0.8.
 
 Только stdlib. Кэширует транзакции в <cache_dir>/<address>.json
 """
@@ -286,6 +294,50 @@ def post_finding(api_url, api_key, payload):
     except Exception as e:  # noqa: BLE001
         print(f"  !! не удалось отправить находку в API: {e}", flush=True)
         return None
+
+
+DEFAULT_HACKERS_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "solana_hackers.json")
+
+
+def fetch_hacker_wallets(api_url, api_key, chain="solana", limit=50000):
+    """Известные хакерские кошельки из БД бэкенда (GET /api/admin/wallets).
+
+    Сид watch-множества: перезапущенный watch продолжает следить за всеми
+    операторами, найденными за всё время (scan-wallet, watch, flow-trace),
+    а не только за теми, кого он увидит в текущей сессии.
+    """
+    url = (api_url.rstrip("/") + "/api/admin/wallets?chain=" + chain
+           + "&status=hacker&limit=" + str(limit))
+    headers = dict(HEADERS)
+    if api_key:
+        headers["X-Admin-Key"] = api_key
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.load(resp)
+        return [a for a in data.get("addresses") or [] if a]
+    except Exception as e:  # noqa: BLE001
+        print(f"[!] не удалось загрузить хакерские кошельки из API: {e}",
+              file=sys.stderr)
+        return []
+
+
+def load_hacker_file(path):
+    """Локальный список хакерских кошельков (JSON: [...] или {"hackers": [...]})."""
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        hackers = data.get("hackers", data) if isinstance(data, dict) else data
+        out = [a.strip() for a in hackers if isinstance(a, str) and a.strip()]
+        if out:
+            print(f"[i] хакерских кошельков из файла: {len(out)} ({path})")
+        return out
+    except FileNotFoundError:
+        return []  # файл опционален — сидит основной список из БД
+    except Exception as e:  # noqa: BLE001
+        print(f"[!] ошибка загрузки {path}: {e}", file=sys.stderr)
+        return []
 
 
 class FindingPoster:
@@ -698,20 +750,38 @@ def prefilter_block_tx(tx, watch_programs):
 
 
 def mode_watch(rpc, watch_programs, full_blocks=False, out_file=None,
-               stats_every=20, start_slot=None, api_url=None, api_key=None):
+               stats_every=20, start_slot=None, api_url=None, api_key=None,
+               window=None, hacker_file=None):
     """Живой мониторинг блоков Solana на паттерн дрейнера.
 
     Стратегия по умолчанию (лёгкая):
-      1. getBlock(signatures) — дешёвый блок (~150 КБ), prefilter транзакций
-      2. getTransaction — полный разбор только подозрительных
-    С --full-blocks: getBlock(full) — анализ всех транзакций сразу
-      (нужно ~0.5 блока/сек на эндпоинт, публичные RPC на пределе).
+      1. getBlock(full) по слоту, prefilter транзакций
+      2. detect_patterns — полный разбор только подозрительных
+    С --full-blocks: анализ всех транзакций блока (без prefilter).
     С --api-url: каждая находка отправляется в БД через API бэкенда.
+
+    Кроме краж (DRAINER-паттерн) watch отслеживает ДВИЖЕНИЕ украденного:
+    исходящие переводы с известных хакерских кошельков. Множество сеется
+    из БД бэкенда (GET /api/admin/wallets?status=hacker — все операторы,
+    найденные scan-wallet/watch/flow-trace за всё время) и из
+    --hacker-file, и пополняется на лету: оператор каждой DRAINER-находки
+    и получатель F2-перевода сразу попадают под наблюдение, поэтому цепочка
+    раскручивается рекурсивно в реальном времени. Классификация получателя
+    как в flow-trace: 1 перевод — SUSPICIOUS (F1), 2+ — hacker (F2).
+
+    Блоки обрабатываются скользящим окном: --threads воркеров параллельно
+    забирают следующие слоты (round-robin по эндпоинтам --rpc-url), анализ
+    и отправка находок идут по мере готовности блока — на нескольких
+    эндпоинтах (Helius + ещё 2) сканер держит темп сети ~2.5 блока/с.
+    Окно ограничено (--window, по умолчанию 4*threads): дальние слоты не
+    стартуют, пока не завершены ближние — серия пропущенных/недоступных
+    блоков не разгоняет курсор в тысячи слотов вперёд.
     """
     watch = dict(KNOWN_BAD_PROGRAMS)
     for p in (watch_programs or []):
         watch.setdefault(p, "user-watchlist")
 
+    window = window or max(4, 4 * rpc.threads)
     print("LIVE-режим. Мониторим блоки на паттерн дрейнера.")
     print(f"  watchlist программ: {len(watch)} ({', '.join(list(watch)[:3])}...)")
     print(f"  стратегия: {'FULL blocks (все транзакции)' if full_blocks else 'prefilter (signatures->tx)'}")
@@ -722,14 +792,39 @@ def mode_watch(rpc, watch_programs, full_blocks=False, out_file=None,
     print("  Ctrl+C для остановки.\n")
 
     slot = start_slot or (rpc.get_slot() - 100)  # RPC не отдаёт свежие блоки сразу
-    lag_notice_at = 0
-    stats = {"blocks": 0, "txs_scanned": 0, "prefilter_hits": 0,
-             "drainer": 0, "suspicious": 0, "candidates": 0}
+    stats = Counter()
     log_fp = open(out_file, "a") if out_file else None
     poster = (FindingPoster(api_url, api_key, threads=rpc.threads)
               if api_url else None)
     t_start = time.time()
+
+    # Множество хакерских кошельков под наблюдением (движение украденного):
+    # сид из БД (все найденные ранее операторы) + локальный файл, далее
+    # пополняется находками этой сессии. Под общим локом — воркеры
+    # читают/пополняют его параллельно.
+    hackers_lock = threading.Lock()
+    hacker_wallets = set(load_hacker_file(hacker_file)) if hacker_file else set()
+    if api_url:
+        hacker_wallets.update(fetch_hacker_wallets(api_url, api_key))
+    hacker_wallets = {a for a in hacker_wallets
+                      if a and a not in KNOWN_PROGRAMS
+                      and a not in KNOWN_EXCHANGES and is_on_curve(a)}
+    movement_state = {}  # получатель -> {"txs": n, "sources": set}
+    print(f"  хакерских кошельков под наблюдением: {len(hacker_wallets)}",
+          flush=True)
+
+    # Общее состояние окна. Курсор next выдаёт слоты воркерам; слот
+    # считается обработанным после завершения process_slot. Стартовать
+    # слоты дальше window от минимального незавершённого нельзя — иначе
+    # серия пропущенных блоков уносит курсор далеко вперёд.
+    state = {"next": slot, "min_inflight": None, "lag_notice_at": 0}
+    inflight = set()
+    state_lock = threading.Lock()
+    slot_done = threading.Condition(state_lock)
+
     print(f"  стартовый слот: {slot} (RPC-лаг ~100 слотов)", flush=True)
+    print(f"  параллелизм: {rpc.threads} воркеров, окно {window} слотов, "
+          f"{len(rpc.endpoints)} RPC-эндпоинт(а)", flush=True)
 
     def record_finding(slot_, entry):
         line = json.dumps(entry, ensure_ascii=False)
@@ -770,59 +865,160 @@ def mode_watch(rpc, watch_programs, full_blocks=False, out_file=None,
                 print(f"      API: id={resp.get('id')} victim={entry.get('victim', '')[:12]}..."
                       f" hacker={entry.get('hacker', '')[:12]}...")
 
-    try:
-        while True:
-            head = rpc.get_slot()
-            if slot > head:
-                time.sleep(0.4)
-                continue
-            # не отставать безнадёжно: если лаг > 200 блоков — прыгаем к голове
-            if head - slot > 200:
-                if slot > lag_notice_at:
-                    print(f"  .. отставание {head - slot} блоков, прыгаем к слоту {head - 5}")
-                    lag_notice_at = head
-                slot = head - 5
+    def watch_hacker(addr):
+        """Поставить кошелёк под наблюдение (движение украденного)."""
+        if (addr and addr not in KNOWN_PROGRAMS
+                and addr not in KNOWN_EXCHANGES and is_on_curve(addr)):
+            with hackers_lock:
+                hacker_wallets.add(addr)
 
-            while slot <= head:
-                blk = rpc.get_block(slot, details="full")
-                if blk is None:
-                    print(f"  block {slot}: недоступен/пустой, пропуск", flush=True)
-                    slot += 1  # пропущенный/пустой слот
-                    continue
-                txs = blk.get("transactions") or []
-                stats["txs_scanned"] += len(txs)
-                stats["blocks"] += 1
-                elapsed = time.time() - t_start
-                bps = stats["blocks"] / elapsed if elapsed > 0 else 0
-                print(f"  block {slot}: {len(txs)} tx "
-                      f"(всего {stats['blocks']} блок., {bps:.2f} блок/с, "
-                      f"chain ~2.5 блок/с)", flush=True)
-                for tx in txs:
-                    if (tx.get("meta") or {}).get("err"):
-                        continue
-                    if not full_blocks and not prefilter_block_tx(tx, watch):
-                        continue
-                    stats["candidates"] += 1
-                    sig = (tx.get("transaction", {}).get("signatures") or [""])[0]
-                    verdict, indicators, details = detect_patterns(tx, watch_programs)
-                    # В живом мониторинге показываем только DRAINER (P1 —
-                    # полный захват аккаунта). SUSPICIOUS (sweeps без
-                    # захвата) — скипаем: это обычные свапы/переводы.
-                    if verdict == "DRAINER":
-                        stats["drainer"] += 1
-                        victim, hacker = extract_parties(details, signers(tx))
-                        record_finding(slot, {
-                            "slot": slot, "signature": sig, "verdict": verdict,
-                            "indicators": indicators,
-                            "victim": victim, "hacker": hacker,
-                            "takeovers": details["takeovers"],
-                            "sweeps": details["drain_transfers"],
-                            "unknown_programs": details["unknown_programs"]})
-                slot += 1
-            time.sleep(0.3)
+    def record_movement(slot_, sig, moves):
+        """Движение украденного с хакерского кошелька: классификация
+        получателя (1 перевод — SUSPICIOUS/F1, 2+ — hacker/F2) и отправка
+        находки. F2-получатель сразу попадает под наблюдение — цепочка
+        раскручивается рекурсивно."""
+        for m in moves:
+            with hackers_lock:
+                st = movement_state.setdefault(
+                    m["to"], {"txs": 0, "sources": set()})
+                st["txs"] += 1
+                st["sources"].add(m["from"])
+                repeat = st["txs"] >= 2 or len(st["sources"]) >= 2
+                if repeat:
+                    hacker_wallets.add(m["to"])
+            stats["movements"] += 1
+            label = "F2_REPEAT_DOWNSTREAM" if repeat else "F1_DOWNSTREAM_TRANSFER"
+            print(f"\n  >>> ДВИЖЕНИЕ С ХАКЕРСКОГО slot {slot_}: "
+                  f"{m['from'][:12]}... -> {m['to'][:12]}... "
+                  f"{m['amount_sol']:.6f} SOL [{label}]", flush=True)
+            if poster:
+                poster.submit_all([{
+                    "chain": "solana",
+                    "signature": sig,
+                    "slot": slot_,
+                    "verdict": "DRAINER" if repeat else "SUSPICIOUS",
+                    "indicators": [label],
+                    # поток, а не дрейн: жертвы нет, бэкенд регистрирует
+                    # только сторону хакера (получателя украденного)
+                    "victim_address": "",
+                    "hacker_address": m["to"],
+                    "amount_sol": round(m["amount_sol"], 9),
+                    "programs": [],
+                    "exposed_addresses": [m["from"]],
+                    "source": "watch",
+                }])
+
+    def process_slot(slot_):
+        """Загрузка и анализ одного блока (выполняется в воркере пула)."""
+        try:
+            blk = rpc.get_block(slot_, details="full")
+        except Exception as e:  # noqa: BLE001 — один слот не роняет монитор
+            print(f"  block {slot_}: RPC-ошибка ({e}), пропуск", flush=True)
+            stats["rpc_errors"] += 1
+            return
+        if blk is None:
+            print(f"  block {slot_}: недоступен/пустой, пропуск", flush=True)
+            stats["skipped"] += 1
+            return
+        txs = blk.get("transactions") or []
+        stats["txs_scanned"] += len(txs)
+        stats["blocks"] += 1
+        elapsed = time.time() - t_start
+        bps = stats["blocks"] / elapsed if elapsed > 0 else 0
+        print(f"  block {slot_}: {len(txs)} tx "
+              f"(всего {stats['blocks']} блок., {bps:.2f} блок/с, "
+              f"chain ~2.5 блок/с)", flush=True)
+        # снимок множества хакеров на блок: пополнение внутри блока
+        # подхватывается со следующего
+        with hackers_lock:
+            hacker_snapshot = set(hacker_wallets)
+        for tx in txs:
+            if (tx.get("meta") or {}).get("err"):
+                continue
+            sig = (tx.get("transaction", {}).get("signatures") or [""])[0]
+            # движение украденного: исходящие переводы с хакерских кошельков
+            # видны независимо от prefilter — смотрим каждую транзакцию
+            if hacker_snapshot:
+                moves = hacker_movements(tx, hacker_snapshot)
+                if moves:
+                    record_movement(slot_, sig, moves)
+            if not full_blocks and not prefilter_block_tx(tx, watch):
+                continue
+            stats["candidates"] += 1
+            verdict, indicators, details = detect_patterns(tx, watch_programs)
+            # В живом мониторинге показываем только DRAINER (P1 — полный
+            # захват аккаунта). SUSPICIOUS (sweeps без захвата) — скипаем:
+            # это обычные свапы/переводы.
+            if verdict == "DRAINER":
+                stats["drainer"] += 1
+                victim, hacker = extract_parties(details, signers(tx))
+                # оператор находки сразу под наблюдением: его дальнейшие
+                # переводы — движение украденного
+                watch_hacker(hacker)
+                record_finding(slot_, {
+                    "slot": slot_, "signature": sig, "verdict": verdict,
+                    "indicators": indicators,
+                    "victim": victim, "hacker": hacker,
+                    "takeovers": details["takeovers"],
+                    "sweeps": details["drain_transfers"],
+                    "unknown_programs": details["unknown_programs"]})
+
+    def claim_slot(head_):
+        """Выдать воркеру следующий слот либо None (ждать голову/окно)."""
+        with state_lock:
+            nxt = state["next"]
+            if nxt > head_:
+                return None
+            floor = state["min_inflight"]
+            if floor is not None and nxt >= floor + window:
+                return None
+            # не отставать безнадёжно: лаг > 200 блоков — прыжок к голове
+            if head_ - nxt > 200:
+                if nxt > state["lag_notice_at"]:
+                    print(f"  .. отставание {head_ - nxt} блоков, "
+                          f"прыгаем к слоту {head_ - 5}", flush=True)
+                    state["lag_notice_at"] = head_
+                nxt = head_ - 5
+                state["next"] = nxt
+            state["next"] = nxt + 1
+            inflight.add(nxt)
+            if state["min_inflight"] is None or nxt < state["min_inflight"]:
+                state["min_inflight"] = nxt
+            return nxt
+
+    def finish_slot(slot_):
+        with slot_done:
+            inflight.discard(slot_)
+            if state["min_inflight"] == slot_:
+                state["min_inflight"] = min(inflight) if inflight else None
+            slot_done.notify_all()
+
+    def worker():
+        head = rpc.get_slot()
+        while True:
+            s = claim_slot(head)
+            if s is None:
+                with slot_done:
+                    slot_done.wait(timeout=0.4)
+                head = rpc.get_slot()
+                continue
+            try:
+                process_slot(s)
+            finally:
+                finish_slot(s)
+            if s >= head:
+                head = rpc.get_slot()
+
+    pool = ThreadPoolExecutor(max_workers=rpc.threads)
+    try:
+        futures = [pool.submit(worker) for _ in range(rpc.threads)]
+        # любой необработанный exception в воркере — фатален для монитора
+        for f in futures:
+            f.result()
     except KeyboardInterrupt:
-        print(f"\nОстановлено. Итог: {stats}")
+        print(f"\nОстановлено. Итог: {dict(stats)}")
     finally:
+        pool.shutdown(wait=False, cancel_futures=True)
         if log_fp:
             log_fp.close()
 
@@ -881,6 +1077,34 @@ def outgoing_transfers(tx, address, signature=""):
         if not dst or dst == address or amt < TRACE_MIN_SOL:
             continue
         outs.append({"to": dst, "amount_sol": amt, "tx": signature})
+    return outs
+
+
+def hacker_movements(tx, hackers):
+    """Исходящие SOL-переводы с известных хакерских кошельков внутри tx.
+
+    Увод украденного дальше по цепочке: получатель — новый узел сети.
+    Биржи/программы/PDA-получатели пропускаются — как и в flow-trace, они
+    не регистрируются как злоумышленники (кэшаут — конец цепочки).
+    """
+    outs = []
+    for ix in iter_instructions(tx):
+        if ix.get("program") != "system":
+            continue
+        p = ix.get("parsed") or {}
+        if p.get("type") != "transfer":
+            continue
+        info = p.get("info") or {}
+        src, dst = info.get("source"), info.get("destination")
+        if src not in hackers or not dst or dst == src:
+            continue
+        amt = int(info.get("lamports") or 0) / 1e9
+        if amt < TRACE_MIN_SOL:
+            continue
+        if (dst in KNOWN_EXCHANGES or dst in KNOWN_PROGRAMS
+                or not is_on_curve(dst)):
+            continue
+        outs.append({"from": src, "to": dst, "amount_sol": amt})
     return outs
 
 
@@ -1321,6 +1545,17 @@ def main():
                      help="печатать статистику каждые N блоков")
     p_w.add_argument("--start-slot", type=int, default=None,
                      help="начать с конкретного слота (по умолчанию — текущий)")
+    p_w.add_argument("--window", type=int, default=None,
+                     help="скользящее окно слотов в watch (по умолчанию "
+                          "4*threads): дальше окна от минимального "
+                          "необработанного слота воркеры не стартуют")
+    p_w.add_argument("--hacker-file",
+                     default=os.environ.get("SOLANA_HACKERS_FILE",
+                                            DEFAULT_HACKERS_FILE),
+                     help="JSON с хакерскими кошельками для отслеживания "
+                          "движения украденного (дополняет список из БД "
+                          "бэкенда; по умолчанию solana_hackers.json рядом "
+                          "со скриптом)")
 
     for p in (p_tx, p_qs, p_sw, p_w):
         p.add_argument("--watch-program", action="append", default=[],
@@ -1382,7 +1617,8 @@ def main():
     elif args.mode == "watch":
         mode_watch(rpc, args.watch_program, full_blocks=args.full_blocks,
                    out_file=args.out, stats_every=args.stats_every,
-                   start_slot=args.start_slot,
+                   start_slot=args.start_slot, window=args.window,
+                   hacker_file=args.hacker_file,
                    api_url=args.api_url, api_key=args.api_key)
 
 

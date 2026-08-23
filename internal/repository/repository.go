@@ -1094,6 +1094,43 @@ func (r *Repository) GetWallet(ctx context.Context, address string, chain string
 	return &wallet, nil
 }
 
+// ListWalletAddresses returns wallet addresses registered with one of the
+// given statuses on a chain (e.g. all known hacker wallets), most recently
+// updated first. Used by the scanner to seed its watch sets.
+func (r *Repository) ListWalletAddresses(ctx context.Context, chain string, statuses []string, limit int) ([]string, error) {
+	if len(statuses) == 0 {
+		return nil, nil
+	}
+	if limit <= 0 || limit > 100000 {
+		limit = 10000
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(statuses)), ",")
+	args := make([]interface{}, 0, len(statuses)+2)
+	args = append(args, chain)
+	for _, s := range statuses {
+		args = append(args, s)
+	}
+	args = append(args, limit)
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT address FROM wallets WHERE chain = ? AND status IN (`+placeholders+`)
+		 ORDER BY updated_at DESC LIMIT ?`,
+		args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []string
+	for rows.Next() {
+		var addr string
+		if err := rows.Scan(&addr); err != nil {
+			return nil, err
+		}
+		out = append(out, addr)
+	}
+	return out, rows.Err()
+}
+
 func (r *Repository) SaveContactMessage(ctx context.Context, msg *models.ContactMessage) error {
 	_, err := r.db.ExecContext(ctx,
 		`INSERT INTO contact_messages (name, email, message) VALUES (?, ?, ?)`,

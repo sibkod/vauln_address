@@ -1618,3 +1618,51 @@ func (h *Handler) respondJobAccepted(c *gin.Context, job *services.WalletJob) {
 		CreatedAt: job.CreatedAt,
 	})
 }
+
+// ListAdminWallets lists wallet addresses registered with the given
+// statuses on a chain (?chain=solana&status=hacker&status=suspicious —
+// comma-separated values work too). The scanner uses it to seed its hacker
+// watch set on startup so restarted watch sessions keep tracking movements
+// from every hacker wallet known to the database.
+func (h *Handler) ListAdminWallets(c *gin.Context) {
+	chain := strings.ToLower(strings.TrimSpace(c.DefaultQuery("chain", string(models.ChainSolana))))
+	var statuses []string
+	for _, raw := range c.QueryArray("status") {
+		for _, s := range strings.Split(raw, ",") {
+			s = strings.TrimSpace(s)
+			if s == "" {
+				continue
+			}
+			if !models.IsValidStatus(s) {
+				c.JSON(http.StatusBadRequest, models.ErrorResponse{
+					Error: "invalid status: " + s,
+					Code:  "INVALID_STATUS",
+				})
+				return
+			}
+			statuses = append(statuses, s)
+		}
+	}
+	if len(statuses) == 0 {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error: "at least one status is required",
+			Code:  "INVALID_REQUEST",
+		})
+		return
+	}
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10000"))
+	addresses, err := h.repo.ListWalletAddresses(c.Request.Context(), chain, statuses, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error: "database error",
+			Code:  "DB_ERROR",
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"chain":     chain,
+		"statuses":  statuses,
+		"count":     len(addresses),
+		"addresses": addresses,
+	})
+}
