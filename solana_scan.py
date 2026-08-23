@@ -41,10 +41,12 @@ env ADMIN_API_KEY). Находки видны на странице живого
 отсекаются дважды: локально по signature за прогон и на бэкенде
 (scan_findings.signature UNIQUE).
 
-Многопоточность: загрузка транзакций, трейсинг потоков и отправка находок
-в API выполняются пулом потоков (--threads, по умолчанию 8) — рассчитано на
+Многопоточность: загрузка транзакций, трейсинг потоков, отправка находок
+в API и обработка блоков в watch (скользящее окно слотов, --window)
+выполняются пулом потоков (--threads, по умолчанию 8) — рассчитано на
 платные RPC с высоким rate limit (Helius и т.п., --rpc-url / env
-SOLANA_RPC_URL). Для публичных RPC: --threads 1 --rpc-delay 0.8.
+SOLANA_RPC_URL, можно указать несколько эндпоинтов — round-robin). Для
+публичных RPC: --threads 1 --rpc-delay 0.8.
 
 Только stdlib. Кэширует транзакции в <cache_dir>/<address>.json
 """
@@ -698,20 +700,29 @@ def prefilter_block_tx(tx, watch_programs):
 
 
 def mode_watch(rpc, watch_programs, full_blocks=False, out_file=None,
-               stats_every=20, start_slot=None, api_url=None, api_key=None):
+               stats_every=20, start_slot=None, api_url=None, api_key=None,
+               window=None):
     """Живой мониторинг блоков Solana на паттерн дрейнера.
 
     Стратегия по умолчанию (лёгкая):
-      1. getBlock(signatures) — дешёвый блок (~150 КБ), prefilter транзакций
-      2. getTransaction — полный разбор только подозрительных
-    С --full-blocks: getBlock(full) — анализ всех транзакций сразу
-      (нужно ~0.5 блока/сек на эндпоинт, публичные RPC на пределе).
+      1. getBlock(full) по слоту, prefilter транзакций
+      2. detect_patterns — полный разбор только подозрительных
+    С --full-blocks: анализ всех транзакций блока (без prefilter).
     С --api-url: каждая находка отправляется в БД через API бэкенда.
+
+    Блоки обрабатываются скользящим окном: --threads воркеров параллельно
+    забирают следующие слоты (round-robin по эндпоинтам --rpc-url), анализ
+    и отправка находок идут по мере готовности блока — на нескольких
+    эндпоинтах (Helius + ещё 2) сканер держит темп сети ~2.5 блока/с.
+    Окно ограничено (--window, по умолчанию 4*threads): дальние слоты не
+    стартуют, пока не завершены ближние — серия пропущенных/недоступных
+    блоков не разгоняет курсор в тысячи слотов вперёд.
     """
     watch = dict(KNOWN_BAD_PROGRAMS)
     for p in (watch_programs or []):
         watch.setdefault(p, "user-watchlist")
 
+    window = window or max(4, 4 * rpc.threads)
     print("LIVE-режим. Мониторим блоки на паттерн дрейнера.")
     print(f"  watchlist программ: {len(watch)} ({', '.join(list(watch)[:3])}...)")
     print(f"  стратегия: {'FULL blocks (все транзакции)' if full_blocks else 'prefilter (signatures->tx)'}")
@@ -722,14 +733,24 @@ def mode_watch(rpc, watch_programs, full_blocks=False, out_file=None,
     print("  Ctrl+C для остановки.\n")
 
     slot = start_slot or (rpc.get_slot() - 100)  # RPC не отдаёт свежие блоки сразу
-    lag_notice_at = 0
-    stats = {"blocks": 0, "txs_scanned": 0, "prefilter_hits": 0,
-             "drainer": 0, "suspicious": 0, "candidates": 0}
+    stats = Counter()
     log_fp = open(out_file, "a") if out_file else None
     poster = (FindingPoster(api_url, api_key, threads=rpc.threads)
               if api_url else None)
     t_start = time.time()
+
+    # Общее состояние окна. Курсор next выдаёт слоты воркерам; слот
+    # считается обработанным после завершения process_slot. Стартовать
+    # слоты дальше window от минимального незавершённого нельзя — иначе
+    # серия пропущенных блоков уносит курсор далеко вперёд.
+    state = {"next": slot, "min_inflight": None, "lag_notice_at": 0}
+    inflight = set()
+    state_lock = threading.Lock()
+    slot_done = threading.Condition(state_lock)
+
     print(f"  стартовый слот: {slot} (RPC-лаг ~100 слотов)", flush=True)
+    print(f"  параллелизм: {rpc.threads} воркеров, окно {window} слотов, "
+          f"{len(rpc.endpoints)} RPC-эндпоинт(а)", flush=True)
 
     def record_finding(slot_, entry):
         line = json.dumps(entry, ensure_ascii=False)
@@ -770,59 +791,104 @@ def mode_watch(rpc, watch_programs, full_blocks=False, out_file=None,
                 print(f"      API: id={resp.get('id')} victim={entry.get('victim', '')[:12]}..."
                       f" hacker={entry.get('hacker', '')[:12]}...")
 
-    try:
-        while True:
-            head = rpc.get_slot()
-            if slot > head:
-                time.sleep(0.4)
+    def process_slot(slot_):
+        """Загрузка и анализ одного блока (выполняется в воркере пула)."""
+        try:
+            blk = rpc.get_block(slot_, details="full")
+        except Exception as e:  # noqa: BLE001 — один слот не роняет монитор
+            print(f"  block {slot_}: RPC-ошибка ({e}), пропуск", flush=True)
+            stats["rpc_errors"] += 1
+            return
+        if blk is None:
+            print(f"  block {slot_}: недоступен/пустой, пропуск", flush=True)
+            stats["skipped"] += 1
+            return
+        txs = blk.get("transactions") or []
+        stats["txs_scanned"] += len(txs)
+        stats["blocks"] += 1
+        elapsed = time.time() - t_start
+        bps = stats["blocks"] / elapsed if elapsed > 0 else 0
+        print(f"  block {slot_}: {len(txs)} tx "
+              f"(всего {stats['blocks']} блок., {bps:.2f} блок/с, "
+              f"chain ~2.5 блок/с)", flush=True)
+        for tx in txs:
+            if (tx.get("meta") or {}).get("err"):
                 continue
-            # не отставать безнадёжно: если лаг > 200 блоков — прыгаем к голове
-            if head - slot > 200:
-                if slot > lag_notice_at:
-                    print(f"  .. отставание {head - slot} блоков, прыгаем к слоту {head - 5}")
-                    lag_notice_at = head
-                slot = head - 5
+            if not full_blocks and not prefilter_block_tx(tx, watch):
+                continue
+            stats["candidates"] += 1
+            sig = (tx.get("transaction", {}).get("signatures") or [""])[0]
+            verdict, indicators, details = detect_patterns(tx, watch_programs)
+            # В живом мониторинге показываем только DRAINER (P1 — полный
+            # захват аккаунта). SUSPICIOUS (sweeps без захвата) — скипаем:
+            # это обычные свапы/переводы.
+            if verdict == "DRAINER":
+                stats["drainer"] += 1
+                victim, hacker = extract_parties(details, signers(tx))
+                record_finding(slot_, {
+                    "slot": slot_, "signature": sig, "verdict": verdict,
+                    "indicators": indicators,
+                    "victim": victim, "hacker": hacker,
+                    "takeovers": details["takeovers"],
+                    "sweeps": details["drain_transfers"],
+                    "unknown_programs": details["unknown_programs"]})
 
-            while slot <= head:
-                blk = rpc.get_block(slot, details="full")
-                if blk is None:
-                    print(f"  block {slot}: недоступен/пустой, пропуск", flush=True)
-                    slot += 1  # пропущенный/пустой слот
-                    continue
-                txs = blk.get("transactions") or []
-                stats["txs_scanned"] += len(txs)
-                stats["blocks"] += 1
-                elapsed = time.time() - t_start
-                bps = stats["blocks"] / elapsed if elapsed > 0 else 0
-                print(f"  block {slot}: {len(txs)} tx "
-                      f"(всего {stats['blocks']} блок., {bps:.2f} блок/с, "
-                      f"chain ~2.5 блок/с)", flush=True)
-                for tx in txs:
-                    if (tx.get("meta") or {}).get("err"):
-                        continue
-                    if not full_blocks and not prefilter_block_tx(tx, watch):
-                        continue
-                    stats["candidates"] += 1
-                    sig = (tx.get("transaction", {}).get("signatures") or [""])[0]
-                    verdict, indicators, details = detect_patterns(tx, watch_programs)
-                    # В живом мониторинге показываем только DRAINER (P1 —
-                    # полный захват аккаунта). SUSPICIOUS (sweeps без
-                    # захвата) — скипаем: это обычные свапы/переводы.
-                    if verdict == "DRAINER":
-                        stats["drainer"] += 1
-                        victim, hacker = extract_parties(details, signers(tx))
-                        record_finding(slot, {
-                            "slot": slot, "signature": sig, "verdict": verdict,
-                            "indicators": indicators,
-                            "victim": victim, "hacker": hacker,
-                            "takeovers": details["takeovers"],
-                            "sweeps": details["drain_transfers"],
-                            "unknown_programs": details["unknown_programs"]})
-                slot += 1
-            time.sleep(0.3)
+    def claim_slot(head_):
+        """Выдать воркеру следующий слот либо None (ждать голову/окно)."""
+        with state_lock:
+            nxt = state["next"]
+            if nxt > head_:
+                return None
+            floor = state["min_inflight"]
+            if floor is not None and nxt >= floor + window:
+                return None
+            # не отставать безнадёжно: лаг > 200 блоков — прыжок к голове
+            if head_ - nxt > 200:
+                if nxt > state["lag_notice_at"]:
+                    print(f"  .. отставание {head_ - nxt} блоков, "
+                          f"прыгаем к слоту {head_ - 5}", flush=True)
+                    state["lag_notice_at"] = head_
+                nxt = head_ - 5
+                state["next"] = nxt
+            state["next"] = nxt + 1
+            inflight.add(nxt)
+            if state["min_inflight"] is None or nxt < state["min_inflight"]:
+                state["min_inflight"] = nxt
+            return nxt
+
+    def finish_slot(slot_):
+        with slot_done:
+            inflight.discard(slot_)
+            if state["min_inflight"] == slot_:
+                state["min_inflight"] = min(inflight) if inflight else None
+            slot_done.notify_all()
+
+    def worker():
+        head = rpc.get_slot()
+        while True:
+            s = claim_slot(head)
+            if s is None:
+                with slot_done:
+                    slot_done.wait(timeout=0.4)
+                head = rpc.get_slot()
+                continue
+            try:
+                process_slot(s)
+            finally:
+                finish_slot(s)
+            if s >= head:
+                head = rpc.get_slot()
+
+    pool = ThreadPoolExecutor(max_workers=rpc.threads)
+    try:
+        futures = [pool.submit(worker) for _ in range(rpc.threads)]
+        # любой необработанный exception в воркере — фатален для монитора
+        for f in futures:
+            f.result()
     except KeyboardInterrupt:
-        print(f"\nОстановлено. Итог: {stats}")
+        print(f"\nОстановлено. Итог: {dict(stats)}")
     finally:
+        pool.shutdown(wait=False, cancel_futures=True)
         if log_fp:
             log_fp.close()
 
@@ -1321,6 +1387,10 @@ def main():
                      help="печатать статистику каждые N блоков")
     p_w.add_argument("--start-slot", type=int, default=None,
                      help="начать с конкретного слота (по умолчанию — текущий)")
+    p_w.add_argument("--window", type=int, default=None,
+                     help="скользящее окно слотов в watch (по умолчанию "
+                          "4*threads): дальше окна от минимального "
+                          "необработанного слота воркеры не стартуют")
 
     for p in (p_tx, p_qs, p_sw, p_w):
         p.add_argument("--watch-program", action="append", default=[],
@@ -1382,7 +1452,7 @@ def main():
     elif args.mode == "watch":
         mode_watch(rpc, args.watch_program, full_blocks=args.full_blocks,
                    out_file=args.out, stats_every=args.stats_every,
-                   start_slot=args.start_slot,
+                   start_slot=args.start_slot, window=args.window,
                    api_url=args.api_url, api_key=args.api_key)
 
 
