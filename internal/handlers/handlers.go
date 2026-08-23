@@ -93,14 +93,34 @@ func loadPackages(cfg *config.Config) []gin.H {
 	return packages
 }
 
+// checksDiscount is the single source of truth for volume discounts.
+// Package prices and order prices must both derive from it, otherwise the
+// amount shown on the pricing page diverges from the amount charged.
+func checksDiscount(checks int) float64 {
+	switch {
+	case checks >= 500:
+		return 0.75
+	case checks >= 150:
+		return 0.85
+	case checks >= 50:
+		return 0.95
+	default:
+		return 1
+	}
+}
+
+func priceForChecks(checks int, pricePerCheck float64) float64 {
+	return math.Round(float64(checks)*pricePerCheck*checksDiscount(checks)*100) / 100
+}
+
 func getDefaultPackages(cfg *config.Config) []gin.H {
 	pricePerCheck := cfg.PricePerCheckUSD
 
 	return []gin.H{
-		{"id": "beginner", "name": "Beginner", "checks": 10, "price_usd": math.Round(float64(10)*pricePerCheck*100) / 100, "discount_percent": 0, "discount_label": "", "popular": false},
-		{"id": "starter", "name": "Starter", "checks": 50, "price_usd": math.Round(float64(50)*0.95*pricePerCheck*100) / 100, "discount_percent": 0, "discount_label": "", "popular": false},
-		{"id": "pro", "name": "Pro", "checks": 150, "price_usd": math.Round(float64(150)*pricePerCheck*0.85*100) / 100, "discount_percent": 0, "discount_label": "", "popular": true},
-		{"id": "enterprise", "name": "Enterprise", "checks": 500, "price_usd": math.Round(float64(500)*pricePerCheck*0.75*100) / 100, "discount_percent": 0, "discount_label": "", "popular": false},
+		{"id": "beginner", "name": "Beginner", "checks": 10, "price_usd": priceForChecks(10, pricePerCheck), "discount_percent": 0, "discount_label": "", "popular": false},
+		{"id": "starter", "name": "Starter", "checks": 50, "price_usd": priceForChecks(50, pricePerCheck), "discount_percent": 0, "discount_label": "", "popular": false},
+		{"id": "pro", "name": "Pro", "checks": 150, "price_usd": priceForChecks(150, pricePerCheck), "discount_percent": 0, "discount_label": "", "popular": true},
+		{"id": "enterprise", "name": "Enterprise", "checks": 500, "price_usd": priceForChecks(500, pricePerCheck), "discount_percent": 0, "discount_label": "", "popular": false},
 	}
 }
 
@@ -283,6 +303,18 @@ func (h *Handler) GetPackages(c *gin.Context) {
 	})
 }
 
+// priceForOrder returns the USD price for an order. When the checks count
+// matches a configured package, the package price is used verbatim so the
+// charged amount always equals the price shown on the pricing page.
+func (h *Handler) priceForOrder(checks int) float64 {
+	for _, pkg := range h.packages {
+		if pkg["checks"].(int) == checks {
+			return pkg["price_usd"].(float64)
+		}
+	}
+	return priceForChecks(checks, h.serverCfg.PricePerCheckUSD)
+}
+
 // CreateOrder creates a new payment order
 func (h *Handler) CreateOrder(c *gin.Context) {
 	walletAddress, exists := c.Get("userAddress")
@@ -312,19 +344,9 @@ func (h *Handler) CreateOrder(c *gin.Context) {
 		return
 	}
 
-	// Calculate price (USD) - use PricePerCheckUSD as base
-	pricePerCheck := h.serverCfg.PricePerCheckUSD
-	priceUSD := float64(req.ChecksCount) * pricePerCheck
-
-	// Apply volume discounts
-	if req.ChecksCount >= 1000 {
-		priceUSD = priceUSD * 0.5 // 50% discount for 1000+
-	} else if req.ChecksCount >= 500 {
-		priceUSD = priceUSD * 0.6 // 40% discount for 500+
-	}
-
-	// Round to 2 decimal places
-	priceUSD = math.Round(priceUSD*100) / 100
+	// Calculate price (USD) with the same volume discounts the pricing
+	// page advertises, so the charged amount matches the displayed one.
+	priceUSD := h.priceForOrder(req.ChecksCount)
 
 	// Get payment address
 	paymentAddress := h.serverCfg.SolanaPaymentAddr
