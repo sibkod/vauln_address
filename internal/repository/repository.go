@@ -607,7 +607,41 @@ func (r *Repository) runMigrations(ctx context.Context) error {
 	// Migration 008: per-recipient sweep breakdown on scan_findings
 	r.migration008(ctx)
 
+	// Migration 009: generated lower_address column for fast EVM lookups
+	r.migration009LowerAddress(ctx)
+
 	return nil
+}
+
+// migration009LowerAddress adds the STORED generated lower_address column
+// used by EVM case-insensitive lookups (only on MySQL — sqlite/postgres
+// keep LOWER(address)). Without it every bulk/existence EVM check fully
+// scans wallets on prod.
+func (r *Repository) migration009LowerAddress(ctx context.Context) {
+	if r.dbType != config.DBTypeMySQL {
+		return
+	}
+	_, err := r.db.ExecContext(ctx, `ALTER TABLE wallets ADD COLUMN
+		lower_address VARCHAR(100) GENERATED ALWAYS AS (LOWER(address)) STORED`)
+	if err != nil && !(strings.Contains(err.Error(), "Duplicate column") ||
+		strings.Contains(err.Error(), "duplicate column name")) {
+		log.Printf("Migration note (wallets lower_address): %v", err)
+	}
+	idxSQL := "CREATE INDEX idx_wallets_chain_lower ON wallets(chain, lower_address)"
+	if _, err := r.db.ExecContext(ctx, idxSQL); err != nil &&
+		!strings.Contains(err.Error(), "Duplicate key name") {
+		log.Printf("Migration note (wallets lower_address index): %v", err)
+	}
+}
+
+// lowerAddressColumn returns the column/predicate name used for EVM
+// case-insensitive lookups: on MySQL it's the generated lower_address
+// column (indexed), on other dialects the LOWER(address) expression.
+func (r *Repository) lowerAddressColumn() string {
+	if r.dbType == config.DBTypeMySQL {
+		return "lower_address"
+	}
+	return "LOWER(address)"
 }
 
 func (r *Repository) migration004(ctx context.Context) {
@@ -1572,7 +1606,9 @@ func (r *Repository) SaveSeed(ctx context.Context, seedPhrase string) (int64, bo
 // GetWalletByAddressAndChain checks if a wallet exists for address+chain and returns its ID
 // GetWalletsByAddresses returns the threat-database rows for a batch of
 // addresses of one chain (powers POST /api/check/bulk). EVM addresses match
-// case-insensitively; the stored (original-case) address is returned.
+// case-insensitively; the stored (original-case) address is returned. On
+// MySQL this runs through the generated lower_address column (migration 009)
+// because LOWER(address) has no index there; sqlite/postgres keep LOWER().
 func (r *Repository) GetWalletsByAddresses(ctx context.Context, chain string, addresses []string) ([]models.BulkCheckResult, error) {
 	if len(addresses) == 0 {
 		return nil, nil
@@ -1589,7 +1625,7 @@ func (r *Repository) GetWalletsByAddresses(ctx context.Context, chain string, ad
 		args = append(args, addr)
 	}
 	if chain == string(models.ChainEVM) {
-		column = "LOWER(address)"
+		column = r.lowerAddressColumn()
 	}
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT address, status, has_pk, has_seed,
@@ -1621,7 +1657,7 @@ func (r *Repository) GetWalletByAddressAndChain(ctx context.Context, address, ch
 	// form of a checksummed registry entry must not create a duplicate row.
 	where := `address = ? AND chain = ?`
 	if chain == string(models.ChainEVM) {
-		where = `LOWER(address) = LOWER(?) AND chain = ?`
+		where = r.lowerAddressColumn() + ` = LOWER(?) AND chain = ?`
 	}
 	var id int64
 	err := r.db.QueryRowContext(ctx,

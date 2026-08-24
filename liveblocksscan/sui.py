@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Sui: live-мониторинг чекпоинтов.
 
-suix_getLatestCheckpointSequenceNumber -> sui_getCheckpoint (дайджесты
-транзакций) -> suix_multiGetTransactionBlocks (showBalanceChanges):
+suix_getLatestCheckpointSequenceNumber или новый non-batch вариант
+sui_getLatestCheckpointSequenceNumber (OnFinality после изъятия suix_*)
+-> sui_getCheckpoint (дайджесты транзакций)
+-> sui_multiGetTransactionBlocks (showBalanceChanges):
 отправитель — transaction.data.sender, получатели — положительные
 balanceChanges в нативном SUI (0x2::sui::SUI) с AddressOwner.
 
@@ -23,9 +25,13 @@ CHAIN = "sui"
 POLL_INTERVAL = 2.0  # чекпоинт ~0.3-0.5 секунды, обрабатываем пачкой
 
 RPC_ENDPOINTS = [
+    # OnFinality public endpoint: Sui Foundation full nodes removed JSON-RPC
+    # (July 2026), and Ankr/publicnode now require an API key. The method
+    # names use the non-batch form: sui_getLatestCheckpointSequenceNumber
+    # and sui_multiGetTransactionBlocks (suix_* variants were dropped too).
+    "https://sui.api.onfinality.io/public",
+    # kept as fallback for users whose node still serves the legacy API
     "https://fullnode.mainnet.sui.io:443",
-    "https://sui-rpc.publicnode.com",
-    "https://rpc.ankr.com/sui",
 ]
 
 SUI_COIN = "0x2::sui::SUI"
@@ -36,7 +42,12 @@ def make_sui_watcher(endpoints):
     rpc = JsonRpc(endpoints, timeout=60)
 
     def latest():
-        return int(rpc.call("suix_getLatestCheckpointSequenceNumber"))
+        # Sui сменил имена методов при переходе с JSON-RPC: suix_ формы
+        # некоторые провайдеры уже убрали (OnFinality); пробуем оба.
+        try:
+            return int(rpc.call("suix_getLatestCheckpointSequenceNumber"))
+        except Exception:
+            return int(rpc.call("sui_getLatestCheckpointSequenceNumber"))
 
     def transfers(height):
         cp = rpc.call("sui_getCheckpoint", [str(height)])
@@ -45,11 +56,18 @@ def make_sui_watcher(endpoints):
         digests = cp.get("transactions") or []
         if not digests:
             return []
-        txs = rpc.call("suix_multiGetTransactionBlocks", [
-            digests,
-            {"showInput": False, "showEffects": False,
-             "showBalanceChanges": True},
-        ]) or []
+        try:
+            txs = rpc.call("suix_multiGetTransactionBlocks", [
+                digests,
+                {"showInput": False, "showEffects": False,
+                 "showBalanceChanges": True},
+            ]) or []
+        except Exception:
+            txs = rpc.call("sui_multiGetTransactionBlocks", [
+                digests,
+                {"showInput": False, "showEffects": False,
+                 "showBalanceChanges": True},
+            ]) or []
         out = []
         for tx in txs:
             if not tx:

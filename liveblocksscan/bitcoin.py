@@ -16,13 +16,16 @@ Esplora-совместимый REST API (blockstream.info, mempool.space):
 (список Esplora-эндпоинтов через запятую).
 """
 
+import json
 import os
 import sys
 import time
+import urllib.request
+import urllib.error
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from common import (BlockUnavailable, Transfer, http_json,  # noqa: E402
+from common import (BlockUnavailable, Transfer, USER_AGENT,  # noqa: E402
                     parse_args, run)
 
 CHAIN = "btc"
@@ -35,7 +38,11 @@ API_ENDPOINTS = [
 
 
 class Esplora:
-    """REST-клиент Esplora с ротацией эндпоинтов."""
+    """REST-клиент Esplora с ротацией эндпоинтов.
+
+    Часть методов отдает не-JSON (height -> число, block hash -> hex),
+    поэтому GET идёт через get_text и только tx-массивы парсятся как JSON.
+    """
 
     def __init__(self, endpoints, timeout=60, retries=3):
         self.endpoints = list(endpoints)
@@ -43,30 +50,43 @@ class Esplora:
         self.retries = retries
         self.idx = 0
 
-    def get(self, path):
+    def get_text(self, path):
         last_err = None
-        for _ in range(self.retries * len(self.endpoints)):
-            ep = self.endpoints[self.idx % len(self.endpoints)]
-            self.idx += 1
+        retries = self.retries
+        for _ in range(retries):
+            if not self.endpoints:
+                raise RuntimeError("нет рабочих Esplora endpoints")
+            pos = self.idx % len(self.endpoints)
+            ep = self.endpoints[pos]
+            self.idx = pos + 1
             try:
-                return http_json(ep + path, timeout=self.timeout)
+                req = urllib.request.Request(
+                    ep + path, headers={"User-Agent": USER_AGENT})
+                with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                    return r.read().decode()
             except Exception as e:  # noqa: BLE001
+                self.endpoints.pop(pos)
+                if self.endpoints:
+                    self.idx = self.idx % len(self.endpoints)
                 last_err = e
                 time.sleep(0.5)
         raise RuntimeError(f"все Esplora endpoints недоступны: {last_err}")
+
+    def get_json(self, path):
+        return json.loads(self.get_text(path))
 
 
 def make_btc_watcher(endpoints):
     api = Esplora(endpoints)
 
     def latest():
-        return int(api.get("/blocks/tip/height"))
+        return int(api.get_text("/blocks/tip/height"))
 
     def transfers(height):
-        block_hash = api.get(f"/block-height/{height}")
+        block_hash = api.get_text(f"/block-height/{height}").strip()
         if not block_hash:
             raise BlockUnavailable(f"блок {height} не найден")
-        txs = api.get(f"/block/{block_hash}/txs")
+        txs = api.get_json(f"/block/{block_hash}/txs")
         if txs is None:
             raise BlockUnavailable(f"транзакции блока {height} недоступны")
         out = []
