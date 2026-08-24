@@ -784,6 +784,19 @@ func TestIngestScanFinding_ReviewForwarding(t *testing.T) {
 	if !inserted || review {
 		t.Errorf("P5 finding must not need review, inserted=%v review=%v", inserted, review)
 	}
+
+	// live-block findings (no programs at all) are not review candidates:
+	// previously every F1/L1 finding (e.g. a misextracted USDT contract)
+	// was forwarded to the analyst chat
+	live := sampleFinding("sig-review-3", "", scanAddrHacker)
+	live.Indicators = []string{"F1_DOWNSTREAM_TRANSFER"}
+	live.Programs = nil
+	live.Source = "live-blocks"
+	w = postFinding(t, router, scanTestAdminKey, live)
+	inserted, review = decode(w)
+	if !inserted || review {
+		t.Errorf("program-less live finding must not need review, inserted=%v review=%v", inserted, review)
+	}
 }
 
 // solveCaptcha returns a fresh captcha id and its answer (test hook).

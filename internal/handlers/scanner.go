@@ -183,11 +183,13 @@ func (h *Handler) IngestScanFinding(c *gin.Context) {
 		}
 	}
 
-	// A finding that matched a drainer pattern but hit no known drainer
-	// program (no P5) came through an unknown program: forward it to the
-	// analysts for review so the watchlist can be extended. Sent only once
-	// per finding (on first insert), best-effort and non-blocking.
-	needsReview := inserted && !hasIndicator(req.Indicators, "P5_KNOWN_DRAINER_PROGRAM")
+	// A solana drainer-pattern finding that hit no known drainer program
+	// (no P5) came through an unknown program: forward it to the analysts
+	// for review so the watchlist can be extended. Sent only once per
+	// finding (on first insert), best-effort and non-blocking. Live-block
+	// findings never carry programs, so they are not review candidates.
+	needsReview := inserted && len(req.Programs) > 0 &&
+		!hasIndicator(req.Indicators, "P5_KNOWN_DRAINER_PROGRAM")
 	if needsReview {
 		go h.forwardFindingForReview(req)
 	}
@@ -227,6 +229,10 @@ func isTakeoverOnlyFinding(indicators []string) bool {
 // drainer pattern fired on a program that is not in the watchlist yet.
 // Failures are logged, never fatal to the ingest request.
 func (h *Handler) forwardFindingForReview(req models.ScanFindingRequest) {
+	symbol := chainCurrency[req.Chain]
+	if symbol == "" {
+		symbol = strings.ToUpper(req.Chain)
+	}
 	text := fmt.Sprintf(
 		"🔍 <b>Scanner review: drainer pattern on an unknown program</b>\n"+
 			"Verdict: <b>%s</b>\n"+
@@ -236,7 +242,7 @@ func (h *Handler) forwardFindingForReview(req models.ScanFindingRequest) {
 			"Victim: <code>%s</code>\n"+
 			"Hacker: <code>%s</code>\n"+
 			"Programs: <code>%s</code>\n"+
-			"Amount: %.4f SOL\n"+
+			"Amount: %.4f %s\n"+
 			"The program is not in the drainer watchlist — review the transaction and add it if confirmed.",
 		html.EscapeString(req.Verdict),
 		html.EscapeString(strings.ToUpper(req.Chain)),
@@ -246,6 +252,7 @@ func (h *Handler) forwardFindingForReview(req models.ScanFindingRequest) {
 		html.EscapeString(orDash(req.HackerAddress)),
 		html.EscapeString(orDash(strings.Join(req.Programs, ", "))),
 		req.AmountSOL,
+		symbol,
 	)
 
 	if err := h.telegram.Send(context.Background(), text); err != nil {

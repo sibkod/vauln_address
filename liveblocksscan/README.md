@@ -27,7 +27,7 @@
 | `avalanche.py`| Avalanche C-Chain | JSON-RPC                               |
 | `bitcoin.py`  | Bitcoin           | Esplora REST (blockstream/mempool)     |
 | `solana.py`   | Solana            | JSON-RPC getSlot/getBlock              |
-| `tron.py`     | TRON              | TronGrid-совместимый HTTP API          |
+| `tron.py`     | TRON              | TronGrid-совместимый HTTP API (TRX + TRC20 transfer) |
 | `sui.py`      | Sui               | JSON-RPC чекпоинты + balanceChanges    |
 
 Каждая EVM-сеть — полностью самостоятельный скрипт со своим списком
