@@ -17,6 +17,13 @@ POST /api/admin/scanner/findings — они появляются в монито
     hacker=известный адрес, exposed=[отправитель] (отправитель получает
     флаг associated_hacker).
 
+Учитываются ТОЛЬКО реальные переводы нативной монеты или токенов: вызовы
+контрактов без движения средств (аппрувы, свапы, взаимодействие с дрейнером)
+находок не порождают. Из одной транзакции рождается максимум одна находка —
+переводы отсортированы по сумме (нативная монета раньше токенов), берётся
+первый, задействующий отслеживаемый адрес; остальные переводы той же
+транзакции пропускаются (все стороны уже известны через bulk check).
+
 Конфигурация: переменные окружения VAULN_API_URL и ADMIN_API_KEY либо
 флаги --api-url/--api-key (см. parse_args).
 """
@@ -167,15 +174,148 @@ class ApiClient:
 # ----------------------------------------------------------- ядро watcher'а
 
 class Transfer:
-    """Одно движение средств внутри блока."""
+    """Одно движение средств внутри блока.
 
-    __slots__ = ("tx", "sender", "recipient", "amount")
+    is_token=True — перевод токена (ERC20/TRC20 и т.п.): amount в единицах
+    токена, а не нативной монеты. Такие переводы внутри одной транзакции
+    идут после нативных при выборе главной находки.
+    """
 
-    def __init__(self, tx, sender, recipient, amount):
+    __slots__ = ("tx", "sender", "recipient", "amount", "is_token")
+
+    def __init__(self, tx, sender, recipient, amount, is_token=False):
         self.tx = tx
         self.sender = sender or ""
         self.recipient = recipient or ""
         self.amount = amount or 0.0
+        self.is_token = is_token
+
+
+# ----------------------------------------------------- ERC20 Transfer логи
+
+# keccak256("Transfer(address,address,uint256)") — topic0 события ERC20.
+ERC20_TRANSFER_TOPIC = (
+    "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef")
+
+# Десятичные популярных стейблов — чтобы суммы в находках были читаемыми;
+# неизвестные токены показываются с 18 десятичными (стандарт ERC20).
+KNOWN_TOKEN_DECIMALS = {
+    # USDT
+    "0xdac17f958d2ee523a2206206994597c13d831ec7": 6,
+    "0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7": 6,   # Avalanche
+    "0xc7198437980c041c805a1edcba50c1ce5db95118": 6,   # Avalanche (usdt.e)
+    "0x55d398326f99059ff775485246999027b3197955": 18,  # BNB
+    "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d": 18,  # BNB USDC
+    "0xde1e63dae0bf3b056cb0f86af5e01a53a90dd823": 6,   # Linea
+    # USDC
+    "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": 6,
+    "0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e": 6,   # Avalanche
+    "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913": 6,   # Base
+    "0x0b2c639c533813f4aa9d7837caf62653d097ff85": 6,   # Optimism
+    "0x7f5c764cbc14f9669b88837ca1490cca17c31607": 6,   # Optimism (usdc.e)
+    "0xaf88d065e77c8cc2239327c5edb3a432268e5831": 6,   # Arbitrum
+    "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359": 6,   # Polygon
+    "0x2791bca1f2de4661ed88a30c99a7a9449aa84174": 6,   # Polygon (usdc.e)
+    "0x176211869ca2b568f2a7d4ee941e073a821ee1ff": 6,   # Linea
+    # DAI
+    "0x6b175474e89094c44da98b954eedeac495271d0f": 18,
+    "0xd586e7f844cea2f87f50152665bcbc2c279d8d70": 18,  # Avalanche
+    "0x50c5725949a6f0c72e6c4a641f24049a917db0cb": 18,  # Base
+    "0xda10009cbd5d07dd0cecc66161fc93d7c9000da1": 18,  # Optimism/Arbitrum
+    "0x4af15ec2a0bd43db75dd04e62faa3b8ef36b00d5": 18,  # Linea
+    "0x8f3cf7ad23cd3cadbd9735aff958023239c6a063": 18,  # Polygon
+    # wrapped natives
+    "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": 18,  # WETH
+    "0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7": 18,  # WAVAX
+    "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c": 18,  # WBNB
+    "0x4200000000000000000000000000000000000006": 18,  # WETH (L2)
+    "0x82af49447d8a07e3bd95bd0d56f35241523fbab1": 18,  # WETH Arbitrum
+    "0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270": 18,  # WMATIC
+    "0xe5d7c2a44ffddf6b295a15c148167daaaf5cf34f": 18,  # WETH Linea
+    # WBTC
+    "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599": 8,
+    "0x50b7545627a5162f82a992c33b87adc75187b218": 8,   # Avalanche
+}
+
+
+def topic_to_address(topic):
+    """Адрес из 32-байтовой темы лога (последние 20 байт)."""
+    if not topic or len(topic) < 42:
+        return ""
+    return "0x" + topic[-40:].lower()
+
+
+def extract_erc20_transfers(receipts):
+    """Достать (tx_hash, from, to, amount) из логов Transfer рецептов блока.
+
+    receipts — ответ eth_getBlockReceipts (список рецептов с transactionHash
+    и logs). Количество делится на десятичные известного токена.
+    """
+    out = []
+    for rc in receipts or []:
+        tx_hash = rc.get("transactionHash") or ""
+        for log in rc.get("logs") or []:
+            topics = log.get("topics") or []
+            if len(topics) < 3 or topics[0] != ERC20_TRANSFER_TOPIC:
+                continue
+            token = (log.get("address") or "").lower()
+            try:
+                raw = int(log.get("data") or "0x0", 16)
+            except ValueError:
+                continue
+            if raw <= 0:
+                continue
+            decimals = KNOWN_TOKEN_DECIMALS.get(token, 18)
+            out.append(Transfer(tx_hash,
+                                topic_to_address(topics[1]),
+                                topic_to_address(topics[2]),
+                                raw / (10 ** decimals),
+                                is_token=True))
+    return out
+
+
+def make_evm_watcher(chain_label, endpoints):
+    """(latest_fn, transfers_fn) для EVM-сети: нативные + ERC20 переводы.
+
+    Реальные движения средств только: транзакции с value=0 без логов
+    Transfer (аппрувы и прочие вызовы контрактов) не попадают в выдачу.
+    ERC20-переводы читаются из eth_getBlockReceipts; если узел его не
+    поддерживает — только нативные переводы (предупреждение в лог разово).
+    """
+    rpc = JsonRpc(endpoints)
+    state = {"receipts_ok": None}  # None — неизвестно, True/False — проверено
+
+    def latest():
+        return int(rpc.call("eth_blockNumber"), 16)
+
+    def transfers(height):
+        block = rpc.call("eth_getBlockByNumber", [hex(height), True])
+        if not block:
+            raise BlockUnavailable(f"блок {height} не найден")
+        out = []
+        for tx in block.get("transactions") or []:
+            tx_hash = tx.get("hash") or ""
+            value = int(tx.get("value") or "0x0", 16)
+            if value <= 0:
+                continue  # чистый вызов контракта — не перевод
+            out.append(Transfer(tx_hash,
+                                (tx.get("from") or "").lower(),
+                                (tx.get("to") or "").lower(),
+                                value / 1e18))
+        if state["receipts_ok"] is not False:
+            try:
+                receipts = rpc.call("eth_getBlockReceipts", [hex(height)])
+                if receipts is None:
+                    raise RuntimeError("eth_getBlockReceipts не поддерживается")
+                state["receipts_ok"] = True
+                out.extend(extract_erc20_transfers(receipts))
+            except (RuntimeError, BlockUnavailable) as e:
+                state["receipts_ok"] = False
+                print(f"  !! {chain_label}: без ERC20-логов ({e}); "
+                      f"только нативные переводы", file=sys.stderr, flush=True)
+        return out
+
+    return latest, transfers
 
 
 def process_transfers(api, chain, height, transfers, posted):
@@ -205,7 +345,12 @@ def process_transfers(api, chain, height, transfers, posted):
         return known.get(addr) or known.get(addr.lower())
 
     sent = 0
-    for t in transfers:
+    seen_tx = set()  # из одной транзакции — максимум одна находка
+    # главный перевод первым: самый крупный, нативная монета раньше токенов
+    ordered = sorted(transfers, key=lambda t: (t.tx, t.is_token, -t.amount))
+    for t in ordered:
+        if t.tx in seen_tx:
+            continue
         sender_hit = lookup(t.sender) if t.sender else None
         recipient_hit = lookup(t.recipient) if t.recipient else None
         sender_tracked = (sender_hit is not None and
@@ -220,6 +365,7 @@ def process_transfers(api, chain, height, transfers, posted):
         if key in posted:
             continue
         posted.add(key)
+        seen_tx.add(t.tx)
 
         if sender_tracked:
             status = sender_hit["status"]
