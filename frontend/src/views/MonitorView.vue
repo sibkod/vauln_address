@@ -99,6 +99,27 @@ function fromAddr(f: Finding): string {
   return f.victim_address || f.exposed_addresses?.[0] || ''
 }
 
+// Token transfers carry an ERC20:<symbol> meta-indicator (set by the
+// live-block scanners); without it the amount is in the chain-native coin.
+function tokenSymbol(f: Finding): string {
+  const ind = (f.indicators || []).find(i => i.startsWith('ERC20:'))
+  return ind ? ind.slice('ERC20:'.length) : ''
+}
+
+function displaySymbol(f: Finding): string {
+  return tokenSymbol(f) || getChainMeta(f.chain).symbol
+}
+
+function formatAmount(f: Finding): string {
+  const a = f.amount_sol
+  if (tokenSymbol(f)) {
+    // token amounts: no fixed chain decimals — trim to something readable
+    if (a >= 1000) return Math.round(a).toLocaleString('en-US')
+    return String(parseFloat(a.toFixed(6)))
+  }
+  return a.toFixed(getChainMeta(f.chain).decimals)
+}
+
 function txUrl(f: Finding): string {
   return getChainMeta(f.chain).txUrl(f.signature)
 }
@@ -171,7 +192,7 @@ onUnmounted(() => {
             {{ operationType(f).icon }} {{ operationType(f).label }}
           </span>
           <span v-if="f.amount_sol > 0" class="amount">
-            -{{ f.amount_sol.toFixed(getChainMeta(f.chain).decimals) }} {{ getChainMeta(f.chain).symbol }}
+            -{{ formatAmount(f) }} {{ displaySymbol(f) }}
           </span>
           <span class="time">{{ timeAgo(f.created_at) }}</span>
         </div>

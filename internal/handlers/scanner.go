@@ -612,6 +612,11 @@ func (h *Handler) buildStatusEvidence(c *gin.Context, report *models.ReportRespo
 				continue
 			}
 			seen[ind] = true
+			// ERC20:<symbol> is display metadata for the token
+			// amount, not a detection code — skip it in evidence.
+			if strings.HasPrefix(ind, "ERC20:") {
+				continue
+			}
 			meta, ok := scanIndicatorMeta[ind]
 			if !ok {
 				meta = struct{ Title, Desc string }{ind, "detected by the drainer scanner"}
