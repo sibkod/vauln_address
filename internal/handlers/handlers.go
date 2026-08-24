@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -38,6 +39,10 @@ type Handler struct {
 	captcha      *services.CaptchaService
 	telegram     *services.TelegramService
 	packages     []gin.H
+
+	// paymentVerifier proves Solana payment transactions on-chain; created
+	// lazily because the RPC URL comes from the runtime config.
+	paymentVerifier *services.PaymentVerifier
 
 	// monitor stats cache: the aggregate query scans the whole
 	// scan_findings table, so it is recomputed at most once per TTL even
@@ -471,7 +476,71 @@ func (h *Handler) CancelOrder(c *gin.Context) {
 	})
 }
 
-// ConfirmOrder confirms a payment by verifying the blockchain transaction or message signature
+// solanaRPCURL resolves the configured Solana RPC endpoint.
+func (h *Handler) solanaRPCURL() string {
+	if h.serverCfg.SolanaRPCURL != "" {
+		return h.serverCfg.SolanaRPCURL
+	}
+	if h.serverCfg.SolanaUseDevnet {
+		return "https://api.devnet.solana.com"
+	}
+	return "https://api.mainnet-beta.solana.com"
+}
+
+// verifier returns the payment verifier, creating it on first use.
+func (h *Handler) verifier() *services.PaymentVerifier {
+	if h.paymentVerifier == nil {
+		h.paymentVerifier = services.NewPaymentVerifier(h.solanaRPCURL())
+	}
+	return h.paymentVerifier
+}
+
+// settleVerifiedPayment completes a pending order after the on-chain payment
+// proof succeeded and credits the user's balance. The completion is atomic:
+// when the order already left the pending state (double-submit, race with
+// another verification path) no balance is credited.
+func (h *Handler) settleVerifiedPayment(c *gin.Context, order *models.Order, txSignature string) bool {
+	completed, err := h.repo.CompleteOrder(c.Request.Context(), order.OrderUUID, txSignature)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error: "failed to complete order",
+			Code:  "DB_ERROR",
+		})
+		return false
+	}
+	if !completed {
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "already_completed",
+			"message": "Order was already processed",
+		})
+		return false
+	}
+	if err := h.repo.AddUserBalance(c.Request.Context(), order.WalletAddress, order.Chain, order.ChecksCount); err != nil {
+		log.Printf("[ERROR] order %s completed but balance credit failed: %v", order.OrderUUID, err)
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error: "failed to add balance",
+			Code:  "DB_ERROR",
+		})
+		return false
+	}
+	return true
+}
+
+// rejectOrderPayment marks the order failed/expired after a definitive
+// on-chain rejection so it cannot be retried with the same bad tx.
+func (h *Handler) rejectOrderPayment(c *gin.Context, order *models.Order, code string) {
+	var err error
+	if code == "TX_TOO_OLD" {
+		err = h.repo.ExpireOrderNow(c.Request.Context(), order.OrderUUID)
+	} else {
+		err = h.repo.FailOrder(c.Request.Context(), order.OrderUUID)
+	}
+	if err != nil {
+		log.Printf("[WARN] failed to mark order %s as %s: %v", order.OrderUUID, code, err)
+	}
+}
+
+// ConfirmOrder confirms a payment by verifying the blockchain transaction on-chain
 func (h *Handler) ConfirmOrder(c *gin.Context) {
 	walletAddress, exists := c.Get("userAddress")
 	if !exists {
@@ -521,50 +590,65 @@ func (h *Handler) ConfirmOrder(c *gin.Context) {
 		return
 	}
 
-	// Try to parse POST body for message signature
+	// Try to parse POST body for the transaction signature
 	var reqBody struct {
-		Signature     string `json:"signature"`
-		Message       string `json:"message"`
-		WalletAddress string `json:"wallet_address"`
+		Signature string `json:"signature"`
 	}
 
 	c.ShouldBindJSON(&reqBody)
 
 	// Also check query param for tx_signature (backward compatibility)
 	txSignature := c.Query("tx_signature")
-
-	if txSignature != "" {
-		// Legacy: transaction signature verification
-		err = h.repo.CompleteOrder(c.Request.Context(), order.OrderUUID, txSignature)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-				Error: "failed to confirm order",
-				Code:  "DB_ERROR",
-			})
-			return
-		}
-	} else if reqBody.Signature != "" && reqBody.Message != "" {
-		// New: message signature verification
-		// For now, accept signature as proof of payment
-		// In production, you would verify the signature against the wallet address
-		err = h.repo.CompleteOrder(c.Request.Context(), order.OrderUUID, reqBody.Signature[:32]+"...")
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-				Error: "failed to confirm order",
-				Code:  "DB_ERROR",
-			})
-			return
-		}
-	} else {
+	if txSignature == "" {
+		txSignature = reqBody.Signature
+	}
+	if txSignature == "" {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
-			Error: "signature required (in body) or tx_signature query param",
+			Error: "transaction signature required (in body as \"signature\" or tx_signature query param)",
 			Code:  "MISSING_SIGNATURE",
 		})
 		return
 	}
 
-	// Update user balance
-	h.repo.AddUserBalance(c.Request.Context(), walletAddress.(string), order.Chain, order.ChecksCount)
+	// Replay protection: a transaction already tied to a completed order
+	// cannot pay for another one.
+	if existing, _ := h.repo.GetOrderByTxHash(c.Request.Context(), txSignature); existing != nil && existing.Status == string(models.PaymentCompleted) {
+		c.JSON(http.StatusConflict, models.ErrorResponse{
+			Error: "transaction already used for another order",
+			Code:  "TX_ALREADY_USED",
+		})
+		return
+	}
+
+	// Prove the payment on-chain: tx succeeded, the order's payment address
+	// received the required amount from the order's wallet.
+	verification, err := h.verifier().VerifyPaymentTx(c.Request.Context(), txSignature,
+		order.WalletAddress, order.PaymentAddress, order.TokenAmount, order.CreatedAt)
+	if err != nil {
+		var verr *services.VerificationError
+		if errors.As(err, &verr) {
+			h.rejectOrderPayment(c, order, verr.Code)
+			c.JSON(http.StatusBadRequest, models.ErrorResponse{
+				Error:   "payment verification failed",
+				Code:    verr.Code,
+				Details: verr.Msg,
+			})
+			return
+		}
+		// RPC/transport problem: the tx may confirm later — keep the order pending.
+		c.JSON(http.StatusServiceUnavailable, models.ErrorResponse{
+			Error:   "failed to verify transaction, try again later",
+			Code:    "RPC_ERROR",
+			Details: err.Error(),
+		})
+		return
+	}
+	log.Printf("[INFO] order %s paid: %.6f SOL from %s in tx %s",
+		order.OrderUUID, float64(verification.PaidLamports)/1e9, verification.Sender, txSignature)
+
+	if !h.settleVerifiedPayment(c, order, txSignature) {
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "completed",
@@ -596,6 +680,16 @@ func (h *Handler) VerifyPayment(c *gin.Context) {
 		return
 	}
 
+	// Verify ownership (route is auth-protected)
+	walletAddress, _ := c.Get("userAddress")
+	if addr, ok := walletAddress.(string); ok && addr != "" && order.WalletAddress != addr {
+		c.JSON(http.StatusForbidden, models.ErrorResponse{
+			Error: "order does not belong to user",
+			Code:  "FORBIDDEN",
+		})
+		return
+	}
+
 	if order.Status != "pending" {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
 			Error: "order is not pending",
@@ -604,24 +698,40 @@ func (h *Handler) VerifyPayment(c *gin.Context) {
 		return
 	}
 
-	// In production, you would verify the transaction on-chain here
-	// For now, we auto-complete the order
-
-	// Complete order
-	if err := h.repo.CompleteOrder(c.Request.Context(), orderUUID, txHash); err != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-			Error: "failed to complete order",
-			Code:  "DB_ERROR",
+	// Replay protection
+	if existing, _ := h.repo.GetOrderByTxHash(c.Request.Context(), txHash); existing != nil && existing.Status == string(models.PaymentCompleted) {
+		c.JSON(http.StatusConflict, models.ErrorResponse{
+			Error: "transaction already used for another order",
+			Code:  "TX_ALREADY_USED",
 		})
 		return
 	}
 
-	// Add balance to user
-	if err := h.repo.AddUserBalance(c.Request.Context(), order.WalletAddress, order.Chain, order.ChecksCount); err != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-			Error: "failed to add balance",
-			Code:  "DB_ERROR",
+	// Prove the payment on-chain
+	verification, err := h.verifier().VerifyPaymentTx(c.Request.Context(), txHash,
+		order.WalletAddress, order.PaymentAddress, order.TokenAmount, order.CreatedAt)
+	if err != nil {
+		var verr *services.VerificationError
+		if errors.As(err, &verr) {
+			h.rejectOrderPayment(c, order, verr.Code)
+			c.JSON(http.StatusBadRequest, models.ErrorResponse{
+				Error:   "payment verification failed",
+				Code:    verr.Code,
+				Details: verr.Msg,
+			})
+			return
+		}
+		c.JSON(http.StatusServiceUnavailable, models.ErrorResponse{
+			Error:   "failed to verify transaction, try again later",
+			Code:    "RPC_ERROR",
+			Details: err.Error(),
 		})
+		return
+	}
+	log.Printf("[INFO] order %s paid: %.6f SOL from %s in tx %s",
+		order.OrderUUID, float64(verification.PaidLamports)/1e9, verification.Sender, txHash)
+
+	if !h.settleVerifiedPayment(c, order, txHash) {
 		return
 	}
 
@@ -1349,14 +1459,7 @@ func (h *Handler) GetPaymentStatus(c *gin.Context) {
 	walletAddrStr := walletAddress.(string)
 
 	// Query Solana RPC for transaction status
-	rpcURL := h.serverCfg.SolanaRPCURL
-	if rpcURL == "" {
-		if h.serverCfg.SolanaUseDevnet {
-			rpcURL = "https://api.devnet.solana.com"
-		} else {
-			rpcURL = "https://api.mainnet-beta.solana.com"
-		}
-	}
+	rpcURL := h.solanaRPCURL()
 
 	// Get transaction status
 	txStatus, err := h.querySolanaTransaction(rpcURL, signature)
@@ -1370,6 +1473,11 @@ func (h *Handler) GetPaymentStatus(c *gin.Context) {
 	}
 
 	if txStatus.Err != nil {
+		// The payment never landed: fail the pending order so it cannot be
+		// retried with the same rejected transaction.
+		if pendingOrder, err := h.repo.GetPendingOrderByWallet(c.Request.Context(), walletAddrStr); err == nil && pendingOrder != nil {
+			h.rejectOrderPayment(c, pendingOrder, "TX_FAILED")
+		}
 		c.JSON(http.StatusOK, gin.H{
 			"status":    "failed",
 			"confirmed": false,
@@ -1405,38 +1513,51 @@ func (h *Handler) GetPaymentStatus(c *gin.Context) {
 
 	// Find pending order for this wallet
 	pendingOrder, err := h.repo.GetPendingOrderByWallet(c.Request.Context(), walletAddrStr)
-	log.Printf("[DEBUG] GetPaymentStatus: walletAddress=%s, pendingOrder=%v, err=%v", walletAddrStr, pendingOrder, err)
 	if err == nil && pendingOrder != nil {
-		log.Printf("[DEBUG] Found pending order: UUID=%s, ChecksCount=%d", pendingOrder.OrderUUID, pendingOrder.ChecksCount)
-		// Complete the order
-		if err := h.repo.CompleteOrder(c.Request.Context(), pendingOrder.OrderUUID, signature); err == nil {
-			log.Printf("[DEBUG] Order completed, adding balance for wallet %s", walletAddrStr)
-			// Add balance
-			if err := h.repo.AddUserBalance(c.Request.Context(), walletAddrStr, pendingOrder.Chain, pendingOrder.ChecksCount); err == nil {
-				log.Printf("[DEBUG] Balance added for wallet %s", walletAddrStr)
-				// Get new balance
-				user, err := h.repo.GetUserByWallet(c.Request.Context(), walletAddrStr, pendingOrder.Chain)
-				balance := pendingOrder.ChecksCount // Default to added checks
-				if err == nil && user != nil {
-					balance = user.Balance
-				} else {
-					log.Printf("[WARN] Could not fetch user balance, using checks count: err=%v, user=%v", err, user)
-				}
+		// Prove the payment on-chain before crediting anything: the tx must
+		// have paid the order's payment address at least the order amount
+		// from the order's wallet.
+		verification, verr := h.verifier().VerifyPaymentTx(c.Request.Context(), signature,
+			pendingOrder.WalletAddress, pendingOrder.PaymentAddress, pendingOrder.TokenAmount, pendingOrder.CreatedAt)
+		if verr != nil {
+			var verrTyped *services.VerificationError
+			if errors.As(verr, &verrTyped) {
+				h.rejectOrderPayment(c, pendingOrder, verrTyped.Code)
 				c.JSON(http.StatusOK, gin.H{
-					"status":    "confirmed",
-					"confirmed": true,
-					"balance":   balance,
-					"message":   fmt.Sprintf("Payment confirmed! %d checks added.", pendingOrder.ChecksCount),
+					"status":    "failed",
+					"confirmed": false,
+					"code":      verrTyped.Code,
+					"message":   "payment verification failed: " + verrTyped.Msg,
 				})
 				return
-			} else {
-				log.Printf("[ERROR] Failed to add balance: %v", err)
 			}
-		} else {
-			log.Printf("[ERROR] Failed to complete order: %v", err)
+			// RPC hiccup on the second fetch: report pending, retry later.
+			c.JSON(http.StatusOK, gin.H{
+				"status":    "pending",
+				"confirmed": false,
+				"message":   "transaction is processing",
+			})
+			return
 		}
-	} else {
-		log.Printf("[WARN] No pending order found for wallet %s", walletAddrStr)
+		log.Printf("[INFO] order %s paid: %.6f SOL from %s in tx %s",
+			pendingOrder.OrderUUID, float64(verification.PaidLamports)/1e9, verification.Sender, signature)
+
+		if !h.settleVerifiedPayment(c, pendingOrder, signature) {
+			return
+		}
+		// Get new balance
+		user, err := h.repo.GetUserByWallet(c.Request.Context(), walletAddrStr, pendingOrder.Chain)
+		balance := pendingOrder.ChecksCount // Default to added checks
+		if err == nil && user != nil {
+			balance = user.Balance
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"status":    "confirmed",
+			"confirmed": true,
+			"balance":   balance,
+			"message":   fmt.Sprintf("Payment confirmed! %d checks added.", pendingOrder.ChecksCount),
+		})
+		return
 	}
 
 	// Transaction confirmed but no order found for this user

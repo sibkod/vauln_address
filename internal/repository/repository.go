@@ -994,11 +994,40 @@ func (r *Repository) GetOrderByUUID(ctx context.Context, orderUUID string) (*mod
 	return &order, nil
 }
 
-func (r *Repository) CompleteOrder(ctx context.Context, orderUUID, txHash string) error {
-	_, err := r.db.ExecContext(ctx,
+// CompleteOrder marks a pending order as completed. It reports whether the
+// row was actually transitioned — a false result means the order was no
+// longer pending (already completed/cancelled/expired), so the caller must
+// NOT credit the balance.
+func (r *Repository) CompleteOrder(ctx context.Context, orderUUID, txHash string) (bool, error) {
+	res, err := r.db.ExecContext(ctx,
 		`UPDATE orders SET status = 'completed', tx_hash = ?, completed_at = CURRENT_TIMESTAMP 
 		WHERE order_uuid = ? AND status = 'pending'`,
 		txHash, orderUUID,
+	)
+	if err != nil {
+		return false, err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, nil
+}
+
+// FailOrder marks a pending order as failed (payment rejected on-chain).
+func (r *Repository) FailOrder(ctx context.Context, orderUUID string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE orders SET status = 'failed' WHERE order_uuid = ? AND status = 'pending'`,
+		orderUUID,
+	)
+	return err
+}
+
+// ExpireOrderNow marks a single pending order as expired.
+func (r *Repository) ExpireOrderNow(ctx context.Context, orderUUID string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE orders SET status = 'expired' WHERE order_uuid = ? AND status = 'pending'`,
+		orderUUID,
 	)
 	return err
 }

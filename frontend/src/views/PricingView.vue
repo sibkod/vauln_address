@@ -256,7 +256,7 @@ function startPolling(signature: string) {
       } else if (data.status === 'failed') {
         stopPolling()
         paymentStatus.value = 'error'
-        paymentMessage.value = 'Transaction failed on blockchain'
+        paymentMessage.value = data.message || 'Transaction failed on blockchain'
       }
     } catch (err) {
       console.error('Poll error:', err)
