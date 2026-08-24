@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -47,22 +46,24 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 		userChain, _ := c.Get("userChain")
 		chainStr, _ := userChain.(string)
 
-		// 1. Check IP rate limit
-		rl.checkAndResetWindow(ctx, ip)
-
+		// 1. Check IP rate limit: a single read; an expired window is
+		// reset here instead of a separate pre-pass query.
 		rateLimit, err := rl.repo.GetRateLimit(ctx, ip)
 		if err != nil {
 			c.Next()
 			return
 		}
-
+		windowDuration := time.Duration(rl.cfg.RateLimitHours) * time.Hour
 		if rateLimit == nil {
-			err = rl.repo.ResetRateLimit(ctx, ip, time.Now())
-			if err != nil {
+			if err := rl.repo.ResetRateLimit(ctx, ip, time.Now()); err != nil {
 				c.Next()
 				return
 			}
 			rateLimit = &models.RateLimit{Count: 0, WindowStart: time.Now()}
+		} else if time.Since(rateLimit.WindowStart) > windowDuration {
+			if err := rl.repo.ResetRateLimit(ctx, ip, time.Now()); err == nil {
+				rateLimit = &models.RateLimit{Count: 0, WindowStart: time.Now()}
+			}
 		}
 
 		// Add rate limit headers for all responses
@@ -211,18 +212,6 @@ func max(a, b int) int {
 		return a
 	}
 	return b
-}
-
-func (rl *RateLimiter) checkAndResetWindow(ctx context.Context, ip string) {
-	rateLimit, err := rl.repo.GetRateLimit(ctx, ip)
-	if err != nil || rateLimit == nil {
-		return
-	}
-
-	windowDuration := time.Duration(rl.cfg.RateLimitHours) * time.Hour
-	if time.Since(rateLimit.WindowStart) > windowDuration {
-		_ = rl.repo.ResetRateLimit(ctx, ip, time.Now())
-	}
 }
 
 func formatRateLimitDetails(used, limit int, resetIn time.Duration) string {

@@ -4,10 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"hash/fnv"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -23,6 +25,28 @@ type Repository struct {
 	dbType         config.DBType
 	freeCheckLimit int
 
+	// walletInsertLocks serializes check-then-insert wallet creation per
+	// chain+address: the wallets table has no UNIQUE(chain,address), so
+	// concurrent ingests of the same address would otherwise insert
+	// duplicate rows.
+	walletInsertLocks [256]sync.Mutex
+}
+
+// walletInsertLock returns the stripe mutex for a chain+address pair.
+func (r *Repository) walletInsertLock(chain, address string) *sync.Mutex {
+	h := fnv.New32a()
+	h.Write([]byte(chain))
+	h.Write([]byte{0})
+	h.Write([]byte(address))
+	return &r.walletInsertLocks[h.Sum32()%256]
+}
+
+// lockWalletInsert takes the stripe mutex for a chain+address pair and
+// returns the unlock function.
+func (r *Repository) lockWalletInsert(chain, address string) func() {
+	mu := r.walletInsertLock(chain, address)
+	mu.Lock()
+	return mu.Unlock
 }
 
 func New(cfg *config.Config) (*Repository, error) {
@@ -31,13 +55,16 @@ func New(cfg *config.Config) (*Repository, error) {
 	switch cfg.DBType {
 	case config.DBTypeMySQL:
 		driverName = "mysql"
+		// interpolateParams avoids a prepare round-trip per query; the
+		// timeouts keep a stuck MySQL from holding pool slots forever.
+		const params = "interpolateParams=true&timeout=5s&readTimeout=30s&writeTimeout=30s"
 		// Use unix socket if specified, otherwise use TCP
 		if cfg.DBUnixSocket != "" {
-			dsn = fmt.Sprintf("%s:%s@unix(%s)/%s?charset=%s&parseTime=True",
-				cfg.DBUser, cfg.DBPassword, cfg.DBUnixSocket, cfg.DBName, cfg.DBCharset)
+			dsn = fmt.Sprintf("%s:%s@unix(%s)/%s?charset=%s&parseTime=True&%s",
+				cfg.DBUser, cfg.DBPassword, cfg.DBUnixSocket, cfg.DBName, cfg.DBCharset, params)
 		} else {
-			dsn = fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&tls=false",
-				cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort, cfg.DBName, cfg.DBCharset)
+			dsn = fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&tls=false&%s",
+				cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort, cfg.DBName, cfg.DBCharset, params)
 		}
 
 	case config.DBTypeSQLite:
@@ -67,10 +94,22 @@ func New(cfg *config.Config) (*Repository, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	// Configure connection pool
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(2)
-	db.SetConnMaxLifetime(5 * time.Minute)
+	// Configure connection pool (env-tunable; sane defaults for zero values)
+	maxOpen := cfg.DBMaxOpenConns
+	if maxOpen <= 0 {
+		maxOpen = 50
+	}
+	maxIdle := cfg.DBMaxIdleConns
+	if maxIdle <= 0 {
+		maxIdle = 10
+	}
+	lifetimeMin := cfg.DBConnMaxLifetimeMin
+	if lifetimeMin <= 0 {
+		lifetimeMin = 5
+	}
+	db.SetMaxOpenConns(maxOpen)
+	db.SetMaxIdleConns(maxIdle)
+	db.SetConnMaxLifetime(time.Duration(lifetimeMin) * time.Minute)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -1668,9 +1707,21 @@ func (r *Repository) CreateWalletWithSeed(ctx context.Context, address, chain st
 	return result.LastInsertId()
 }
 
-// CreateWallet creates a wallet without seed reference
+// CreateWallet creates a wallet without seed reference. Callers use it in a
+// check-then-insert pattern that is serialized per chain+address: there is
+// no UNIQUE(chain,address) constraint to catch concurrent inserts.
 func (r *Repository) CreateWallet(ctx context.Context, address, chain string, status models.WalletStatus, reason, source string) (int64, error) {
 	address = normalizeAddress(chain, address)
+	unlock := r.lockWalletInsert(chain, address)
+	defer unlock()
+
+	// A concurrent creator may have won while we waited on the lock.
+	if id, exists, err := r.GetWalletByAddressAndChain(ctx, address, chain); err != nil {
+		return 0, err
+	} else if exists {
+		return id, nil
+	}
+
 	now := time.Now()
 	result, err := r.db.ExecContext(ctx,
 		`INSERT INTO wallets (address, chain, status, has_pk, has_seed, reason, source, created_at, updated_at) 
@@ -1685,9 +1736,12 @@ func (r *Repository) CreateWallet(ctx context.Context, address, chain string, st
 
 // MarkAssociatedHacker flags a wallet as linked to a known hacker operator:
 // existing wallets only get the association fields (status stays untouched),
-// unseen ones are registered with status "unknown".
+// unseen ones are registered with status "unknown". The update-or-insert is
+// serialized per chain+address (no UNIQUE constraint backs it).
 func (r *Repository) MarkAssociatedHacker(ctx context.Context, address, chain, reason string) error {
 	address = normalizeAddress(chain, address)
+	unlock := r.lockWalletInsert(chain, address)
+	defer unlock()
 	now := time.Now()
 	// Skip updating a wallet that already carries this association: repeated
 	// findings naming the same operator must not bump updated_at. NULL is
@@ -1712,6 +1766,14 @@ func (r *Repository) MarkAssociatedHacker(ctx context.Context, address, chain, r
 		return err
 	}
 	if affected > 0 {
+		return nil
+	}
+	// The UPDATE matched nothing: either the wallet is missing, or it already
+	// carries this association (the notSet guard rejected it). Inserting
+	// blindly would create a duplicate wallet row in the second case.
+	if _, exists, err := r.GetWalletByAddressAndChain(ctx, address, chain); err != nil {
+		return err
+	} else if exists {
 		return nil
 	}
 	_, err = r.db.ExecContext(ctx,
@@ -1802,36 +1864,140 @@ func (r *Repository) BatchAddWallets(ctx context.Context, items []BatchWalletIte
 	results := make([]BatchWalletResult, len(items))
 	chainCounts := make(map[string]int)
 
+	// Normalize addresses into a local copy (the caller's slice is not
+	// mutated) and drop duplicates inside the batch itself: the same
+	// address twice would pass the existence check below only because the
+	// first row is not inserted yet — catch it upfront instead.
+	norm := make([]BatchWalletItem, len(items))
+	pending := make([]int, 0, len(items)) // indexes of items to insert
+	seen := make(map[string]bool, len(items))
 	for i, item := range items {
 		item.Address = normalizeAddress(item.Chain, item.Address)
-		var existingID int64
-		err := tx.QueryRowContext(ctx,
-			`SELECT id FROM wallets WHERE address = ? AND chain = ?`,
-			item.Address, item.Chain,
-		).Scan(&existingID)
-		if err != nil && err != sql.ErrNoRows {
-			return nil, nil, fmt.Errorf("failed to check wallet %s/%s: %w", item.Chain, item.Address, err)
-		}
-		if err == nil {
+		norm[i] = item
+		key := item.Chain + "\x00" + item.Address
+		if seen[key] {
 			results[i] = BatchWalletResult{Skipped: true, SkipReason: "duplicate wallet"}
 			continue
 		}
+		seen[key] = true
+		pending = append(pending, i)
+	}
 
-		seedID := seeds[item.SeedPhrase].ID
-		res, err := tx.ExecContext(ctx,
-			`INSERT INTO wallets (address, chain, status, has_pk, has_seed, seed_id, reason, source, created_at, updated_at)
-			VALUES (?, ?, ?, false, ?, ?, ?, ?, ?, ?)`,
-			item.Address, item.Chain, item.Status, seedID > 0, seedID, item.Reason, item.Source, now, now,
-		)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to insert wallet %s/%s: %w", item.Chain, item.Address, err)
+	// One bulk existence check per chain chunk instead of a SELECT per item.
+	const batchChunk = 500
+	for start := 0; start < len(pending); start += batchChunk {
+		end := start + batchChunk
+		if end > len(pending) {
+			end = len(pending)
 		}
-		walletID, err := res.LastInsertId()
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get wallet id: %w", err)
+		chunk := pending[start:end]
+		byChain := make(map[string][]int) // chain -> indexes within chunk
+		for _, idx := range chunk {
+			byChain[norm[idx].Chain] = append(byChain[norm[idx].Chain], idx)
 		}
-		results[i] = BatchWalletResult{WalletID: walletID}
-		chainCounts[item.Chain]++
+		for chain, idxs := range byChain {
+			placeholders := strings.TrimSuffix(strings.Repeat("?,", len(idxs)), ",")
+			args := make([]interface{}, 0, len(idxs)+1)
+			args = append(args, chain)
+			for _, idx := range idxs {
+				args = append(args, norm[idx].Address)
+			}
+			rows, err := tx.QueryContext(ctx,
+				`SELECT address FROM wallets WHERE chain = ? AND address IN (`+placeholders+`)`,
+				args...)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to check wallets for chain %s: %w", chain, err)
+			}
+			for rows.Next() {
+				var addr string
+				if err := rows.Scan(&addr); err != nil {
+					rows.Close()
+					return nil, nil, fmt.Errorf("failed to scan existing wallet: %w", err)
+				}
+				delete(seen, chain+"\x00"+addr) // reused below as "to insert" set
+			}
+			rows.Close()
+			if err := rows.Err(); err != nil {
+				return nil, nil, fmt.Errorf("failed to check wallets for chain %s: %w", chain, err)
+			}
+		}
+	}
+
+	// Skip everything that already exists; insert the rest in multi-row
+	// chunks (one round-trip per chunk instead of one per wallet).
+	toInsert := make([]int, 0, len(pending))
+	for _, idx := range pending {
+		item := norm[idx]
+		if !seen[item.Chain+"\x00"+item.Address] {
+			results[idx] = BatchWalletResult{Skipped: true, SkipReason: "duplicate wallet"}
+			continue
+		}
+		toInsert = append(toInsert, idx)
+	}
+	for start := 0; start < len(toInsert); start += batchChunk {
+		end := start + batchChunk
+		if end > len(toInsert) {
+			end = len(toInsert)
+		}
+		chunk := toInsert[start:end]
+
+		var sb strings.Builder
+		sb.WriteString(`INSERT INTO wallets (address, chain, status, has_pk, has_seed, seed_id, reason, source, created_at, updated_at) VALUES `)
+		args := make([]interface{}, 0, len(chunk)*10)
+		for j, idx := range chunk {
+			if j > 0 {
+				sb.WriteByte(',')
+			}
+			sb.WriteString(`(?, ?, ?, false, ?, ?, ?, ?, ?, ?)`)
+			item := norm[idx]
+			seedID := seeds[item.SeedPhrase].ID
+			args = append(args, item.Address, item.Chain, item.Status, seedID > 0, seedID, item.Reason, item.Source, now, now)
+			chainCounts[item.Chain]++
+		}
+		if _, err := tx.ExecContext(ctx, sb.String(), args...); err != nil {
+			return nil, nil, fmt.Errorf("failed to insert wallet batch: %w", err)
+		}
+
+		// Multi-row INSERT gives no per-row ids portably: read them back by
+		// address (the rows are visible inside this transaction).
+		byChain := make(map[string][]string)
+		for _, idx := range chunk {
+			item := norm[idx]
+			byChain[item.Chain] = append(byChain[item.Chain], item.Address)
+		}
+		for chain, addrs := range byChain {
+			placeholders := strings.TrimSuffix(strings.Repeat("?,", len(addrs)), ",")
+			args := make([]interface{}, 0, len(addrs)+1)
+			args = append(args, chain)
+			for _, a := range addrs {
+				args = append(args, a)
+			}
+			rows, err := tx.QueryContext(ctx,
+				`SELECT id, address FROM wallets WHERE chain = ? AND address IN (`+placeholders+`)`,
+				args...)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to read back wallet ids for chain %s: %w", chain, err)
+			}
+			ids := make(map[string]int64, len(addrs))
+			for rows.Next() {
+				var id int64
+				var addr string
+				if err := rows.Scan(&id, &addr); err != nil {
+					rows.Close()
+					return nil, nil, fmt.Errorf("failed to scan wallet id: %w", err)
+				}
+				ids[addr] = id
+			}
+			rows.Close()
+			if err := rows.Err(); err != nil {
+				return nil, nil, fmt.Errorf("failed to read back wallet ids for chain %s: %w", chain, err)
+			}
+			for _, idx := range chunk {
+				if norm[idx].Chain == chain {
+					results[idx] = BatchWalletResult{WalletID: ids[norm[idx].Address]}
+				}
+			}
+		}
 	}
 
 	// Update stats once per chain instead of once per wallet

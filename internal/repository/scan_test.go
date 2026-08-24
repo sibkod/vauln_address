@@ -157,3 +157,110 @@ func TestScanFindingSweeps_Persistence(t *testing.T) {
 		t.Errorf("prefix of a sweep recipient must not match, got %d findings", len(findings))
 	}
 }
+
+// CreateWallet on an already-registered address returns the existing row id
+// without an error instead of inserting a duplicate (the wallets table has
+// no UNIQUE(chain,address) to fall back on).
+func TestCreateWallet_DuplicateReturnsExisting(t *testing.T) {
+	repo := setupScanTest(t)
+	ctx := context.Background()
+
+	id1, err := repo.CreateWallet(ctx, "dupAddr1", "solana", models.StatusSuspicious, "first", "test")
+	if err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+	id2, err := repo.CreateWallet(ctx, "dupAddr1", "solana", models.StatusHacker, "second", "test")
+	if err != nil {
+		t.Fatalf("duplicate create must not error: %v", err)
+	}
+	if id2 != id1 {
+		t.Fatalf("duplicate must return existing id %d, got %d", id1, id2)
+	}
+
+	// the original status wins; no second row appears
+	var count int
+	if err := repo.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM wallets WHERE address = ? AND chain = ?`,
+		"dupAddr1", "solana").Scan(&count); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 wallet row, got %d", count)
+	}
+}
+
+// Concurrent creation of the same wallet (parallel scanner ingest): exactly
+// one row exists afterwards and every caller got a valid id.
+func TestCreateWallet_ConcurrentNoDuplicates(t *testing.T) {
+	repo := setupScanTest(t)
+	ctx := context.Background()
+
+	const workers = 16
+	var wg sync.WaitGroup
+	ids := make([]int64, workers)
+	errs := make([]error, workers)
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			ids[i], errs[i] = repo.CreateWallet(ctx, "raceAddr1", "solana", models.StatusSuspicious, "race", "test")
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("worker %d: %v", i, err)
+		}
+		if ids[i] == 0 {
+			t.Fatalf("worker %d: got zero id", i)
+		}
+	}
+
+	var count int
+	if err := repo.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM wallets WHERE address = ? AND chain = ?`,
+		"raceAddr1", "solana").Scan(&count); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly 1 wallet row, got %d", count)
+	}
+}
+
+// Concurrent association marking of an unseen wallet: exactly one row is
+// created even though every caller takes the update-then-insert path.
+func TestMarkAssociatedHacker_ConcurrentNoDuplicates(t *testing.T) {
+	repo := setupScanTest(t)
+	ctx := context.Background()
+
+	const workers = 16
+	var wg sync.WaitGroup
+	errs := make([]error, workers)
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			errs[i] = repo.MarkAssociatedHacker(ctx, "assocRace1", "solana", "funded operator X")
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("worker %d: %v", i, err)
+		}
+	}
+
+	var count int
+	var assoc bool
+	if err := repo.db.QueryRowContext(ctx,
+		`SELECT COUNT(*), COALESCE(MAX(associated_hacker), 0) FROM wallets WHERE address = ? AND chain = ?`,
+		"assocRace1", "solana").Scan(&count, &assoc); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly 1 wallet row, got %d", count)
+	}
+	if !assoc {
+		t.Fatalf("wallet must be flagged as associated")
+	}
+}

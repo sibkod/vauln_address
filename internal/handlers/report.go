@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"log"
 	"math"
 	"net/http"
 	"sort"
@@ -132,9 +133,25 @@ func (h *Handler) assembleReport(c *gin.Context, address, chain string) (*models
 	}
 	report.Leaks = leaks
 	report.Details = buildReportDetails(report, leaks)
-	report.Evidence = h.buildStatusEvidence(c, report)
-	report.Transactions = h.buildTxTree(c, address, chain)
-	report.FundFlows = h.buildFundFlows(c, address, chain)
+
+	// The evidence chain, the tx tree and the fund flows all aggregate the
+	// same root-address scan findings: load them (and the root payouts)
+	// once instead of running the expensive lookup three times. Errors are
+	// tolerated like before — every section degrades to "no findings".
+	findings, err := h.repo.GetScanFindingsForAddress(c.Request.Context(), address, reportTreeFindingsCap)
+	if err != nil {
+		log.Printf("report: failed to load scan findings for %s: %v", address, err)
+		findings = nil
+	}
+	payouts, err := h.repo.GetFlowPayoutsForSource(c.Request.Context(), address, reportTreeFindingsCap)
+	if err != nil {
+		log.Printf("report: failed to load flow payouts for %s: %v", address, err)
+		payouts = nil
+	}
+
+	report.Evidence = h.buildStatusEvidence(c, report, findings)
+	report.Transactions = h.buildTxTree(c, address, chain, findings, payouts)
+	report.FundFlows = h.buildFundFlows(c, address, chain, findings, payouts)
 	return report, http.StatusOK
 }
 
@@ -182,6 +199,14 @@ func buildReportDetails(report *models.ReportResponse, leaks []models.LeakedKeyI
 
 // ==================== Transaction tree ====================
 
+// prefetchedFindings carries the already-loaded scan data of the report's
+// root address into the first fillTxNode call, so the root node does not
+// re-run the queries assembleReport just did.
+type prefetchedFindings struct {
+	findings []models.ScanFinding
+	payouts  []models.ScanFinding
+}
+
 // buildTxTree builds the transaction tree from real indexed scanner data:
 // child nodes are counterparties of the address in scan_findings, aggregated
 // by address (tx count = number of findings, amount = total SOL moved).
@@ -189,19 +214,25 @@ func buildReportDetails(report *models.ReportResponse, leaks []models.LeakedKeyI
 // marked as programs and never expanded; hacker wallets are the sink of the
 // stolen funds, so the tree stops at them instead of following the funds
 // further. Addresses without indexed findings produce an empty tree.
-func (h *Handler) buildTxTree(c *gin.Context, address, chain string) *models.ReportTxNode {
+func (h *Handler) buildTxTree(c *gin.Context, address, chain string, findings, payouts []models.ScanFinding) *models.ReportTxNode {
 	root := &models.ReportTxNode{Address: address, Currency: currencyOf(chain)}
 	root.Status = h.treeNodeStatus(c, address, chain)
 	nodes := 1
 	visited := map[string]bool{address: true}
-	h.fillTxNode(c, root, chain, 0, visited, &nodes)
+	h.fillTxNode(c, root, chain, 0, visited, &nodes, &prefetchedFindings{findings: findings, payouts: payouts})
 	return root
 }
 
-func (h *Handler) fillTxNode(c *gin.Context, node *models.ReportTxNode, chain string, depth int, visited map[string]bool, nodes *int) {
-	findings, err := h.repo.GetScanFindingsForAddress(c.Request.Context(), node.Address, reportTreeFindingsCap)
-	if err != nil {
-		return
+func (h *Handler) fillTxNode(c *gin.Context, node *models.ReportTxNode, chain string, depth int, visited map[string]bool, nodes *int, prefetched *prefetchedFindings) {
+	var findings []models.ScanFinding
+	if prefetched != nil {
+		findings = prefetched.findings
+	} else {
+		var err error
+		findings, err = h.repo.GetScanFindingsForAddress(c.Request.Context(), node.Address, reportTreeFindingsCap)
+		if err != nil {
+			return
+		}
 	}
 
 	type counterparty struct {
@@ -312,39 +343,46 @@ func (h *Handler) fillTxNode(c *gin.Context, node *models.ReportTxNode, chain st
 	// Payout recipients: flow-trace findings (F1/F2) record which operator
 	// wallets funded each downstream address — this links every wallet that
 	// received payouts from this node back to it.
-	payouts, err := h.repo.GetFlowPayoutsForSource(c.Request.Context(), node.Address, reportTreeFindingsCap)
-	if err == nil {
-		for _, f := range payouts {
-			recipient := f.HackerAddress
-			if recipient == "" || recipient == node.Address || visited[recipient] || byAddr[recipient] != nil {
-				continue
-			}
-			if ok, _ := validators.ValidateAddress(treeValidationChain(f.Chain, chain), recipient); !ok {
-				continue
-			}
-			cp := &counterparty{address: recipient, chain: f.Chain, payout: true}
-			byAddr[recipient] = cp
+	var payouts []models.ScanFinding
+	if prefetched != nil {
+		payouts = prefetched.payouts
+	} else {
+		var err error
+		payouts, err = h.repo.GetFlowPayoutsForSource(c.Request.Context(), node.Address, reportTreeFindingsCap)
+		if err != nil {
+			payouts = nil
 		}
-		// Recurrence decides the verdict: a wallet paid repeatedly (2+
-		// transfers, or seen in several findings) is a hacker, a one-off
-		// recipient stays suspicious.
-		counts := map[string]int{}
-		for _, f := range payouts {
-			counts[f.HackerAddress]++
+	}
+	for _, f := range payouts {
+		recipient := f.HackerAddress
+		if recipient == "" || recipient == node.Address || visited[recipient] || byAddr[recipient] != nil {
+			continue
 		}
-		for _, f := range payouts {
-			cp := byAddr[f.HackerAddress]
-			if cp == nil || !cp.payout {
-				continue
-			}
-			cp.txCount++
-			cp.amount += f.AmountSOL
-			if f.Signature != "" {
-				cp.signatures = append(cp.signatures, f.Signature)
-			}
-			if counts[f.HackerAddress] >= 2 || hasIndicator(f.Indicators, "F2_REPEAT_DOWNSTREAM") {
-				cp.repeat = true
-			}
+		if ok, _ := validators.ValidateAddress(treeValidationChain(f.Chain, chain), recipient); !ok {
+			continue
+		}
+		cp := &counterparty{address: recipient, chain: f.Chain, payout: true}
+		byAddr[recipient] = cp
+	}
+	// Recurrence decides the verdict: a wallet paid repeatedly (2+
+	// transfers, or seen in several findings) is a hacker, a one-off
+	// recipient stays suspicious.
+	counts := map[string]int{}
+	for _, f := range payouts {
+		counts[f.HackerAddress]++
+	}
+	for _, f := range payouts {
+		cp := byAddr[f.HackerAddress]
+		if cp == nil || !cp.payout {
+			continue
+		}
+		cp.txCount++
+		cp.amount += f.AmountSOL
+		if f.Signature != "" {
+			cp.signatures = append(cp.signatures, f.Signature)
+		}
+		if counts[f.HackerAddress] >= 2 || hasIndicator(f.Indicators, "F2_REPEAT_DOWNSTREAM") {
+			cp.repeat = true
 		}
 	}
 
@@ -370,11 +408,12 @@ func (h *Handler) fillTxNode(c *gin.Context, node *models.ReportTxNode, chain st
 		}
 		visited[cp.address] = true
 		*nodes = *nodes + 1
+		status, assoc := h.treeNodeInfo(c, cp.address, cp.chain)
 		child := &models.ReportTxNode{
 			Address:          cp.address,
 			Currency:         node.Currency,
-			Status:           h.treeNodeStatus(c, cp.address, cp.chain),
-			AssociatedHacker: h.repo.GetWalletAssociation(c.Request.Context(), cp.address, cp.chain),
+			Status:           status,
+			AssociatedHacker: assoc,
 			IsProgram:        cp.isProgram,
 			Signatures:       cp.signatures,
 		}
@@ -389,7 +428,7 @@ func (h *Handler) fillTxNode(c *gin.Context, node *models.ReportTxNode, chain st
 			}
 		}
 		node.Children = append(node.Children, child)
-		h.fillTxNode(c, child, chain, depth+1, visited, nodes)
+		h.fillTxNode(c, child, chain, depth+1, visited, nodes, nil)
 	}
 }
 
@@ -420,16 +459,9 @@ func scanCounterparty(address string, f models.ScanFinding) string {
 // buildFundFlows aggregates the directional money-flow analytics of a
 // report: per counterparty — how much this wallet received from / sent to
 // it, how many findings link them, and the exact transaction signatures.
-// Returns nil when nothing is indexed for the address.
-func (h *Handler) buildFundFlows(c *gin.Context, address, chain string) *models.ReportFundFlows {
-	findings, err := h.repo.GetScanFindingsForAddress(c.Request.Context(), address, reportTreeFindingsCap)
-	if err != nil {
-		return nil
-	}
-	payouts, err := h.repo.GetFlowPayoutsForSource(c.Request.Context(), address, reportTreeFindingsCap)
-	if err != nil {
-		payouts = nil
-	}
+// Returns nil when nothing is indexed for the address. The findings and
+// payouts of the root address arrive prefetched from assembleReport.
+func (h *Handler) buildFundFlows(c *gin.Context, address, chain string, findings, payouts []models.ScanFinding) *models.ReportFundFlows {
 	if len(findings) == 0 && len(payouts) == 0 {
 		return nil
 	}
@@ -516,8 +548,7 @@ func (h *Handler) buildFundFlows(c *gin.Context, address, chain string) *models.
 				continue
 			}
 			a.entry.Amount = roundAmount(a.entry.Amount)
-			a.entry.Status = h.treeNodeStatus(c, a.entry.Address, a.entry.Chain)
-			a.entry.AssociatedHacker = h.repo.GetWalletAssociation(c.Request.Context(), a.entry.Address, a.entry.Chain)
+			a.entry.Status, a.entry.AssociatedHacker = h.treeNodeInfo(c, a.entry.Address, a.entry.Chain)
 			list = append(list, a.entry)
 		}
 		sort.Slice(list, func(i, j int) bool {
@@ -534,13 +565,25 @@ func (h *Handler) buildFundFlows(c *gin.Context, address, chain string) *models.
 }
 
 // treeNodeStatus resolves a tree address against the wallets table;
-// addresses not present in the database are reported as unknown.
+// addresses not present in the database are reported as unknown. Unlike
+// treeNodeInfo it keeps a status resolved before a downstream error.
 func (h *Handler) treeNodeStatus(c *gin.Context, address, chain string) string {
 	status, err := h.repo.GetWalletStatus(c.Request.Context(), address, chain)
 	if err == nil && status != "" {
 		return status
 	}
 	return models.TreeStatusUnknown
+}
+
+// treeNodeInfo resolves a tree address against the wallets table with a
+// single query per address; addresses not present in the database are
+// reported as unknown and never associated.
+func (h *Handler) treeNodeInfo(c *gin.Context, address, chain string) (string, bool) {
+	status, assoc, err := h.repo.GetWalletStatusAndAssociation(c.Request.Context(), address, chain)
+	if err != nil || status == "" {
+		return models.TreeStatusUnknown, false
+	}
+	return status, assoc
 }
 
 // treeValidationChain picks the chain used to validate counterparties in
