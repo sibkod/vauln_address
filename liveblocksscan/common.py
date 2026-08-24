@@ -69,6 +69,16 @@ INCOMING_STATUSES = {
     "hacker",
 }
 
+# «Нулевые» адреса mint/burn токенов. У такого перевода нет реального
+# контрагента: находка по нему назвала бы victim/hacker нулевой адрес
+# (и MarkAssociatedHacker записал бы его в базу), а заодно заняла бы
+# слот единственной находки на транзакцию, затенив настоящее движение
+# средств (например, оператор -> получатель в той же tx, что и mint).
+ZERO_ADDRESSES = {
+    "0x0000000000000000000000000000000000000000",  # EVM
+    "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb",           # Tron (base58)
+}
+
 USER_AGENT = "vauln-liveblocksscan/1.0"
 
 
@@ -404,6 +414,8 @@ def process_transfers(api, chain, height, transfers, posted):
     for t in ordered:
         if t.tx in seen_tx:
             continue
+        if t.sender in ZERO_ADDRESSES or t.recipient in ZERO_ADDRESSES:
+            continue  # mint/burn: нулевой адрес — не контрагент
         sender_hit = lookup(t.sender) if t.sender else None
         recipient_hit = lookup(t.recipient) if t.recipient else None
         sender_tracked = (sender_hit is not None and
