@@ -8,6 +8,14 @@
 - `internal/validators`: TestValidateTronAddress, TestValidateAddress/Sui_valid fail on clean checkout.
 - `internal/handlers`: TestCreateOrder_InvalidRequest/negative_checks expects 400 for negative checks but the handler returns 200 (validation bug in CreateOrder).
 
+## Payments (SOL order verification)
+- ALL payment-completion paths (POST /api/orders/:id/confirm, GET /api/orders/verify, POST /api/payment/status/:signature) verify the tx ON-CHAIN before crediting anything: services.PaymentVerifier.VerifyPaymentTx (internal/services/payment_verifier.go) fetches getTransaction(jsonParsed) and proves: meta.err == nil (failed/reverted tx → reject), the order's payment_address gained >= order token_amount (account balance diff post−pre; parsed system-transfer instruction as fallback when the recipient funds the tx; 0.5% slack for the 4-decimal rounding in CreateOrder), fee payer == order wallet, blockTime within 2h of order creation (older txs can't be replayed onto new orders). Rejections are *services.VerificationError with codes TX_FAILED / AMOUNT_MISMATCH / WRONG_SENDER / TX_TOO_OLD and mark the order failed (TX_TOO_OLD → expired) via rejectOrderPayment; RPC/transport errors are retryable (503, order stays pending).
+- Replay protection: GetOrderByTxHash — a tx already tied to a completed order → 409 TX_ALREADY_USED.
+- Balance credit is atomic: repository.CompleteOrder returns rowsAffected of the pending→completed UPDATE; only a true transition credits AddUserBalance (settleVerifiedPayment). Double-submit/concurrent verification → "already_completed", no double credit.
+- The old message-signature body path of ConfirmOrder and the auto-complete in VerifyPayment are GONE (they credited checks without any on-chain proof). Frontend uses only /api/payment/status polling (PricingView).
+- Tests: internal/services/payment_verifier_test.go (mock RPC: confirmed/failed/wrong recipient/underpaid/wrong sender/too old/not-found retryable/self-transfer), internal/handlers/payment_test.go (full handler flows + CompleteOrder atomicity). New users start with balance = FreeCheckLimit (UpsertUserNonce seeds it).
+
+
 ## Performance conventions (MySQL at millions of rows)
 - DB pool is env-tunable: DB_MAX_OPEN_CONNS (50), DB_MAX_IDLE_CONNS (10), DB_CONN_MAX_LIFETIME_MIN (5); zero values in hand-built Configs fall back to the same defaults. MySQL DSN carries interpolateParams=true + 5s/30s timeouts.
 - InsertScanFinding is a single-round-trip per-dialect upsert (INSERT IGNORE / OR IGNORE / ON CONFLICT DO NOTHING + RETURNING); duplicates resolve the existing id via a follow-up SELECT by signature.
