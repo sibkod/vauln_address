@@ -105,6 +105,27 @@ func (r *Repository) GetWalletStatus(ctx context.Context, address, chain string)
 	return status, nil
 }
 
+// GetWalletStatusAndAssociation resolves the status and the hacker
+// association flag of one address in a single round-trip — the transaction
+// tree needs both for every node. Empty status means "not in the database".
+func (r *Repository) GetWalletStatusAndAssociation(ctx context.Context, address, chain string) (string, bool, error) {
+	lookupAddr := normalizeAddress(chain, address)
+	var status string
+	var assoc bool
+	err := r.db.QueryRowContext(ctx,
+		`SELECT status, COALESCE(associated_hacker, false)
+			FROM wallets WHERE address = ? AND chain = ?`,
+		lookupAddr, chain,
+	).Scan(&status, &assoc)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return status, assoc, nil
+}
+
 // GetWalletAssociation returns whether the address is flagged as associated
 // with a hacker operator. False when the address is not in the database.
 func (r *Repository) GetWalletAssociation(ctx context.Context, address, chain string) bool {

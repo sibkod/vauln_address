@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -337,16 +338,36 @@ func (h *Handler) GetMonitorFindings(c *gin.Context) {
 	})
 }
 
+// monitorStatsTTL bounds how often the full-table aggregate behind
+// /api/monitor/stats is recomputed.
+const monitorStatsTTL = 30 * time.Second
+
 // GetMonitorStats returns aggregate counters for the live monitoring page.
+// The aggregate scans the whole scan_findings table, so responses are
+// served from a short-lived in-memory cache; the mutex doubles as
+// single-flight, concurrent polls never trigger parallel recomputes.
 func (h *Handler) GetMonitorStats(c *gin.Context) {
+	h.statsMu.Lock()
+	defer h.statsMu.Unlock()
+	if h.statsCache != nil && time.Since(h.statsCacheAt) < monitorStatsTTL {
+		c.JSON(http.StatusOK, h.statsCache)
+		return
+	}
 	stats, err := h.repo.GetScanStats(c.Request.Context())
 	if err != nil {
+		// a refresh failure keeps serving the last good snapshot
+		if h.statsCache != nil {
+			c.JSON(http.StatusOK, h.statsCache)
+			return
+		}
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error: "database error",
 			Code:  "DB_ERROR",
 		})
 		return
 	}
+	h.statsCache = stats
+	h.statsCacheAt = time.Now()
 	c.JSON(http.StatusOK, stats)
 }
 
@@ -516,8 +537,9 @@ var scanIndicatorMeta = map[string]struct {
 
 // buildStatusEvidence composes the chain of evidence explaining the wallet
 // status: registry listing, leaked key material and scanner indicators with
-// the transactions they were detected in.
-func (h *Handler) buildStatusEvidence(c *gin.Context, report *models.ReportResponse) []models.StatusEvidence {
+// the transactions they were detected in. The findings arrive prefetched
+// from assembleReport (id DESC); only the newest few become evidence.
+func (h *Handler) buildStatusEvidence(c *gin.Context, report *models.ReportResponse, findings []models.ScanFinding) []models.StatusEvidence {
 	var evidence []models.StatusEvidence
 
 	if report.Reason != "" {
@@ -559,10 +581,9 @@ func (h *Handler) buildStatusEvidence(c *gin.Context, report *models.ReportRespo
 		})
 	}
 
-	findings, err := h.repo.GetScanFindingsForAddress(c.Request.Context(), report.Address, 20)
-	if err != nil {
-		log.Printf("report evidence: failed to load scan findings for %s: %v", report.Address, err)
-		return evidence
+	const evidenceFindingsCap = 20
+	if len(findings) > evidenceFindingsCap {
+		findings = findings[:evidenceFindingsCap]
 	}
 	for _, f := range findings {
 		role := "victim"

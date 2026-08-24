@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -37,6 +38,13 @@ type Handler struct {
 	captcha      *services.CaptchaService
 	telegram     *services.TelegramService
 	packages     []gin.H
+
+	// monitor stats cache: the aggregate query scans the whole
+	// scan_findings table, so it is recomputed at most once per TTL even
+	// under concurrent polling.
+	statsMu      sync.Mutex
+	statsCache   *models.ScanStats
+	statsCacheAt time.Time
 }
 
 func New(repo *repository.Repository, serverCfg *config.Config, priceService *services.PriceService, walletQueue *services.WalletQueue) *Handler {

@@ -76,48 +76,76 @@ func isUniqueViolation(err error) bool {
 }
 
 // InsertScanFinding stores one scanner detection. The signature is unique,
-// so duplicates are skipped (second return value = false). The
-// select-then-insert race (two concurrent ingests of the same signature,
-// e.g. from the multithreaded scanner) is resolved by treating the
-// resulting unique violation as a duplicate instead of an error.
+// so duplicates are skipped (second return value = false). The insert is a
+// single round-trip per dialect (INSERT IGNORE / OR IGNORE / ON CONFLICT):
+// a concurrent ingest of the same signature (e.g. from the multithreaded
+// scanner) reports the existing row as a duplicate instead of an error.
 func (r *Repository) InsertScanFinding(ctx context.Context, req models.ScanFindingRequest) (int64, bool, error) {
 	chain := req.Chain
 	if chain == "" {
 		chain = "solana"
 	}
-	// dedupe by signature; the UNIQUE constraint backs this check
-	var existing int64
-	err := r.db.QueryRowContext(ctx,
-		`SELECT id FROM scan_findings WHERE signature = ?`, req.Signature).Scan(&existing)
-	if err == nil {
-		return existing, false, nil
-	}
-	if err != sql.ErrNoRows {
-		return 0, false, err
-	}
-
-	res, err := r.db.ExecContext(ctx,
-		`INSERT INTO scan_findings
-		 (chain, signature, slot, verdict, indicators, victim_address,
-		  hacker_address, amount_sol, programs, sweeps, exposed_addresses, source, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	args := []interface{}{
 		chain, req.Signature, req.Slot, req.Verdict,
 		joinTags(req.Indicators), req.VictimAddress, req.HackerAddress,
 		req.AmountSOL, joinTags(req.Programs), joinSweeps(req.Sweeps),
 		joinTags(req.ExposedAddresses),
 		req.Source, time.Now().UTC(),
-	)
+	}
+
+	// duplicate resolves the row that won the unique constraint
+	duplicate := func() (int64, bool, error) {
+		var existing int64
+		if err := r.db.QueryRowContext(ctx,
+			`SELECT id FROM scan_findings WHERE signature = ?`,
+			req.Signature).Scan(&existing); err != nil {
+			return 0, false, err
+		}
+		return existing, false, nil
+	}
+
+	if r.dbType == config.DBTypePostgres {
+		// pq/pgx have no LastInsertId: RETURNING yields no row on conflict.
+		var id int64
+		err := r.db.QueryRowContext(ctx,
+			`INSERT INTO scan_findings
+			 (chain, signature, slot, verdict, indicators, victim_address,
+			  hacker_address, amount_sol, programs, sweeps, exposed_addresses, source, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 ON CONFLICT (signature) DO NOTHING RETURNING id`,
+			args...).Scan(&id)
+		if err == sql.ErrNoRows {
+			return duplicate()
+		}
+		if err != nil {
+			return 0, false, err
+		}
+		return id, true, nil
+	}
+
+	insert := `INSERT INTO scan_findings
+	 (chain, signature, slot, verdict, indicators, victim_address,
+	  hacker_address, amount_sol, programs, sweeps, exposed_addresses, source, created_at)
+	 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	if r.dbType == config.DBTypeMySQL {
+		insert = strings.Replace(insert, "INSERT INTO", "INSERT IGNORE INTO", 1)
+	} else {
+		insert = strings.Replace(insert, "INSERT INTO", "INSERT OR IGNORE INTO", 1)
+	}
+	res, err := r.db.ExecContext(ctx, insert, args...)
 	if err != nil {
 		if isUniqueViolation(err) {
-			// lost the concurrent-insert race: the other request's row
-			// wins, report this one as a duplicate
-			if qerr := r.db.QueryRowContext(ctx,
-				`SELECT id FROM scan_findings WHERE signature = ?`,
-				req.Signature).Scan(&existing); qerr == nil {
-				return existing, false, nil
-			}
+			// driver without IGNORE support surfaced the constraint
+			return duplicate()
 		}
 		return 0, false, err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return 0, false, err
+	}
+	if affected == 0 {
+		return duplicate()
 	}
 	id, err := res.LastInsertId()
 	if err != nil {

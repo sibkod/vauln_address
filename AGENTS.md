@@ -8,6 +8,16 @@
 - `internal/validators`: TestValidateTronAddress, TestValidateAddress/Sui_valid fail on clean checkout.
 - `internal/handlers`: TestCreateOrder_InvalidRequest/negative_checks expects 400 for negative checks but the handler returns 200 (validation bug in CreateOrder).
 
+## Performance conventions (MySQL at millions of rows)
+- DB pool is env-tunable: DB_MAX_OPEN_CONNS (50), DB_MAX_IDLE_CONNS (10), DB_CONN_MAX_LIFETIME_MIN (5); zero values in hand-built Configs fall back to the same defaults. MySQL DSN carries interpolateParams=true + 5s/30s timeouts.
+- InsertScanFinding is a single-round-trip per-dialect upsert (INSERT IGNORE / OR IGNORE / ON CONFLICT DO NOTHING + RETURNING); duplicates resolve the existing id via a follow-up SELECT by signature.
+- Wallet creation is serialized per chain+address by a striped mutex (repository.walletInsertLocks, 256 stripes): CreateWallet re-checks existence under the lock and returns the existing id on a duplicate, MarkAssociatedHacker holds the lock across its update-or-insert. This substitutes the missing UNIQUE(chain,address) within one process (tests: TestCreateWallet_ConcurrentNoDuplicates, TestMarkAssociatedHacker_ConcurrentNoDuplicates).
+- /api/monitor/stats is served from a 30s in-memory cache on the Handler (mutex = single-flight; a failed refresh keeps serving the last good snapshot); the underlying GetScanStats is a full-table aggregate.
+- BatchAddWallets: in-batch dedupe + bulk existence check (address IN ...) + multi-row INSERT chunks of 500, ids read back per chunk (no per-row LastInsertId).
+- Report assembly loads the root address's scan findings and flow payouts ONCE (assembleReport) and passes them into buildStatusEvidence (first 20 = evidence), buildTxTree (prefetchedFindings for the root fillTxNode call) and buildFundFlows. Tree node status+association come from one query (repository.GetWalletStatusAndAssociation, handler treeNodeInfo); the tree root keeps the lenient treeNodeStatus behavior.
+- Rate limiter middleware does ONE rate_limits read per request (expired windows reset inline); checkAndResetWindow no longer exists.
+- Still open (needs schema work, deliberately avoided): LIKE '%…%'-scans on scan_findings.sweeps/exposed_addresses/indicators (GetScanFindingsForAddress, GetFlowPayoutsForSource) can't use indexes without normalizing those CSVs into child tables; wallets has no UNIQUE(chain,address); check_history lacks a composite (wallet_address,address,chain) index.
+
 ## Wallet statuses
 - Single source of truth: `statusCatalog` in internal/models/models.go (13 statuses: hacked, vulnerable, safe, hacker, drained, phishing, scam, mixer, sanctioned, exchange, suspicious, frozen, unknown) with label, severity (danger/warning/info) and description. `IsValidStatus`/`ValidStatusNames`/`StatusDescription` derive from it; report details and the admin import error use these helpers.
 - Public catalog endpoint: `GET /api/statuses` (handlers.GetStatuses). Frontend mirrors the catalog in HomeView/ReportView/ChecksView statusMeta maps and global CSS (`.dot.danger|vulnerable|success`, `.alert-status.<status>` in style.css).

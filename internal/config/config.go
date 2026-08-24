@@ -17,24 +17,28 @@ const (
 )
 
 type Config struct {
-	DBType            DBType
-	DBHost            string
-	DBPort            int
-	DBUser            string
-	DBPassword        string
-	DBName            string
-	DBSSLMode         string
-	DBCharset         string
-	DBUnixSocket      string
-	SQLitePath        string
-	ServerPort        string
-	RateLimitRequests int
-	RateLimitHours    int
-	FreeCheckLimit    int
-	SolanaPaymentAddr string
-	SolanaRPCURL      string
-	SolanaUseDevnet   bool
-	AdminAPIKey       string
+	DBType       DBType
+	DBHost       string
+	DBPort       int
+	DBUser       string
+	DBPassword   string
+	DBName       string
+	DBSSLMode    string
+	DBCharset    string
+	DBUnixSocket string
+	SQLitePath   string
+	// Connection pool (0 = built-in defaults)
+	DBMaxOpenConns       int
+	DBMaxIdleConns       int
+	DBConnMaxLifetimeMin int
+	ServerPort           string
+	RateLimitRequests    int
+	RateLimitHours       int
+	FreeCheckLimit       int
+	SolanaPaymentAddr    string
+	SolanaRPCURL         string
+	SolanaUseDevnet      bool
+	AdminAPIKey          string
 	// Price settings
 	SolanaPriceUSD   float64
 	PricePerCheckUSD float64
@@ -78,6 +82,9 @@ func Load() *Config {
 		DBCharset:             getEnv("DB_CHARSET", "utf8mb4"),
 		DBUnixSocket:          getEnv("DB_UNIX_SOCKET", ""),
 		SQLitePath:            getEnv("SQLITE_PATH", "./data/vauln_address.db"),
+		DBMaxOpenConns:        getEnvInt("DB_MAX_OPEN_CONNS", 50),
+		DBMaxIdleConns:        getEnvInt("DB_MAX_IDLE_CONNS", 10),
+		DBConnMaxLifetimeMin:  getEnvInt("DB_CONN_MAX_LIFETIME_MIN", 5),
 		ServerPort:            getEnv("SERVER_PORT", "9111"),
 		RateLimitRequests:     getEnvInt("RATE_LIMIT_REQUESTS", 10),
 		RateLimitHours:        getEnvInt("RATE_LIMIT_WINDOW_HOURS", 24),
