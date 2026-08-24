@@ -22,6 +22,9 @@ type Repository struct {
 	db             *sql.DB
 	dbType         config.DBType
 	freeCheckLimit int
+	// hasLowerAddress records whether the MySQL generated column
+	// from migration 009 exists; checked during InitSchema.
+	hasLowerAddress bool
 }
 
 func New(cfg *config.Config) (*Repository, error) {
@@ -571,8 +574,21 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 		return err
 	}
 
-	// Run migrations
-	return r.runMigrations(ctx)
+	// MySQL: detect whether the generated lower_address column
+	// is available before EVM lookups attempt to use it.
+	if r.dbType == config.DBTypeMySQL {
+		r.hasLowerAddress = r.checkLowerAddress(ctx)
+	}
+
+	// Run migrations (migration 009 attempts to add lower_address;
+	// checkLowerAddress must come after, so re-evaluate here).
+	if err := r.runMigrations(ctx); err != nil {
+		return err
+	}
+	if r.dbType == config.DBTypeMySQL {
+		r.hasLowerAddress = r.checkLowerAddress(ctx)
+	}
+	return nil
 }
 
 func (r *Repository) runMigrations(ctx context.Context) error {
@@ -634,11 +650,33 @@ func (r *Repository) migration009LowerAddress(ctx context.Context) {
 	}
 }
 
-// lowerAddressColumn returns the column/predicate name used for EVM
-// case-insensitive lookups: on MySQL it's the generated lower_address
-// column (indexed), on other dialects the LOWER(address) expression.
+
+// checkLowerAddress reports whether the generated column added by migration
+// 009 exists on MySQL (queried from information_schema, cached on Repository
+// so repeated lookups never hit the catalog).
+func (r *Repository) checkLowerAddress(ctx context.Context) bool {
+       if r.dbType != config.DBTypeMySQL {
+               return true
+       }
+       var cnt int
+       err := r.db.QueryRowContext(ctx, `
+               SELECT COUNT(*) FROM information_schema.COLUMNS
+               WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'wallets'
+               AND COLUMN_NAME = 'lower_address'`).Scan(&cnt)
+       if err != nil {
+               log.Printf("Migration check (wallets lower_address): %v", err)
+               return false
+       }
+       return cnt > 0
+}
+
+// lowerAddressColumn returns the column/predicate used for EVM
+// case-insensitive lookups. If the generated lower_address column
+// is unavailable (old MySQL instance without migration 009, or
+// migration failed), the predicate falls back to LOWER(address)
+// instead of crashing with "Unknown column".
 func (r *Repository) lowerAddressColumn() string {
-	if r.dbType == config.DBTypeMySQL {
+	if r.dbType == config.DBTypeMySQL && r.hasLowerAddress {
 		return "lower_address"
 	}
 	return "LOWER(address)"
