@@ -16,6 +16,7 @@ const AnonymousRequesterPrefix = "ip:"
 // GetWalletReport reads the wallet row together with the existing
 // reason/source columns (migration 004). Returns nil when not found.
 func (r *Repository) GetWalletReport(ctx context.Context, address, chain string) (*models.ReportResponse, error) {
+	lookupAddr := normalizeAddress(chain, address)
 	var (
 		status           string
 		hasPK, hasSeed   bool
@@ -29,7 +30,7 @@ func (r *Repository) GetWalletReport(ctx context.Context, address, chain string)
 			COALESCE(associated_hacker, false), COALESCE(associated_reason, '')
 			FROM wallets
 			WHERE address = ? AND chain = ?`,
-		address, chain,
+		lookupAddr, chain,
 	).Scan(&status, &hasPK, &hasSeed, &reason, &source, &createdAt,
 		&associatedHacker, &associatedReason)
 
@@ -89,10 +90,11 @@ func (r *Repository) GetLeaksForAddress(ctx context.Context, address, chain stri
 // GetWalletStatus resolves the status of a single address for the
 // transaction tree. Returns "" when the address is not in the database.
 func (r *Repository) GetWalletStatus(ctx context.Context, address, chain string) (string, error) {
+	lookupAddr := normalizeAddress(chain, address)
 	var status string
 	err := r.db.QueryRowContext(ctx,
 		`SELECT status FROM wallets WHERE address = ? AND chain = ?`,
-		address, chain,
+		lookupAddr, chain,
 	).Scan(&status)
 	if err == sql.ErrNoRows {
 		return "", nil

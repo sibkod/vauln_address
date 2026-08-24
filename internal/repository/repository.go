@@ -22,9 +22,7 @@ type Repository struct {
 	db             *sql.DB
 	dbType         config.DBType
 	freeCheckLimit int
-	// hasLowerAddress records whether the MySQL generated column
-	// from migration 009 exists; checked during InitSchema.
-	hasLowerAddress bool
+
 }
 
 func New(cfg *config.Config) (*Repository, error) {
@@ -574,21 +572,9 @@ func (r *Repository) InitSchema(ctx context.Context) error {
 		return err
 	}
 
-	// MySQL: detect whether the generated lower_address column
-	// is available before EVM lookups attempt to use it.
-	if r.dbType == config.DBTypeMySQL {
-		r.hasLowerAddress = r.checkLowerAddress(ctx)
-	}
-
-	// Run migrations (migration 009 attempts to add lower_address;
-	// checkLowerAddress must come after, so re-evaluate here).
-	if err := r.runMigrations(ctx); err != nil {
-		return err
-	}
-	if r.dbType == config.DBTypeMySQL {
-		r.hasLowerAddress = r.checkLowerAddress(ctx)
-	}
-	return nil
+	// Run migrations (EVM lowercase normalization is handled by
+	// migration 010, not by the old lower_address generated column).
+	return r.runMigrations(ctx)
 }
 
 func (r *Repository) runMigrations(ctx context.Context) error {
@@ -623,69 +609,7 @@ func (r *Repository) runMigrations(ctx context.Context) error {
 	// Migration 008: per-recipient sweep breakdown on scan_findings
 	r.migration008(ctx)
 
-	// Migration 009: generated lower_address column for fast EVM lookups
-	r.migration009LowerAddress(ctx)
-
 	return nil
-}
-
-// migration009LowerAddress adds the STORED generated lower_address column
-// used by EVM case-insensitive lookups (only on MySQL — sqlite/postgres
-// keep LOWER(address)). Without it every bulk/existence EVM check fully
-// scans wallets on prod.
-func (r *Repository) migration009LowerAddress(ctx context.Context) {
-if r.dbType != config.DBTypeMySQL {
-return
-}
-// ALTER TABLE on a populated table can take minutes; run it on a
-// dedicated 10-minute context so the 30-second InitSchema deadline
-// never aborts it, and flip the helper flag immediately on success.
-alterCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-defer cancel()
-_, err := r.db.ExecContext(alterCtx, `ALTER TABLE wallets ADD COLUMN
-lower_address VARCHAR(100) GENERATED ALWAYS AS (LOWER(address)) STORED`)
-if err == nil {
-r.hasLowerAddress = true
-} else if !(strings.Contains(err.Error(), "Duplicate column") ||
-strings.Contains(err.Error(), "duplicate column name")) {
-log.Printf("Migration note (wallets lower_address): %v", err)
-}
-idxSQL := "CREATE INDEX idx_wallets_chain_lower ON wallets(chain, lower_address)"
-if _, err := r.db.ExecContext(alterCtx, idxSQL); err != nil &&
-!strings.Contains(err.Error(), "Duplicate key name") {
-log.Printf("Migration note (wallets lower_address index): %v", err)
-}
-}
-
-// checkLowerAddress reports whether the generated column added by migration
-// 009 exists on MySQL (queried from information_schema, cached on Repository
-// so repeated lookups never hit the catalog).
-func (r *Repository) checkLowerAddress(ctx context.Context) bool {
-       if r.dbType != config.DBTypeMySQL {
-               return true
-       }
-       var cnt int
-       err := r.db.QueryRowContext(ctx, `
-               SELECT COUNT(*) FROM information_schema.COLUMNS
-               WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'wallets'
-               AND COLUMN_NAME = 'lower_address'`).Scan(&cnt)
-       if err != nil {
-               log.Printf("Migration check (wallets lower_address): %v", err)
-               return false
-       }
-       return cnt > 0
-}
-
-// lowerAddressColumn returns the column/predicate used for EVM
-// case-insensitive lookups. If the generated lower_address column
-// is unavailable (old MySQL instance without migration 009, or
-// migration failed), the predicate falls back to LOWER(address)
-// instead of crashing with "Unknown column".
-func (r *Repository) lowerAddressColumn() string {
-	if r.dbType == config.DBTypeMySQL && r.hasLowerAddress {
-		return "lower_address"
-	}
-	return "LOWER(address)"
 }
 
 func (r *Repository) migration004(ctx context.Context) {
@@ -808,6 +732,7 @@ func (r *Repository) migration008(ctx context.Context) {
 		log.Printf("Migration note (scan_findings sweeps): %v", err)
 	}
 }
+
 
 // ==================== User Methods ====================
 
@@ -1174,7 +1099,19 @@ func (r *Repository) GetOrdersByWalletPaginated(ctx context.Context, walletAddre
 
 // ==================== Wallet Methods ====================
 
+// normalizeAddress keeps the wallets table EVM addresses lowercase: every
+// read and write path goes through it, so a checksummed user/scanner input
+// always matches the stored row (indexed exact match, no LOWER() in SQL).
+func normalizeAddress(chain, address string) string {
+if chain == string(models.ChainEVM) {
+return strings.ToLower(address)
+}
+return address
+}
+
+
 func (r *Repository) GetWallet(ctx context.Context, address string, chain string) (*models.Wallet, error) {
+	address = normalizeAddress(chain, address)
 	var wallet models.Wallet
 	err := r.db.QueryRowContext(ctx,
 		`SELECT id, address, chain, status, has_pk, has_seed,
@@ -1668,9 +1605,7 @@ func (r *Repository) GetWalletsByAddresses(ctx context.Context, chain string, ad
 		placeholders = append(placeholders, "?")
 		args = append(args, addr)
 	}
-	if chain == string(models.ChainEVM) {
-		column = r.lowerAddressColumn()
-	}
+
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT address, status, has_pk, has_seed,
 			COALESCE(associated_hacker, false),
@@ -1697,12 +1632,8 @@ func (r *Repository) GetWalletsByAddresses(ctx context.Context, chain string, ad
 }
 
 func (r *Repository) GetWalletByAddressAndChain(ctx context.Context, address, chain string) (int64, bool, error) {
-	// EVM addresses are case-insensitive: a scanner reporting the lowercase
-	// form of a checksummed registry entry must not create a duplicate row.
+	address = normalizeAddress(chain, address)
 	where := `address = ? AND chain = ?`
-	if chain == string(models.ChainEVM) {
-		where = r.lowerAddressColumn() + ` = LOWER(?) AND chain = ?`
-	}
 	var id int64
 	err := r.db.QueryRowContext(ctx,
 		`SELECT id FROM wallets WHERE `+where,
@@ -1719,6 +1650,7 @@ func (r *Repository) GetWalletByAddressAndChain(ctx context.Context, address, ch
 
 // CreateWalletWithSeed creates a wallet with a reference to a seed
 func (r *Repository) CreateWalletWithSeed(ctx context.Context, address, chain string, status models.WalletStatus, seedID int64, reason, source string) (int64, error) {
+	address = normalizeAddress(chain, address)
 	var hasSeed bool
 	if seedID > 0 {
 		hasSeed = true
@@ -1738,6 +1670,7 @@ func (r *Repository) CreateWalletWithSeed(ctx context.Context, address, chain st
 
 // CreateWallet creates a wallet without seed reference
 func (r *Repository) CreateWallet(ctx context.Context, address, chain string, status models.WalletStatus, reason, source string) (int64, error) {
+	address = normalizeAddress(chain, address)
 	now := time.Now()
 	result, err := r.db.ExecContext(ctx,
 		`INSERT INTO wallets (address, chain, status, has_pk, has_seed, reason, source, created_at, updated_at) 
@@ -1754,6 +1687,7 @@ func (r *Repository) CreateWallet(ctx context.Context, address, chain string, st
 // existing wallets only get the association fields (status stays untouched),
 // unseen ones are registered with status "unknown".
 func (r *Repository) MarkAssociatedHacker(ctx context.Context, address, chain, reason string) error {
+	address = normalizeAddress(chain, address)
 	now := time.Now()
 	// Skip updating a wallet that already carries this association: repeated
 	// findings naming the same operator must not bump updated_at. NULL is
@@ -1869,6 +1803,7 @@ func (r *Repository) BatchAddWallets(ctx context.Context, items []BatchWalletIte
 	chainCounts := make(map[string]int)
 
 	for i, item := range items {
+		item.Address = normalizeAddress(item.Chain, item.Address)
 		var existingID int64
 		err := tx.QueryRowContext(ctx,
 			`SELECT id FROM wallets WHERE address = ? AND chain = ?`,
