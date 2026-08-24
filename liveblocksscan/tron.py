@@ -151,7 +151,7 @@ def make_tron_watcher(endpoints):
                     out.append(Transfer(
                         txid,
                         hex_to_base58check(value.get("owner_address") or ""),
-                        recipient, raw / 1e6))
+                        recipient, raw / 1e6, is_token=True))
         return out
 
     return latest, transfers

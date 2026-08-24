@@ -85,9 +85,12 @@ def make_sui_watcher(endpoints):
                     amount = int(bc.get("amount") or 0)
                 except ValueError:
                     continue
-                if not addr or amount <= 0 or addr == sender:
+                if not addr or addr == sender:
                     continue
-                received[addr] = received.get(addr, 0) + amount
+                # только получатели; amount может быть отрицательным у
+                # отправителя внутри tx — берём модуль (списание газа у
+                # получателя невозможно в одном balanceChange)
+                received[addr] = received.get(addr, 0) + abs(amount)
             for addr, amount in received.items():
                 out.append(Transfer(digest, sender, addr, amount / MIST))
         return out
