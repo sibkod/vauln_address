@@ -247,86 +247,94 @@ function getResultClass() {
 </script>
 
 <template>
-  <!-- Legend -->
-  <div class="status-legend">
-    <div class="legend-item" v-for="l in legendItems" :key="l.label">
-      <span class="dot" :class="l.cls"></span>
-      <div><span class="label">{{ l.icon }} {{ l.label }}</span><span class="desc">{{ l.desc }}</span></div>
-    </div>
-  </div>
-
-  <!-- Balance info -->
-  <div class="free-tier-info" :class="{ exhausted: isExhausted }">
-    <span v-if="isExhausted && countdown">No checks. Reset in {{ countdown }}</span>
-    <span v-else-if="isExhausted">No checks available</span>
-    <span v-else-if="isConnected">{{ displayBalance }} checks</span>
-    <span v-else>{{ displayBalance }} free checks</span>
-    <RouterLink v-if="!isConnected" to="/pricing" class="upgrade-link">Connect wallet →</RouterLink>
-    <RouterLink v-else-if="isExhausted" to="/pricing" class="upgrade-link">Buy more →</RouterLink>
-    <span v-else class="upgrade-link">Buy more →</span>
-  </div>
-
-  <!-- Logo -->
-  <div class="logo-area">
-    <div class="badge">⚡ multi‑chain security</div>
-    <h1>pwnd</h1>
-    <div class="sub">EVM · BTC · Solana · Sui · Tron</div>
-  </div>
-
-  <!-- Search box -->
-  <div class="search-box">
-    <ChainSelect v-model="chain" :options="chainOptions" />
-    <input 
-      v-model="address" 
-      type="text" 
-      :placeholder="chainPlaceholders[chain]"
-      @keydown.enter="check"
-    />
-    <button class="check-btn" @click="check" :disabled="loading">
-      {{ loading ? 'Checking…' : 'Check' }}
-    </button>
-  </div>
-
-  <!-- Result -->
-  <div class="result-box" :class="result && result.message ? '' : getResultClass()">
-    <div class="result-text">{{ setResultText() || 'Enter address and click Check' }}</div>
-    <div class="result-sub" v-if="result && !result.message && !result.error && result.status !== 'not_found'">
-      Found in database · {{ chain.toUpperCase() }}
-    </div>
-    <div class="result-chain" v-if="result && !result.message && !result.error">🔗 {{ chain.toUpperCase() }}</div>
-    <RouterLink
-      v-if="result && !result.message && !result.error && result.found && address"
-      :to="{ path: '/report', query: { address: address.trim(), chain } }"
-      class="detail-link"
-    >
-      📄 Full report →
-    </RouterLink>
-  </div>
-
-  <!-- Recent Checks -->
-  <div class="alerts-section">
-    <div class="alerts-header">
-      <span class="alerts-title">🔴 recent checks</span>
-      <span class="alerts-badge" :class="{ idle: recentChecks.length === 0 }">
-        {{ recentChecks.length }} checked
-      </span>
-    </div>
-    <div class="alerts-container">
-      <div v-if="recentChecks.length === 0" style="color:#4c5a7a; font-size:0.8rem; padding:0.6rem; text-align:center;">
-        No checks yet. Try one above!
+  <div class="home-grid">
+    <div class="home-top">
+      <!-- Legend -->
+      <div class="status-legend">
+        <div class="legend-item" v-for="l in legendItems" :key="l.label">
+          <span class="dot" :class="l.cls"></span>
+          <div><span class="label">{{ l.icon }} {{ l.label }}</span><span class="desc">{{ l.desc }}</span></div>
+        </div>
       </div>
-      <div 
-        v-for="check in recentChecks" 
-        :key="check.id || check.address + check.time"
-        class="alert-item"
-        :class="metaFor(check.status).cls"
-      >
-        <span class="alert-icon">{{ metaFor(check.status).icon }}</span>
-        <span class="alert-addr">{{ check.address }}</span>
-        <span class="alert-chain">{{ (check.chain || chain).toUpperCase() }}</span>
-        <span class="alert-status" :class="check.status">{{ (check.status || 'safe').toUpperCase() }}</span>
-        <span class="alert-time">{{ check.time }}</span>
+
+      <!-- Balance info -->
+      <div class="free-tier-info" :class="{ exhausted: isExhausted }">
+        <span v-if="isExhausted && countdown">No checks. Reset in {{ countdown }}</span>
+        <span v-else-if="isExhausted">No checks available</span>
+        <span v-else-if="isConnected">{{ displayBalance }} checks</span>
+        <span v-else>{{ displayBalance }} free checks</span>
+        <RouterLink v-if="!isConnected" to="/pricing" class="upgrade-link">Connect wallet →</RouterLink>
+        <RouterLink v-else-if="isExhausted" to="/pricing" class="upgrade-link">Buy more →</RouterLink>
+        <span v-else class="upgrade-link">Buy more →</span>
       </div>
     </div>
+
+    <div class="home-main">
+      <!-- Logo -->
+      <div class="logo-area">
+        <div class="badge">⚡ multi‑chain security</div>
+        <h1>pwnd</h1>
+        <div class="sub">EVM · BTC · Solana · Sui · Tron</div>
+      </div>
+
+      <!-- Search box -->
+      <div class="search-box">
+        <ChainSelect v-model="chain" :options="chainOptions" />
+        <input
+          v-model="address"
+          type="text"
+          :placeholder="chainPlaceholders[chain]"
+          @keydown.enter="check"
+        />
+        <button class="check-btn" @click="check" :disabled="loading">
+          {{ loading ? 'Checking…' : 'Check' }}
+        </button>
+      </div>
+
+      <!-- Result -->
+      <div class="result-box" :class="result && result.message ? '' : getResultClass()">
+        <div class="result-text">{{ setResultText() || 'Enter address and click Check' }}</div>
+        <div class="result-sub" v-if="result && !result.message && !result.error && result.status !== 'not_found'">
+          Found in database · {{ chain.toUpperCase() }}
+        </div>
+        <div class="result-chain" v-if="result && !result.message && !result.error">🔗 {{ chain.toUpperCase() }}</div>
+        <RouterLink
+          v-if="result && !result.message && !result.error && result.found && address"
+          :to="{ path: '/report', query: { address: address.trim(), chain } }"
+          class="detail-link"
+        >
+          📄 Full report →
+        </RouterLink>
+      </div>
+    </div>
+
+    <aside class="home-side">
+      <!-- Recent Checks -->
+      <div class="alerts-section">
+        <div class="alerts-header">
+          <span class="alerts-title">🔴 recent checks</span>
+          <span class="alerts-badge" :class="{ idle: recentChecks.length === 0 }">
+            {{ recentChecks.length }} checked
+          </span>
+        </div>
+        <div class="alerts-container">
+          <div v-if="recentChecks.length === 0" style="color:#4c5a7a; font-size:0.8rem; padding:0.6rem; text-align:center;">
+            No checks yet. Try one above!
+          </div>
+          <div
+            v-for="check in recentChecks"
+            :key="check.id || check.address + check.time"
+            class="alert-item"
+            :class="metaFor(check.status).cls"
+          >
+            <span class="alert-icon">{{ metaFor(check.status).icon }}</span>
+            <span class="alert-addr">{{ check.address }}</span>
+            <span class="alert-chain">{{ (check.chain || chain).toUpperCase() }}</span>
+            <span class="alert-status" :class="check.status">{{ (check.status || 'safe').toUpperCase() }}</span>
+            <span class="alert-time">{{ check.time }}</span>
+          </div>
+        </div>
+      </div>
+    </aside>
   </div>
 </template>

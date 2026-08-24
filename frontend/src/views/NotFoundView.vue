@@ -51,7 +51,7 @@ function goHome() {
 }
 .back-btn {
   padding: 0.8rem 2rem;
-  background: linear-gradient(135deg, #667eea, #764ba2);
+  background: linear-gradient(135deg, #00e5ff, #7b5cff);
   border: none;
   border-radius: 10px;
   color: white;

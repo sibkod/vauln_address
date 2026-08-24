@@ -496,7 +496,7 @@ async function submitBug() {
       </CollapsibleSection>
 
       <!-- Money-flow analytics -->
-      <CollapsibleSection v-if="report.fund_flows" title="Money flows">
+      <CollapsibleSection v-if="report.fund_flows" title="Money flows" class="wide">
         <p class="tree-hint">Where the funds came from / went to. Click a counterparty to see the exact transactions.</p>
         <div class="flows-grid">
           <div class="flow-col" v-if="report.fund_flows.inflow.length">
@@ -539,7 +539,7 @@ async function submitBug() {
       </CollapsibleSection>
 
       <!-- Transaction tree -->
-      <CollapsibleSection v-if="report.transactions" title="Transaction flows">
+      <CollapsibleSection v-if="report.transactions" title="Transaction flows" class="wide">
         <p class="tree-hint">Counterparties indexed by the scanner and the status of each wallet</p>
         <div v-if="report.transactions.children?.length" class="scroll-block tree-scroll">
           <TxTreeNode :node="report.transactions" />
@@ -590,7 +590,7 @@ async function submitBug() {
 
 <style scoped>
 .report-page {
-  max-width: 900px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 1.5rem 1rem;
   min-width: 0;
@@ -669,7 +669,7 @@ async function submitBug() {
   flex: 1;
   min-width: 0;
   background: #0c111b;
-  border: 1px solid #2a3548;
+  border: 1px solid rgba(0, 229, 255, 0.1);
   border-radius: 8px;
   color: #7ea2ff;
   padding: 0.55rem 0.75rem;
@@ -679,7 +679,7 @@ async function submitBug() {
 
 .share-btn {
   background: #1a2233;
-  border: 1px solid #2a3548;
+  border: 1px solid rgba(0, 229, 255, 0.1);
   color: #c7d2e8;
   border-radius: 8px;
   padding: 0.55rem 1rem;
@@ -755,7 +755,7 @@ async function submitBug() {
 .spinner {
   width: 40px;
   height: 40px;
-  border: 3px solid #2a3548;
+  border: 3px solid rgba(0, 229, 255, 0.1);
   border-top-color: #667eea;
   border-radius: 50%;
   margin: 0 auto 1rem;
@@ -769,8 +769,8 @@ async function submitBug() {
 .error-box {
   text-align: center;
   padding: 3rem 2rem;
-  background: #1a1f2e;
-  border: 1px solid #2a3548;
+  background: rgba(13, 18, 32, 0.88);
+  border: 1px solid rgba(0, 229, 255, 0.1);
   border-radius: 12px;
 }
 
@@ -806,8 +806,8 @@ async function submitBug() {
   padding: 1.25rem;
   border-radius: 12px;
   margin-bottom: 1.5rem;
-  background: #1a1f2e;
-  border: 1px solid #2a3548;
+  background: rgba(13, 18, 32, 0.88);
+  border: 1px solid rgba(0, 229, 255, 0.1);
 }
 
 .status-banner.danger {
@@ -840,9 +840,26 @@ async function submitBug() {
   font-size: 0.8rem;
 }
 
+.report-body {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.9rem;
+  align-items: start;
+}
+.report-body > * {
+  margin-bottom: 0;
+  min-width: 0;
+}
+@media (min-width: 1100px) {
+  .report-body { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .report-body > .status-banner,
+  .report-body > .footer-note,
+  .report-body > .wide { grid-column: 1 / -1; }
+}
+
 .section {
-  background: #1a1f2e;
-  border: 1px solid #2a3548;
+  background: rgba(13, 18, 32, 0.88);
+  border: 1px solid rgba(0, 229, 255, 0.1);
   border-radius: 12px;
   padding: 0.9rem 1rem;
   margin-bottom: 0.9rem;
@@ -905,7 +922,7 @@ async function submitBug() {
 .leaks-table td {
   padding: 0.6rem;
   text-align: left;
-  border-bottom: 1px solid #2a3548;
+  border-bottom: 1px solid rgba(0, 229, 255, 0.1);
   color: #98a8ce;
   font-size: 0.85rem;
 }
@@ -934,7 +951,7 @@ async function submitBug() {
   overflow-y: auto;
   padding-right: 0.4rem;
   scrollbar-width: thin;
-  scrollbar-color: #2a3548 transparent;
+  scrollbar-color: rgba(0, 229, 255, 0.1) transparent;
 }
 
 .evidence-scroll::-webkit-scrollbar,
@@ -945,7 +962,7 @@ async function submitBug() {
 
 .evidence-scroll::-webkit-scrollbar-thumb,
 .scroll-block::-webkit-scrollbar-thumb {
-  background: #2a3548;
+  background: rgba(0, 229, 255, 0.1);
   border-radius: 3px;
 }
 
@@ -977,7 +994,7 @@ async function submitBug() {
   top: 8px;
   bottom: 8px;
   width: 2px;
-  background: #2a3548;
+  background: rgba(0, 229, 255, 0.1);
 }
 
 .evidence-item {
@@ -997,7 +1014,7 @@ async function submitBug() {
   align-items: center;
   justify-content: center;
   background: #12182a;
-  border: 1px solid #2a3548;
+  border: 1px solid rgba(0, 229, 255, 0.1);
   border-radius: 50%;
   font-size: 0.95rem;
 }

@@ -436,7 +436,7 @@ function closeIfAllowed() {
 .pricing-header h1 {
   font-size: 2.2rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #00e5ff 0%, #7b5cff 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   margin: 0.5rem 0;
@@ -480,7 +480,7 @@ function closeIfAllowed() {
 }
 .connect-wallet-btn {
   padding: 0.6rem 1.2rem;
-  background: linear-gradient(135deg, #667eea, #764ba2);
+  background: linear-gradient(135deg, #00e5ff, #7b5cff);
   border: none;
   border-radius: 8px;
   color: white;
@@ -501,8 +501,8 @@ function closeIfAllowed() {
   margin-bottom: 2rem;
 }
 .package-card {
-  background: #151a24;
-  border: 1px solid #252d3d;
+  background: rgba(10, 15, 28, 0.8);
+  border: 1px solid rgba(0, 229, 255, 0.16);
   border-radius: 16px;
   padding: 1.5rem;
   cursor: pointer;
@@ -515,14 +515,14 @@ function closeIfAllowed() {
 }
 .package-card.popular {
   border-color: #667eea;
-  background: linear-gradient(180deg, #1a1f2e 0%, #151a24 100%);
+  background: linear-gradient(180deg, rgba(13, 18, 32, 0.88) 0%, rgba(10, 15, 28, 0.8) 100%);
 }
 .popular-badge {
   position: absolute;
   top: -10px;
   left: 50%;
   transform: translateX(-50%);
-  background: linear-gradient(135deg, #667eea, #764ba2);
+  background: linear-gradient(135deg, #00e5ff, #7b5cff);
   color: white;
   padding: 0.2rem 0.8rem;
   border-radius: 10px;
@@ -562,8 +562,8 @@ function closeIfAllowed() {
 }
 
 .payment-section {
-  background: #151a24;
-  border: 1px solid #252d3d;
+  background: rgba(10, 15, 28, 0.8);
+  border: 1px solid rgba(0, 229, 255, 0.16);
   border-radius: 16px;
   padding: 1.5rem;
   margin-bottom: 2rem;
@@ -585,7 +585,7 @@ function closeIfAllowed() {
   gap: 0.5rem;
   padding: 0.8rem;
   background: #1a2030;
-  border: 1px solid #252d3d;
+  border: 1px solid rgba(0, 229, 255, 0.16);
   border-radius: 10px;
   color: #98a8ce;
   cursor: pointer;
@@ -621,7 +621,7 @@ function closeIfAllowed() {
 .pay-btn {
   width: 100%;
   padding: 1rem;
-  background: linear-gradient(135deg, #667eea, #764ba2);
+  background: linear-gradient(135deg, #00e5ff, #7b5cff);
   border: none;
   border-radius: 10px;
   color: white;
@@ -674,8 +674,8 @@ function closeIfAllowed() {
 
 /* Payment Section */
 .payment-section {
-  background: #151a24;
-  border: 1px solid #252d3d;
+  background: rgba(10, 15, 28, 0.8);
+  border: 1px solid rgba(0, 229, 255, 0.16);
   border-radius: 16px;
   padding: 1.5rem;
   margin-bottom: 1.5rem;
@@ -707,7 +707,7 @@ function closeIfAllowed() {
 .pay-btn {
   width: 100%;
   padding: 1rem;
-  background: linear-gradient(135deg, #667eea, #764ba2);
+  background: linear-gradient(135deg, #00e5ff, #7b5cff);
   border: none;
   border-radius: 10px;
   color: white;
@@ -743,7 +743,7 @@ function closeIfAllowed() {
   align-items: center;
   margin-top: 1rem;
   padding: 0.8rem;
-  background: #151a24;
+  background: rgba(10, 15, 28, 0.8);
   border-radius: 8px;
   font-size: 0.8rem;
   color: #98a8ce;
@@ -759,7 +759,7 @@ function closeIfAllowed() {
   width: 100%;
   padding: 0.7rem;
   background: transparent;
-  border: 1px solid #2a3548;
+  border: 1px solid rgba(0, 229, 255, 0.1);
   border-radius: 8px;
   color: #6b7a9e;
   font-size: 0.85rem;
@@ -789,7 +789,7 @@ function closeIfAllowed() {
   align-items: flex-start;
   gap: 0.8rem;
   padding: 1rem;
-  background: #151a24;
+  background: rgba(10, 15, 28, 0.8);
   border-radius: 12px;
 }
 .feat-icon {
@@ -824,8 +824,8 @@ function closeIfAllowed() {
 }
 
 .payment-modal {
-  background: #1a1f2e;
-  border: 1px solid #2a3548;
+  background: rgba(13, 18, 32, 0.88);
+  border: 1px solid rgba(0, 229, 255, 0.1);
   border-radius: 20px;
   padding: 2rem;
   width: 90%;
@@ -869,7 +869,7 @@ function closeIfAllowed() {
 }
 
 .modal-details {
-  background: #151a24;
+  background: rgba(10, 15, 28, 0.8);
   border-radius: 12px;
   padding: 1rem;
   margin-bottom: 1.5rem;
@@ -879,7 +879,7 @@ function closeIfAllowed() {
   display: flex;
   justify-content: space-between;
   padding: 0.5rem 0;
-  border-bottom: 1px solid #2a3548;
+  border-bottom: 1px solid rgba(0, 229, 255, 0.1);
 }
 
 .detail-row:last-child {
@@ -897,7 +897,7 @@ function closeIfAllowed() {
 }
 
 .modal-tx {
-  background: #151a24;
+  background: rgba(10, 15, 28, 0.8);
   border-radius: 8px;
   padding: 0.75rem;
   margin-bottom: 1.5rem;
@@ -917,7 +917,7 @@ function closeIfAllowed() {
 .modal-btn {
   width: 100%;
   padding: 1rem;
-  background: linear-gradient(135deg, #667eea, #764ba2);
+  background: linear-gradient(135deg, #00e5ff, #7b5cff);
   border: none;
   border-radius: 10px;
   color: white;

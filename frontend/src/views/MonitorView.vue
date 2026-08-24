@@ -230,7 +230,7 @@ onUnmounted(() => {
 
 <style scoped>
 .monitor-page {
-  max-width: 1000px;
+  max-width: 1400px;
   margin: 0 auto;
   padding: 2rem 1rem;
 }
@@ -243,7 +243,7 @@ onUnmounted(() => {
 .monitor-header h1 {
   font-size: 2rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #00e5ff 0%, #7b5cff 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   margin-bottom: 0.35rem;
@@ -303,7 +303,7 @@ onUnmounted(() => {
 
 .live-toggle {
   background: #1a2233;
-  border: 1px solid #2a3548;
+  border: 1px solid rgba(0, 229, 255, 0.1);
   color: #c7d2e8;
   border-radius: 8px;
   padding: 0.35rem 0.9rem;
@@ -331,7 +331,7 @@ onUnmounted(() => {
 .spinner {
   width: 40px;
   height: 40px;
-  border: 3px solid #2a3548;
+  border: 3px solid rgba(0, 229, 255, 0.1);
   border-top-color: #667eea;
   border-radius: 50%;
   margin: 0 auto 1rem;
@@ -345,8 +345,8 @@ onUnmounted(() => {
 .empty-state {
   text-align: center;
   padding: 3rem 2rem;
-  background: #1a1f2e;
-  border: 1px solid #2a3548;
+  background: rgba(13, 18, 32, 0.88);
+  border: 1px solid rgba(0, 229, 255, 0.1);
   border-radius: 12px;
 }
 
@@ -355,17 +355,26 @@ onUnmounted(() => {
 .empty-icon { font-size: 2.5rem; }
 
 .feed {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr;
   gap: 0.85rem;
+  align-items: start;
+}
+@media (min-width: 1024px) {
+  .feed { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .finding-card {
-  background: #1a1f2e;
-  border: 1px solid #2a3548;
+  background: rgba(13, 18, 32, 0.88);
+  border: 1px solid rgba(0, 229, 255, 0.1);
   border-left-width: 4px;
   border-radius: 12px;
   padding: 0.9rem 1.1rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.finding-card:hover {
+  border-color: rgba(0, 229, 255, 0.35);
+  box-shadow: 0 0 18px rgba(0, 229, 255, 0.08);
 }
 
 .finding-card.drainer { border-left-color: #ff6b6b; }
@@ -386,7 +395,7 @@ onUnmounted(() => {
   font-weight: 600;
   color: #8fa1c4;
   background: rgba(138, 148, 176, 0.08);
-  border: 1px solid #2a3548;
+  border: 1px solid rgba(0, 229, 255, 0.1);
   padding: 0.2rem 0.55rem;
   border-radius: 6px;
 }

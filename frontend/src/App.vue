@@ -669,6 +669,7 @@ function getTotal() {
         
   <!-- Navigation -->
   <nav class="nav">
+    <div class="nav-inner">
     <div class="nav-brand" @click="$router.push('/')">◈ <span>pwnd</span></div>
     <div class="nav-center">
       <RouterLink to="/" class="nav-link">Home</RouterLink>
@@ -732,6 +733,7 @@ function getTotal() {
         <span>Connect</span>
       </button>
     </div>
+    </div>
   </nav>
 
   <!-- Wallet Modal -->
@@ -771,6 +773,7 @@ function getTotal() {
 
   <!-- Footer -->
   <footer class="footer">
+    <div class="footer-inner">
     <div class="footer-stats">
       <span class="stat-item"><span class="chain-label">EVM</span> <span class="num">{{ stats.evm }}</span></span>
       <span class="stat-item"><span class="chain-label">BTC</span> <span class="num">{{ stats.btc }}</span></span>
@@ -783,6 +786,7 @@ function getTotal() {
       <span>© 2026 <a href="https://pwnd.info" style="color:inherit;text-decoration:none;">pwnd.info</a></span>
       <span>Security intelligence for Web3</span>
       <span>v2.0</span>
+    </div>
     </div>
   </footer>
 </template>
@@ -828,8 +832,8 @@ function getTotal() {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  background: #1a1f2e;
-  border: 1px solid #2a3548;
+  background: rgba(13, 18, 32, 0.88);
+  border: 1px solid rgba(0, 229, 255, 0.1);
   border-radius: 12px;
   min-width: 220px;
   padding: 0.75rem;
@@ -839,7 +843,7 @@ function getTotal() {
 
 .menu-header {
   padding-bottom: 0.75rem;
-  border-bottom: 1px solid #2a3548;
+  border-bottom: 1px solid rgba(0, 229, 255, 0.1);
   margin-bottom: 0.75rem;
 }
 
@@ -888,13 +892,13 @@ function getTotal() {
 }
 
 .menu-item:hover {
-  background: #252d3d;
+  background: rgba(0, 229, 255, 0.16);
 }
 
 .menu-item.logout {
   margin-top: 0.5rem;
   color: #ff6b6b;
-  border-top: 1px solid #2a3548;
+  border-top: 1px solid rgba(0, 229, 255, 0.1);
   padding-top: 0.75rem;
 }
 
@@ -917,8 +921,8 @@ function getTotal() {
   z-index: 1000;
 }
 .wallet-modal {
-  background: #1a1f2e;
-  border: 1px solid #2a3548;
+  background: rgba(13, 18, 32, 0.88);
+  border: 1px solid rgba(0, 229, 255, 0.1);
   border-radius: 16px;
   padding: 1.5rem;
   width: 90%;
@@ -966,15 +970,15 @@ function getTotal() {
   align-items: center;
   gap: 0.8rem;
   padding: 0.8rem 1rem;
-  background: #151a24;
-  border: 1px solid #252d3d;
+  background: rgba(10, 15, 28, 0.8);
+  border: 1px solid rgba(0, 229, 255, 0.16);
   border-radius: 10px;
   cursor: pointer;
   transition: all 0.2s;
 }
 .wallet-option:hover:not(:disabled) {
   border-color: #667eea;
-  background: #1a1f2e;
+  background: rgba(13, 18, 32, 0.88);
 }
 .wallet-option:disabled {
   opacity: 0.6;
@@ -996,7 +1000,7 @@ function getTotal() {
 /* Purchase history in dropdown */
 .menu-purchases {
   padding: 0.75rem 0;
-  border-top: 1px solid #2a3548;
+  border-top: 1px solid rgba(0, 229, 255, 0.1);
   margin-top: 0.5rem;
 }
 .purchases-title {

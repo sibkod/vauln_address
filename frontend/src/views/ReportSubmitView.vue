@@ -346,7 +346,7 @@ onMounted(loadCaptcha)
 
 <style scoped>
 .drainer-report-page {
-  max-width: 640px;
+  max-width: 860px;
   margin: 0 auto;
   padding: 2rem 1rem;
 }
@@ -380,7 +380,7 @@ onMounted(loadCaptcha)
 .tab {
   flex: 1;
   background: #141a2c;
-  border: 1px solid #2a3548;
+  border: 1px solid rgba(0, 229, 255, 0.1);
   color: #8a98bb;
   border-radius: 8px;
   padding: 0.6rem 0.8rem;
@@ -411,7 +411,7 @@ onMounted(loadCaptcha)
   align-items: center;
   gap: 0.45rem;
   background: #0c111b;
-  border: 1px solid #2a3548;
+  border: 1px solid rgba(0, 229, 255, 0.1);
   border-radius: 8px;
   padding: 0.6rem 0.8rem;
   cursor: pointer;
@@ -428,8 +428,8 @@ onMounted(loadCaptcha)
 }
 
 .report-form {
-  background: #1a1f2e;
-  border: 1px solid #2a3548;
+  background: rgba(13, 18, 32, 0.88);
+  border: 1px solid rgba(0, 229, 255, 0.1);
   border-radius: 12px;
   padding: 1.5rem;
   display: flex;
@@ -463,7 +463,7 @@ onMounted(loadCaptcha)
 .field select,
 .field textarea {
   background: #0c111b;
-  border: 1px solid #2a3548;
+  border: 1px solid rgba(0, 229, 255, 0.1);
   border-radius: 8px;
   color: #e7ecf5;
   padding: 0.65rem 0.8rem;
@@ -503,7 +503,7 @@ onMounted(loadCaptcha)
   width: 220px;
   height: 64px;
   border-radius: 8px;
-  border: 1px solid #2a3548;
+  border: 1px solid rgba(0, 229, 255, 0.1);
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -517,7 +517,7 @@ onMounted(loadCaptcha)
 
 .captcha-refresh {
   background: #1a2233;
-  border: 1px solid #2a3548;
+  border: 1px solid rgba(0, 229, 255, 0.1);
   color: #c7d2e8;
   border-radius: 8px;
   width: 40px;
@@ -578,7 +578,7 @@ onMounted(loadCaptcha)
 }
 
 .success-box {
-  background: #1a1f2e;
+  background: rgba(13, 18, 32, 0.88);
   border: 1px solid rgba(75, 201, 160, 0.4);
   border-radius: 12px;
   padding: 2.5rem 2rem;
@@ -602,7 +602,7 @@ onMounted(loadCaptcha)
 
 .btn-secondary {
   background: #1a2233;
-  border: 1px solid #2a3548;
+  border: 1px solid rgba(0, 229, 255, 0.1);
   color: #c7d2e8;
   border-radius: 8px;
   padding: 0.6rem 1.2rem;

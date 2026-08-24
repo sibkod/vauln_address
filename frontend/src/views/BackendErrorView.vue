@@ -94,7 +94,7 @@ function goHome() {
 .back-btn {
   padding: 0.8rem 1.5rem;
   background: #1a2030;
-  border: 1px solid #252d3d;
+  border: 1px solid rgba(0, 229, 255, 0.16);
   border-radius: 10px;
   color: #98a8ce;
   font-weight: 500;
@@ -105,7 +105,7 @@ function goHome() {
   border-color: #4bc9a050;
 }
 .back-btn.primary {
-  background: linear-gradient(135deg, #667eea, #764ba2);
+  background: linear-gradient(135deg, #00e5ff, #7b5cff);
   border: none;
   color: white;
 }
@@ -118,7 +118,7 @@ function goHome() {
   cursor: not-allowed;
 }
 .troubleshooting {
-  background: #151a24;
+  background: rgba(10, 15, 28, 0.8);
   border-radius: 12px;
   padding: 1.2rem;
   text-align: left;

@@ -40,7 +40,7 @@ const channels = [
 
 <style scoped>
 .contacts-container {
-  max-width: 800px;
+  max-width: 1100px;
   margin: 0 auto;
   padding: 2rem 1rem;
 }
@@ -53,7 +53,7 @@ const channels = [
 .contacts-header h1 {
   font-size: 2.5rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #00e5ff 0%, #7b5cff 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   margin-bottom: 0.5rem;
@@ -65,9 +65,12 @@ const channels = [
 }
 
 .channels-grid {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr;
   gap: 1rem;
+}
+@media (min-width: 900px) {
+  .channels-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .channel-card {
@@ -75,8 +78,8 @@ const channels = [
   align-items: center;
   gap: 1rem;
   padding: 1.25rem 1.5rem;
-  background: #1a1f2e;
-  border: 1px solid #2a3548;
+  background: rgba(13, 18, 32, 0.88);
+  border: 1px solid rgba(0, 229, 255, 0.1);
   border-radius: 12px;
   text-decoration: none;
   transition: all 0.2s ease;
@@ -95,7 +98,7 @@ const channels = [
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #151a24;
+  background: rgba(10, 15, 28, 0.8);
   border-radius: 12px;
 }
 
@@ -128,7 +131,7 @@ const channels = [
 .contact-note {
   margin-top: 2rem;
   padding: 1rem;
-  background: #151a24;
+  background: rgba(10, 15, 28, 0.8);
   border-radius: 8px;
   text-align: center;
 }
