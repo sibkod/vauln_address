@@ -27,7 +27,7 @@
 | `avalanche.py`| Avalanche C-Chain | JSON-RPC                               |
 | `bitcoin.py`  | Bitcoin           | Esplora REST (blockstream/mempool)     |
 | `solana.py`   | Solana            | JSON-RPC getSlot/getBlock              |
-| `tron.py`     | TRON              | TronGrid-совместимый HTTP API          |
+| `tron.py`     | TRON              | TronGrid-совместимый HTTP API (TRX + TRC20 transfer) |
 | `sui.py`      | Sui               | JSON-RPC чекпоинты + balanceChanges    |
 
 Каждая EVM-сеть — полностью самостоятельный скрипт со своим списком
@@ -52,13 +52,16 @@ python3 solana.py --start 250000000 --once
 
 ## Семантика находок
 
-- **Исходящий перевод с известного плохого адреса** — движение украденного:
-  `SUSPICIOUS` + `F1_DOWNSTREAM_TRANSFER`, `victim=""`, `hacker=получатель`,
+- **Исходящий перевод с compromised адреса** (`hacked`, `drained`,
+  `phishing` — куда идут украденные; `hacker` — flush) — `SUSPICIOUS` +
+  `F1_DOWNSTREAM_TRANSFER`, `victim=""`, `hacker=получатель`,
   `exposed=[отправитель]`. Получатель регистрируется как `suspicious`,
   дерево отчёта связывает выплату с отправителем.
-- **Входящий перевод на известный плохой адрес** — финансирование оператора:
-  `SUSPICIOUS` + `L1_WATCHED_INFLOW`, `victim=отправитель`,
-  `hacker=известный адрес`. Отправитель получает флаг `associated_hacker`.
+- **Входящий перевод на hacker** — пополнение от жертвы: `SUSPICIOUS` +
+  `L1_WATCHED_INFLOW`, `victim=отправитель`, `hacker=известный адрес`.
+  Отправитель получает флаг `associated_hacker`. Входящие на victim-адреса
+  (`hacked`/`drained`/`phishing`) не мониторятся — по жертве средства уже
+  ушли, её приём нового платежа не значит compromise.
 
 Находки создаются только для адресов со статусами `hacked`, `hacker`,
 `drained`, `phishing`, `suspicious` — движения всех остальных статусов

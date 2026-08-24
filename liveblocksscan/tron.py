@@ -4,8 +4,10 @@
 HTTP API (TronGrid-совместимое): POST /wallet/getnowblock возвращает
 последний блок; номер головы — block_header.raw_data.number. Из контрактов
 TransferContract извлекаются owner/to/amount (hex-адреса конвертируются в
-base58check, т.к. в базе адреса TRON хранятся в base58), из
-TriggerSmartContract — вызывающий и контракт (активность адреса).
+base58check, т.к. в базе адреса TRON хранятся в base58). Для вызовов смарт
+контрактов учитываются только TRC20 transfer(...) — получатель и сумма
+декодируются из ABI данные, адрес контракта (например USDT
+TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t) никогда не становится «получателем».
 
 Запуск: python3 tron.py [--api-url …] [--api-key …] [--interval 3]
 Конфигурация также через env: VAULN_API_URL, ADMIN_API_KEY, TRON_API_URL
@@ -30,6 +32,30 @@ API_ENDPOINTS = [
 ]
 
 B58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+# TRC20 transfer(address,uint256) selector. The recipient is ABI-encoded as
+# the first 32-byte argument (12 zero bytes + 21-byte TRON address, 0x41
+# prefix). Anything other than a direct transfer call is not a plain
+# transfer and is skipped entirely — otherwise the contract address gets
+# mis-reported as the recipient (as happened for the USDT contract
+# TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t, which ended up registered as
+# "suspicious" and then every USDT transfer tripped an F1 finding).
+T20_TRANSFER_SELECTOR = "a9059cbb"
+
+
+def decode_trc20_transfer(data_hex):
+    """TRC20 transfer(...) call data -> (recipient, raw amount)."""
+    d = (data_hex or "").lower().replace("0x", "")
+    if len(d) < 8 + 64 + 64 or d[:8] != T20_TRANSFER_SELECTOR:
+        return "", 0
+    word1, word2 = d[8:72], d[72:136]
+    hex_addr = "41" + word1[-40:]  # last 20 bytes; tron prefix 0x41
+    amount = 0
+    try:
+        amount = int(word2, 16)
+    except ValueError:
+        pass
+    return hex_to_base58check(hex_addr), amount
 
 
 def hex_to_base58check(hex_addr):
@@ -118,12 +144,14 @@ def make_tron_watcher(endpoints):
                         hex_to_base58check(value.get("to_address") or ""),
                         (value.get("amount") or 0) / 1e6))
                 elif ctype == "TriggerSmartContract":
-                    # вызов контракта кошельком: сумма TRX при вызове
+                    recipient, raw = decode_trc20_transfer(value.get("data"))
+                    if not recipient:
+                        continue  # вызовы контрактов — не переводы
+                    # большинство TRC20 (USDT/USDD) — 6 десятичных
                     out.append(Transfer(
                         txid,
                         hex_to_base58check(value.get("owner_address") or ""),
-                        hex_to_base58check(value.get("contract_address") or ""),
-                        (value.get("call_value") or 0) / 1e6))
+                        recipient, raw / 1e6))
         return out
 
     return latest, transfers

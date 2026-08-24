@@ -43,6 +43,25 @@ BAD_STATUSES = {
     "hacked", "hacker", "drained", "phishing", "suspicious",
 }
 
+# Кого мониторить и с какой стороны:
+#
+#   OUTGOING_STATUSES — где получать сигнал "монеты уходят": жертвы
+#     (drained / hacked / phishing) + hacker-хакер. Victim как отправитель —
+#     отметка о том, куда ушли stolen; hacker как отправитель — dls отмывки.
+#   INCOMING_STATUSES — кто финансирует адрес из базы: ТОЛЬКО hacker.
+#     Входящие на victim-адрес (drained и др.) не мониторятся — у жертвы
+#     уже ушли средства, её поток приема не значит compromise.
+#
+# suspicious один-off-F1-payout вышел — это шум и не нужен ни в одной
+# стороне (ни outgoing, ни incoming); при повторной выплате он
+# переопределяется в hacker и начинает покрываться по обоим направлениям.
+OUTGOING_STATUSES = {
+    "hacked", "drained", "phishing", "hacker",
+}
+INCOMING_STATUSES = {
+    "hacker",
+}
+
 USER_AGENT = "vauln-liveblocksscan/1.0"
 
 
@@ -189,9 +208,11 @@ def process_transfers(api, chain, height, transfers, posted):
     for t in transfers:
         sender_hit = lookup(t.sender) if t.sender else None
         recipient_hit = lookup(t.recipient) if t.recipient else None
-        sender_bad = sender_hit is not None
-        recipient_bad = recipient_hit is not None
-        if not (sender_bad or recipient_bad):
+        sender_tracked = (sender_hit is not None and
+                          sender_hit.get("status") in OUTGOING_STATUSES)
+        recipient_tracked = (recipient_hit is not None and
+                             recipient_hit.get("status") in INCOMING_STATUSES)
+        if not (sender_tracked or recipient_tracked):
             continue
         if not t.recipient or t.recipient == t.sender:
             continue
@@ -200,7 +221,7 @@ def process_transfers(api, chain, height, transfers, posted):
             continue
         posted.add(key)
 
-        if sender_bad:
+        if sender_tracked:
             status = sender_hit["status"]
             # известную сторону отправляем в регистре из базы (checksummed),
             # чтобы отчёты и статусы сходились с записью реестра
