@@ -634,22 +634,28 @@ func (r *Repository) runMigrations(ctx context.Context) error {
 // keep LOWER(address)). Without it every bulk/existence EVM check fully
 // scans wallets on prod.
 func (r *Repository) migration009LowerAddress(ctx context.Context) {
-	if r.dbType != config.DBTypeMySQL {
-		return
-	}
-	_, err := r.db.ExecContext(ctx, `ALTER TABLE wallets ADD COLUMN
-		lower_address VARCHAR(100) GENERATED ALWAYS AS (LOWER(address)) STORED`)
-	if err != nil && !(strings.Contains(err.Error(), "Duplicate column") ||
-		strings.Contains(err.Error(), "duplicate column name")) {
-		log.Printf("Migration note (wallets lower_address): %v", err)
-	}
-	idxSQL := "CREATE INDEX idx_wallets_chain_lower ON wallets(chain, lower_address)"
-	if _, err := r.db.ExecContext(ctx, idxSQL); err != nil &&
-		!strings.Contains(err.Error(), "Duplicate key name") {
-		log.Printf("Migration note (wallets lower_address index): %v", err)
-	}
+if r.dbType != config.DBTypeMySQL {
+return
 }
-
+// ALTER TABLE on a populated table can take minutes; run it on a
+// dedicated 10-minute context so the 30-second InitSchema deadline
+// never aborts it, and flip the helper flag immediately on success.
+alterCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+defer cancel()
+_, err := r.db.ExecContext(alterCtx, `ALTER TABLE wallets ADD COLUMN
+lower_address VARCHAR(100) GENERATED ALWAYS AS (LOWER(address)) STORED`)
+if err == nil {
+r.hasLowerAddress = true
+} else if !(strings.Contains(err.Error(), "Duplicate column") ||
+strings.Contains(err.Error(), "duplicate column name")) {
+log.Printf("Migration note (wallets lower_address): %v", err)
+}
+idxSQL := "CREATE INDEX idx_wallets_chain_lower ON wallets(chain, lower_address)"
+if _, err := r.db.ExecContext(alterCtx, idxSQL); err != nil &&
+!strings.Contains(err.Error(), "Duplicate key name") {
+log.Printf("Migration note (wallets lower_address index): %v", err)
+}
+}
 
 // checkLowerAddress reports whether the generated column added by migration
 // 009 exists on MySQL (queried from information_schema, cached on Repository
