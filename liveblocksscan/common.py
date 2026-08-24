@@ -43,6 +43,15 @@ BAD_STATUSES = {
     "hacked", "hacker", "drained", "phishing", "suspicious",
 }
 
+# Статусы операторов: только для них отслеживаются исходящие переводы
+# (движение украденного) и входящие (пополнения от жертв). Жертвы
+# (drained/hacked/phishing) мониторятся только по входящим движениям —
+# жертва исходящим переводом уже переместила свои деньги, поэтому создаём
+# L1 (ее пополнение), но не F1 (ее расход, не ее событие).
+OPERATOR_STATUSES = {
+    "hacker", "suspicious",
+}
+
 USER_AGENT = "vauln-liveblocksscan/1.0"
 
 
@@ -189,9 +198,9 @@ def process_transfers(api, chain, height, transfers, posted):
     for t in transfers:
         sender_hit = lookup(t.sender) if t.sender else None
         recipient_hit = lookup(t.recipient) if t.recipient else None
-        sender_bad = sender_hit is not None
-        recipient_bad = recipient_hit is not None
-        if not (sender_bad or recipient_bad):
+        sender_operator = (sender_hit is not None and
+                           sender_hit.get("status") in OPERATOR_STATUSES)
+        if not (sender_operator or recipient_hit is not None):
             continue
         if not t.recipient or t.recipient == t.sender:
             continue
@@ -200,7 +209,7 @@ def process_transfers(api, chain, height, transfers, posted):
             continue
         posted.add(key)
 
-        if sender_bad:
+        if sender_operator:
             status = sender_hit["status"]
             # известную сторону отправляем в регистре из базы (checksummed),
             # чтобы отчёты и статусы сходились с записью реестра
