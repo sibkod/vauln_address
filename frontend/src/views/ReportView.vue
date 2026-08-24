@@ -3,6 +3,7 @@ import { ref, computed, inject, onMounted, onUnmounted } from 'vue'
 import CollapsibleSection from '../components/CollapsibleSection.vue'
 import { useRoute } from 'vue-router'
 import TxTreeNode, { type TxNode } from '../components/TxTreeNode.vue'
+import { getChainMeta } from '../chains'
 
 interface LeakInfo {
   key_type: string
@@ -468,7 +469,7 @@ async function submitBug() {
                     tx {{ shortAddr(e.tx_signature) }} ↗
                   </a>
                   <span v-if="e.counterparty" class="evidence-counterparty">with {{ shortAddr(e.counterparty) }}</span>
-                  <span v-if="e.amount_sol" class="evidence-amount">-{{ e.amount_sol.toFixed(4) }} SOL</span>
+                  <span v-if="e.amount_sol" class="evidence-amount">-{{ e.amount_sol.toFixed(4) }} {{ getChainMeta(chain).symbol }}</span>
                 </div>
               </div>
             </li>

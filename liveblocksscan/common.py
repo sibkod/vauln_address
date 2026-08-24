@@ -181,14 +181,17 @@ class Transfer:
     идут после нативных при выборе главной находки.
     """
 
-    __slots__ = ("tx", "sender", "recipient", "amount", "is_token")
+    __slots__ = ("tx", "sender", "recipient", "amount", "is_token",
+                 "token_symbol")
 
-    def __init__(self, tx, sender, recipient, amount, is_token=False):
+    def __init__(self, tx, sender, recipient, amount, is_token=False,
+                 token_symbol=""):
         self.tx = tx
         self.sender = sender or ""
         self.recipient = recipient or ""
         self.amount = amount or 0.0
         self.is_token = is_token
+        self.token_symbol = token_symbol
 
 
 # ----------------------------------------------------- ERC20 Transfer логи
@@ -197,44 +200,45 @@ class Transfer:
 ERC20_TRANSFER_TOPIC = (
     "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef")
 
-# Десятичные популярных стейблов — чтобы суммы в находках были читаемыми;
-# неизвестные токены показываются с 18 десятичными (стандарт ERC20).
-KNOWN_TOKEN_DECIMALS = {
+# Десятичные и символы популярных токенов — чтобы суммы в находках были
+# читаемыми без лишних RPC-вызовов. Неизвестные токены разрешаются он-чейн
+# через eth_call decimals()/symbol() (см. make_evm_watcher).
+KNOWN_TOKENS = {
     # USDT
-    "0xdac17f958d2ee523a2206206994597c13d831ec7": 6,
-    "0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7": 6,   # Avalanche
-    "0xc7198437980c041c805a1edcba50c1ce5db95118": 6,   # Avalanche (usdt.e)
-    "0x55d398326f99059ff775485246999027b3197955": 18,  # BNB
-    "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d": 18,  # BNB USDC
-    "0xde1e63dae0bf3b056cb0f86af5e01a53a90dd823": 6,   # Linea
+    "0xdac17f958d2ee523a2206206994597c13d831ec7": (6, "USDT"),
+    "0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7": (6, "USDT"),   # Avalanche
+    "0xc7198437980c041c805a1edcba50c1ce5db95118": (6, "USDT.e"),  # Avalanche
+    "0x55d398326f99059ff775485246999027b3197955": (18, "USDT"),  # BNB
+    "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d": (18, "USDC"),  # BNB
+    "0xde1e63dae0bf3b056cb0f86af5e01a53a90dd823": (6, "USDT"),   # Linea
     # USDC
-    "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": 6,
-    "0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e": 6,   # Avalanche
-    "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913": 6,   # Base
-    "0x0b2c639c533813f4aa9d7837caf62653d097ff85": 6,   # Optimism
-    "0x7f5c764cbc14f9669b88837ca1490cca17c31607": 6,   # Optimism (usdc.e)
-    "0xaf88d065e77c8cc2239327c5edb3a432268e5831": 6,   # Arbitrum
-    "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359": 6,   # Polygon
-    "0x2791bca1f2de4661ed88a30c99a7a9449aa84174": 6,   # Polygon (usdc.e)
-    "0x176211869ca2b568f2a7d4ee941e073a821ee1ff": 6,   # Linea
+    "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": (6, "USDC"),
+    "0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e": (6, "USDC"),   # Avalanche
+    "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913": (6, "USDC"),   # Base
+    "0x0b2c639c533813f4aa9d7837caf62653d097ff85": (6, "USDC"),   # Optimism
+    "0x7f5c764cbc14f9669b88837ca1490cca17c31607": (6, "USDC.e"),  # Optimism
+    "0xaf88d065e77c8cc2239327c5edb3a432268e5831": (6, "USDC"),   # Arbitrum
+    "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359": (6, "USDC"),   # Polygon
+    "0x2791bca1f2de4661ed88a30c99a7a9449aa84174": (6, "USDC.e"),  # Polygon
+    "0x176211869ca2b568f2a7d4ee941e073a821ee1ff": (6, "USDC"),   # Linea
     # DAI
-    "0x6b175474e89094c44da98b954eedeac495271d0f": 18,
-    "0xd586e7f844cea2f87f50152665bcbc2c279d8d70": 18,  # Avalanche
-    "0x50c5725949a6f0c72e6c4a641f24049a917db0cb": 18,  # Base
-    "0xda10009cbd5d07dd0cecc66161fc93d7c9000da1": 18,  # Optimism/Arbitrum
-    "0x4af15ec2a0bd43db75dd04e62faa3b8ef36b00d5": 18,  # Linea
-    "0x8f3cf7ad23cd3cadbd9735aff958023239c6a063": 18,  # Polygon
+    "0x6b175474e89094c44da98b954eedeac495271d0f": (18, "DAI"),
+    "0xd586e7f844cea2f87f50152665bcbc2c279d8d70": (18, "DAI.e"),  # Avalanche
+    "0x50c5725949a6f0c72e6c4a641f24049a917db0cb": (18, "DAI"),   # Base
+    "0xda10009cbd5d07dd0cecc66161fc93d7c9000da1": (18, "DAI"),   # OP/Arb
+    "0x4af15ec2a0bd43db75dd04e62faa3b8ef36b00d5": (18, "DAI"),   # Linea
+    "0x8f3cf7ad23cd3cadbd9735aff958023239c6a063": (18, "DAI"),   # Polygon
     # wrapped natives
-    "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": 18,  # WETH
-    "0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7": 18,  # WAVAX
-    "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c": 18,  # WBNB
-    "0x4200000000000000000000000000000000000006": 18,  # WETH (L2)
-    "0x82af49447d8a07e3bd95bd0d56f35241523fbab1": 18,  # WETH Arbitrum
-    "0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270": 18,  # WMATIC
-    "0xe5d7c2a44ffddf6b295a15c148167daaaf5cf34f": 18,  # WETH Linea
+    "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": (18, "WETH"),
+    "0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7": (18, "WAVAX"),
+    "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c": (18, "WBNB"),
+    "0x4200000000000000000000000000000000000006": (18, "WETH"),  # L2
+    "0x82af49447d8a07e3bd95bd0d56f35241523fbab1": (18, "WETH"),  # Arbitrum
+    "0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270": (18, "WPOL"),
+    "0xe5d7c2a44ffddf6b295a15c148167daaaf5cf34f": (18, "WETH"),  # Linea
     # WBTC
-    "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599": 8,
-    "0x50b7545627a5162f82a992c33b87adc75187b218": 8,   # Avalanche
+    "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599": (8, "WBTC"),
+    "0x50b7545627a5162f82a992c33b87adc75187b218": (8, "WBTC.e"),  # Avalanche
 }
 
 
@@ -245,11 +249,34 @@ def topic_to_address(topic):
     return "0x" + topic[-40:].lower()
 
 
-def extract_erc20_transfers(receipts):
+def decode_abi_string(hexdata):
+    """Раскодировать string из результата eth_call (ABI или bytes32)."""
+    try:
+        raw = bytes.fromhex((hexdata or "0x")[2:])
+    except ValueError:
+        return ""
+    if not raw:
+        return ""
+    # bytes32 (старые токены вроде MKR): нулевой «offset» и короткая строка
+    if len(raw) == 32:
+        raw = raw.rstrip(b"\x00")
+    elif len(raw) >= 64:
+        strlen = int.from_bytes(raw[32:64], "big")
+        raw = raw[64:64 + strlen]
+    else:
+        return ""
+    try:
+        return raw.decode("utf-8", errors="replace").strip("\x00").strip()
+    except UnicodeDecodeError:
+        return ""
+
+
+def extract_erc20_transfers(receipts, resolve=None):
     """Достать (tx_hash, from, to, amount) из логов Transfer рецептов блока.
 
     receipts — ответ eth_getBlockReceipts (список рецептов с transactionHash
-    и logs). Количество делится на десятичные известного токена.
+    и logs). resolve(token_addr) -> (decimals, symbol) — обязателен для
+    корректных сумм: без него берутся 18 десятичных (стандарт ERC20).
     """
     out = []
     for rc in receipts or []:
@@ -265,12 +292,14 @@ def extract_erc20_transfers(receipts):
                 continue
             if raw <= 0:
                 continue
-            decimals = KNOWN_TOKEN_DECIMALS.get(token, 18)
+            decimals, symbol = KNOWN_TOKENS.get(token, (18, ""))
+            if resolve is not None and (token not in KNOWN_TOKENS):
+                decimals, symbol = resolve(token)
             out.append(Transfer(tx_hash,
                                 topic_to_address(topics[1]),
                                 topic_to_address(topics[2]),
                                 raw / (10 ** decimals),
-                                is_token=True))
+                                is_token=True, token_symbol=symbol))
     return out
 
 
@@ -284,6 +313,30 @@ def make_evm_watcher(chain_label, endpoints):
     """
     rpc = JsonRpc(endpoints)
     state = {"receipts_ok": None}  # None — неизвестно, True/False — проверено
+    token_meta = dict(KNOWN_TOKENS)  # address -> (decimals, symbol), кэш
+
+    def resolve_token(addr):
+        """(decimals, symbol) токена; неизвестные — он-чейн decimals/symbol."""
+        meta = token_meta.get(addr)
+        if meta is None:
+            decimals, symbol = 18, ""
+            try:
+                r = rpc.call("eth_call",
+                             [{"to": addr, "data": "0x313ce567"}, "latest"])
+                d = int(r, 16)
+                if 0 <= d <= 36:
+                    decimals = d
+            except (RuntimeError, ValueError):
+                pass
+            try:
+                r = rpc.call("eth_call",
+                             [{"to": addr, "data": "0x95d89b41"}, "latest"])
+                symbol = decode_abi_string(r)[:32]
+            except RuntimeError:
+                pass
+            meta = (decimals, symbol)
+            token_meta[addr] = meta
+        return meta
 
     def latest():
         return int(rpc.call("eth_blockNumber"), 16)
@@ -308,7 +361,7 @@ def make_evm_watcher(chain_label, endpoints):
                 if receipts is None:
                     raise RuntimeError("eth_getBlockReceipts не поддерживается")
                 state["receipts_ok"] = True
-                out.extend(extract_erc20_transfers(receipts))
+                out.extend(extract_erc20_transfers(receipts, resolve_token))
             except (RuntimeError, BlockUnavailable) as e:
                 state["receipts_ok"] = False
                 print(f"  !! {chain_label}: без ERC20-логов ({e}); "
@@ -366,18 +419,24 @@ def process_transfers(api, chain, height, transfers, posted):
             continue
         posted.add(key)
         seen_tx.add(t.tx)
+        fallback = "TRC20" if chain == "tron" else "ERC20"
+        token_ind = (f"ERC20:{t.token_symbol or fallback}"
+                     if t.is_token else None)
 
         if sender_tracked:
             status = sender_hit["status"]
             # известную сторону отправляем в регистре из базы (checksummed),
             # чтобы отчёты и статусы сходились с записью реестра
             sender_db = sender_hit.get("address") or t.sender
+            indicators = ["F1_DOWNSTREAM_TRANSFER"]
+            if token_ind:
+                indicators.append(token_ind)
             payload = {
                 "chain": chain,
                 "signature": t.tx,
                 "slot": height,
                 "verdict": "SUSPICIOUS",
-                "indicators": ["F1_DOWNSTREAM_TRANSFER"],
+                "indicators": indicators,
                 "victim_address": "",
                 "hacker_address": t.recipient,
                 "amount_sol": round(t.amount, 9),
@@ -385,18 +444,22 @@ def process_transfers(api, chain, height, transfers, posted):
                 "exposed_addresses": [sender_db],
                 "source": "live-blocks",
             }
+            unit = t.token_symbol if t.is_token else ""
             print(f"  >>> ДВИЖЕНИЕ блок {height}: {t.sender[:16]}… ({status})"
-                  f" -> {t.recipient[:16]}…  {t.amount:.6f}"
+                  f" -> {t.recipient[:16]}…  {t.amount:.6f} {unit}"
                   f" [{t.tx[:20]}…]", flush=True)
         else:
             status = recipient_hit["status"]
             recipient_db = recipient_hit.get("address") or t.recipient
+            indicators = ["L1_WATCHED_INFLOW"]
+            if token_ind:
+                indicators.append(token_ind)
             payload = {
                 "chain": chain,
                 "signature": t.tx,
                 "slot": height,
                 "verdict": "SUSPICIOUS",
-                "indicators": ["L1_WATCHED_INFLOW"],
+                "indicators": indicators,
                 "victim_address": t.sender,
                 "hacker_address": recipient_db,
                 "amount_sol": round(t.amount, 9),
@@ -404,8 +467,9 @@ def process_transfers(api, chain, height, transfers, posted):
                 "exposed_addresses": [t.sender],
                 "source": "live-blocks",
             }
+            unit = t.token_symbol if t.is_token else ""
             print(f"  >>> ПОПОЛНЕНИЕ блок {height}: {t.sender[:16]}… ->"
-                  f" {t.recipient[:16]}… ({status})  {t.amount:.6f}"
+                  f" {t.recipient[:16]}… ({status})  {t.amount:.6f} {unit}"
                   f" [{t.tx[:20]}…]", flush=True)
         resp = api.post_finding(payload)
         if resp is not None:
