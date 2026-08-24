@@ -90,6 +90,23 @@ func (h *Handler) IngestScanFinding(c *gin.Context) {
 	}
 	req.ExposedAddresses = filtered
 
+	// Sweep recipients go through the same strict validation: bogus
+	// addresses are dropped, the victim is never its own recipient.
+	sweeps := req.Sweeps[:0]
+	seenSweeps := map[string]bool{}
+	for _, sw := range req.Sweeps {
+		if sw.Address == "" || sw.Address == req.VictimAddress ||
+			sw.AmountSOL <= 0 || seenSweeps[sw.Address] {
+			continue
+		}
+		if ok, _ := validators.ValidateAddress(walletChain, sw.Address); !ok {
+			continue
+		}
+		seenSweeps[sw.Address] = true
+		sweeps = append(sweeps, sw)
+	}
+	req.Sweeps = sweeps
+
 	id, inserted, err := h.repo.InsertScanFinding(c.Request.Context(), req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
@@ -107,6 +124,7 @@ func (h *Handler) IngestScanFinding(c *gin.Context) {
 	hackerIsProgram := isProgramAddress(req.HackerAddress, req.Programs) || isTakeoverOnlyFinding(req.Indicators)
 
 	victimAdded, hackerAdded := false, false
+	sweepsAdded := 0
 	if inserted {
 		switch req.Verdict {
 		case models.ScanVerdictDrainer:
@@ -122,6 +140,10 @@ func (h *Handler) IngestScanFinding(c *gin.Context) {
 					models.StatusSuspicious, "suspicious drainer-like transaction, not yet confirmed as malicious")
 			}
 		}
+		// The remaining recipients of a split drain each got a share of the
+		// swept funds. Like one-off downstream recipients (F1) they are
+		// flagged as suspicious; only the primary recipient is the operator.
+		sweepsAdded = h.registerSweepRecipients(c, req, walletChain)
 	}
 
 	// Wallets that sent funds to the operator are flagged as associated with
@@ -131,9 +153,23 @@ func (h *Handler) IngestScanFinding(c *gin.Context) {
 	// hijacked, they did not pay anyone, so program findings never create
 	// associations at all.
 	associated := 0
-	if req.Verdict == models.ScanVerdictDrainer && req.HackerAddress != "" && !hackerIsProgram {
+	// Live-block inflow findings (L1) name a threat-listed recipient as the
+	// hacker: the senders funding it get the same association flag as the
+	// senders funding a drainer operator.
+	liveInflow := hasIndicator(req.Indicators, "L1_WATCHED_INFLOW")
+	if (req.Verdict == models.ScanVerdictDrainer || liveInflow) && req.HackerAddress != "" && !hackerIsProgram {
 		reason := "transferred funds to known drainer operator " + req.HackerAddress
-		seen := map[string]bool{req.HackerAddress: true, req.VictimAddress: true}
+		l1 := liveInflow && req.Verdict != models.ScanVerdictDrainer
+		if l1 {
+			reason = "transferred funds to known threat address " + req.HackerAddress
+		}
+		// A drain victim never funded its drainer — it is never flagged.
+		// An L1 finding is the opposite: its victim field IS the sender who
+		// funded the threat-listed address, so it must be flaggable.
+		seen := map[string]bool{req.HackerAddress: true}
+		if !l1 {
+			seen[req.VictimAddress] = true
+		}
 		for _, addr := range req.ExposedAddresses {
 			if addr == "" || seen[addr] {
 				continue
@@ -161,6 +197,7 @@ func (h *Handler) IngestScanFinding(c *gin.Context) {
 		"inserted":     inserted,
 		"victim_added": victimAdded,
 		"hacker_added": hackerAdded,
+		"sweeps_added": sweepsAdded,
 		"associated":   associated,
 		"needs_review": needsReview,
 	})
@@ -235,6 +272,27 @@ func (h *Handler) registerScanWallet(c *gin.Context, address, chain string, stat
 		return false
 	}
 	return true
+}
+
+// registerSweepRecipients registers the secondary recipients of a split
+// drain (every sweep destination except the primary hacker): each of them
+// received a share of the stolen funds in the same transaction, so they are
+// flagged as suspicious without waiting for fund-flow tracing to catch up.
+func (h *Handler) registerSweepRecipients(c *gin.Context, req models.ScanFindingRequest, chain string) int {
+	added := 0
+	seen := map[string]bool{req.VictimAddress: true, req.HackerAddress: true}
+	for _, sw := range req.Sweeps {
+		if sw.Address == "" || seen[sw.Address] ||
+			isProgramAddress(sw.Address, req.Programs) {
+			continue
+		}
+		seen[sw.Address] = true
+		if h.registerScanWallet(c, sw.Address, chain, models.StatusSuspicious,
+			"split drain recipient: received a share of the stolen funds") {
+			added++
+		}
+	}
+	return added
 }
 
 // ==================== Live monitoring ====================
@@ -443,6 +501,10 @@ var scanIndicatorMeta = map[string]struct {
 		"Repeated downstream transfers from drainer operators",
 		"this wallet received funds from drainer operators two or more times — likely accomplice or another hacker wallet",
 	},
+	"L1_WATCHED_INFLOW": {
+		"Transfer to a known threat address",
+		"a live block scanner saw funds sent to this threat-listed wallet",
+	},
 }
 
 // buildStatusEvidence composes the chain of evidence explaining the wallet
@@ -498,9 +560,23 @@ func (h *Handler) buildStatusEvidence(c *gin.Context, report *models.ReportRespo
 	for _, f := range findings {
 		role := "victim"
 		counterparty := f.HackerAddress
+		amount := f.AmountSOL
 		if f.HackerAddress == report.Address {
 			role = "hacker"
 			counterparty = f.VictimAddress
+		}
+		// A secondary recipient of a split drain is neither the victim nor
+		// the primary recipient: the counterparty is the drained wallet and
+		// the amount is the share it actually received.
+		if role == "victim" && f.VictimAddress != report.Address {
+			for _, sw := range f.Sweeps {
+				if sw.Address == report.Address {
+					role = "recipient"
+					counterparty = f.VictimAddress
+					amount = sw.AmountSOL
+					break
+				}
+			}
 		}
 		seen := map[string]bool{}
 		for _, ind := range f.Indicators {
@@ -520,7 +596,7 @@ func (h *Handler) buildStatusEvidence(c *gin.Context, report *models.ReportRespo
 				Description:  desc,
 				TxSignature:  f.Signature,
 				Counterparty: counterparty,
-				AmountSOL:    f.AmountSOL,
+				AmountSOL:    amount,
 				DetectedAt:   f.CreatedAt,
 			})
 		}

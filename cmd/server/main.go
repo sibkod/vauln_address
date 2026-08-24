@@ -101,6 +101,7 @@ func main() {
 	api.GET("/orders/verify", middleware.RequireAuth(), h.VerifyPayment)
 	api.POST("/payment/status/:signature", middleware.RequireAuth(), h.GetPaymentStatus)
 	api.POST("/check", rateLimiter.Limit(), h.CheckWallet)
+	api.POST("/check/bulk", h.BulkCheckWallets)
 	api.GET("/report", h.GetReport)
 	api.GET("/report/shared/:id", h.GetSharedReport)
 	api.POST("/report/share", middleware.RequireAuth(), h.ShareReport)
