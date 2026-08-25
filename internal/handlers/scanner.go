@@ -612,9 +612,9 @@ func (h *Handler) buildStatusEvidence(c *gin.Context, report *models.ReportRespo
 				continue
 			}
 			seen[ind] = true
-			// ERC20:<symbol> is display metadata for the token
-			// amount, not a detection code — skip it in evidence.
-			if strings.HasPrefix(ind, "ERC20:") {
+			// ERC20:<symbol>/ERC721:<symbol> are display metadata for
+			// the token/NFT amount, not detection codes — skip them.
+			if strings.HasPrefix(ind, "ERC20:") || strings.HasPrefix(ind, "ERC721:") {
 				continue
 			}
 			meta, ok := scanIndicatorMeta[ind]

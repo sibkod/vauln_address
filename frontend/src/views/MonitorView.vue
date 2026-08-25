@@ -99,11 +99,12 @@ function fromAddr(f: Finding): string {
   return f.victim_address || f.exposed_addresses?.[0] || ''
 }
 
-// Token transfers carry an ERC20:<symbol> meta-indicator (set by the
-// live-block scanners); without it the amount is in the chain-native coin.
+// Token/NFT transfers carry an ERC20:<symbol> / ERC721:<symbol>
+// meta-indicator (set by the live-block scanners); without it the amount
+// is in the chain-native coin.
 function tokenSymbol(f: Finding): string {
-  const ind = (f.indicators || []).find(i => i.startsWith('ERC20:'))
-  return ind ? ind.slice('ERC20:'.length) : ''
+  const ind = (f.indicators || []).find(i => i.startsWith('ERC20:') || i.startsWith('ERC721:'))
+  return ind ? ind.slice(ind.indexOf(':') + 1) : ''
 }
 
 function displaySymbol(f: Finding): string {
