@@ -189,19 +189,22 @@ class Transfer:
     is_token=True — перевод токена (ERC20/TRC20 и т.п.): amount в единицах
     токена, а не нативной монеты. Такие переводы внутри одной транзакции
     идут после нативных при выборе главной находки.
+    is_nft=True — перевод NFT (ERC721): amount всегда 1, token_symbol —
+    символ коллекции (может быть пустым).
     """
 
     __slots__ = ("tx", "sender", "recipient", "amount", "is_token",
-                 "token_symbol")
+                 "token_symbol", "is_nft")
 
     def __init__(self, tx, sender, recipient, amount, is_token=False,
-                 token_symbol=""):
+                 token_symbol="", is_nft=False):
         self.tx = tx
         self.sender = sender or ""
         self.recipient = recipient or ""
         self.amount = amount or 0.0
         self.is_token = is_token
         self.token_symbol = token_symbol
+        self.is_nft = is_nft
 
 
 # ----------------------------------------------------- ERC20 Transfer логи
@@ -287,6 +290,8 @@ def extract_erc20_transfers(receipts, resolve=None):
     receipts — ответ eth_getBlockReceipts (список рецептов с transactionHash
     и logs). resolve(token_addr) -> (decimals, symbol) — обязателен для
     корректных сумм: без него берутся 18 десятичных (стандарт ERC20).
+    Логи с 4 темами и пустым data — переводы NFT (ERC721: tokenId лежит
+    в topics[3], а не в data): сумма всегда 1, Transfer помечается is_nft.
     """
     out = []
     for rc in receipts or []:
@@ -299,17 +304,22 @@ def extract_erc20_transfers(receipts, resolve=None):
             try:
                 raw = int(log.get("data") or "0x0", 16)
             except ValueError:
-                continue
+                raw = 0
+            is_nft = False
             if raw <= 0:
-                continue
+                if len(topics) < 4:
+                    continue
+                is_nft = True  # ERC721: суммы нет, tokenId в topics[3]
             decimals, symbol = KNOWN_TOKENS.get(token, (18, ""))
             if resolve is not None and (token not in KNOWN_TOKENS):
                 decimals, symbol = resolve(token)
+            amount = 1.0 if is_nft else raw / (10 ** decimals)
             out.append(Transfer(tx_hash,
                                 topic_to_address(topics[1]),
                                 topic_to_address(topics[2]),
-                                raw / (10 ** decimals),
-                                is_token=True, token_symbol=symbol))
+                                amount,
+                                is_token=True, token_symbol=symbol,
+                                is_nft=is_nft))
     return out
 
 
@@ -431,9 +441,13 @@ def process_transfers(api, chain, height, transfers, posted):
             continue
         posted.add(key)
         seen_tx.add(t.tx)
-        fallback = "TRC20" if chain == "tron" else "ERC20"
-        token_ind = (f"ERC20:{t.token_symbol or fallback}"
-                     if t.is_token else None)
+        if t.is_nft:
+            token_ind = f"ERC721:{t.token_symbol or 'NFT'}"
+        elif t.is_token:
+            fallback = "TRC20" if chain == "tron" else "ERC20"
+            token_ind = f"ERC20:{t.token_symbol or fallback}"
+        else:
+            token_ind = None
 
         if sender_tracked:
             status = sender_hit["status"]
@@ -456,7 +470,8 @@ def process_transfers(api, chain, height, transfers, posted):
                 "exposed_addresses": [sender_db],
                 "source": "live-blocks",
             }
-            unit = t.token_symbol if t.is_token else ""
+            unit = (f"NFT {t.token_symbol}".strip() if t.is_nft
+                    else t.token_symbol if t.is_token else "")
             print(f"  >>> ДВИЖЕНИЕ блок {height}: {t.sender[:16]}… ({status})"
                   f" -> {t.recipient[:16]}…  {t.amount:.6f} {unit}"
                   f" [{t.tx[:20]}…]", flush=True)
@@ -479,7 +494,8 @@ def process_transfers(api, chain, height, transfers, posted):
                 "exposed_addresses": [t.sender],
                 "source": "live-blocks",
             }
-            unit = t.token_symbol if t.is_token else ""
+            unit = (f"NFT {t.token_symbol}".strip() if t.is_nft
+                    else t.token_symbol if t.is_token else "")
             print(f"  >>> ПОПОЛНЕНИЕ блок {height}: {t.sender[:16]}… ->"
                   f" {t.recipient[:16]}… ({status})  {t.amount:.6f} {unit}"
                   f" [{t.tx[:20]}…]", flush=True)
