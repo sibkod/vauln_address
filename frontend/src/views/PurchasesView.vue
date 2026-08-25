@@ -185,7 +185,7 @@ onMounted(() => {
 
 <style scoped>
 .purchases-page {
-  max-width: 900px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 2rem 1rem;
 }
@@ -216,7 +216,7 @@ onMounted(() => {
 .spinner {
   width: 40px;
   height: 40px;
-  border: 3px solid #2a3548;
+  border: 3px solid rgba(0, 229, 255, 0.1);
   border-top-color: #667eea;
   border-radius: 50%;
   margin: 0 auto 1rem;
@@ -239,8 +239,8 @@ onMounted(() => {
 .empty-state {
   text-align: center;
   padding: 4rem 2rem;
-  background: #1a1f2e;
-  border: 1px solid #2a3548;
+  background: rgba(13, 18, 32, 0.88);
+  border: 1px solid rgba(0, 229, 255, 0.1);
   border-radius: 12px;
 }
 
@@ -277,7 +277,7 @@ onMounted(() => {
 .orders-table {
   width: 100%;
   border-collapse: collapse;
-  background: #1a1f2e;
+  background: rgba(13, 18, 32, 0.88);
   border-radius: 12px;
   overflow: hidden;
 }
@@ -289,7 +289,7 @@ onMounted(() => {
 }
 
 .orders-table th {
-  background: #151a24;
+  background: rgba(10, 15, 28, 0.8);
   color: #6b7a9e;
   font-weight: 600;
   font-size: 0.85rem;
@@ -297,7 +297,7 @@ onMounted(() => {
 }
 
 .orders-table td {
-  border-bottom: 1px solid #2a3548;
+  border-bottom: 1px solid rgba(0, 229, 255, 0.1);
   color: #e7ecf5;
 }
 
@@ -372,13 +372,13 @@ onMounted(() => {
   gap: 0.5rem;
   margin-top: 1.5rem;
   padding-top: 1rem;
-  border-top: 1px solid #2a3548;
+  border-top: 1px solid rgba(0, 229, 255, 0.1);
 }
 
 .page-btn {
   padding: 0.5rem 1rem;
-  background: #151a24;
-  border: 1px solid #2a3548;
+  background: rgba(10, 15, 28, 0.8);
+  border: 1px solid rgba(0, 229, 255, 0.1);
   border-radius: 8px;
   color: #98a8ce;
   cursor: pointer;
@@ -406,8 +406,8 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #151a24;
-  border: 1px solid #2a3548;
+  background: rgba(10, 15, 28, 0.8);
+  border: 1px solid rgba(0, 229, 255, 0.1);
   border-radius: 6px;
   color: #98a8ce;
   cursor: pointer;

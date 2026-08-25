@@ -58,7 +58,7 @@ const roadmap = {
 
 <style scoped>
 .roadmap-container {
-  max-width: 900px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 2rem 1rem;
 }
@@ -71,7 +71,7 @@ const roadmap = {
 .roadmap-header h1 {
   font-size: 2.5rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #00e5ff 0%, #7b5cff 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   margin-bottom: 0.5rem;
@@ -90,7 +90,7 @@ const roadmap = {
 .spinner {
   width: 40px;
   height: 40px;
-  border: 3px solid #2a3548;
+  border: 3px solid rgba(0, 229, 255, 0.1);
   border-top-color: #667eea;
   border-radius: 50%;
   margin: 0 auto;
@@ -108,8 +108,8 @@ const roadmap = {
 }
 
 .roadmap-section {
-  background: #1a1f2e;
-  border: 1px solid #2a3548;
+  background: rgba(13, 18, 32, 0.88);
+  border: 1px solid rgba(0, 229, 255, 0.1);
   border-radius: 12px;
   padding: 1.5rem;
 }
@@ -123,7 +123,7 @@ const roadmap = {
   font-size: 1.1rem;
   margin-bottom: 1rem;
   padding-bottom: 0.75rem;
-  border-bottom: 1px solid #2a3548;
+  border-bottom: 1px solid rgba(0, 229, 255, 0.1);
 }
 
 .checklist {
@@ -166,8 +166,8 @@ const roadmap = {
   margin-top: 3rem;
   text-align: center;
   padding: 2rem;
-  background: linear-gradient(135deg, #1a1f2e 0%, #1a2233 100%);
-  border: 1px solid #2a3548;
+  background: linear-gradient(135deg, rgba(13, 18, 32, 0.88) 0%, #1a2233 100%);
+  border: 1px solid rgba(0, 229, 255, 0.1);
   border-radius: 16px;
 }
 
@@ -185,7 +185,7 @@ const roadmap = {
 .btn-primary {
   display: inline-block;
   padding: 0.75rem 1.5rem;
-  background: linear-gradient(135deg, #667eea, #764ba2);
+  background: linear-gradient(135deg, #00e5ff, #7b5cff);
   color: white;
   text-decoration: none;
   border-radius: 8px;

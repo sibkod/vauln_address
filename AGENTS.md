@@ -74,3 +74,9 @@
 
 ## Build variants
 - `./build.sh local|dev|prod [--env-file F] [--skip-frontend] [--skip-backend]`: sources values from build/env/<variant>, inlines VITE_API_URL/VITE_SOLANA_CLUSTER into the frontend bundle, cross-compiles cmd/server (GOOS/GOARCH), and assembles build/dist/<variant>/ (frontend, server, generated .env, solana_scan.py + solana_programs.json, migrations). build/dist/ is gitignored; build/env files hold empty secret placeholders — fill before building.
+
+## Frontend layout & theme (2026-08 redesign)
+- Global layout lives in `frontend/src/style.css`: CSS tokens in `:root` (`--container: 1400px`, `--gutter: clamp(1rem,3vw,2.5rem)`, neon palette `--neon-cyan #00e5ff` / `--neon-magenta #ff2e88` / `--neon-violet #7b5cff`, panel `rgba(13,18,32,0.88)`). `.main-content` is a fluid centered container (max 1400px) — pages are NO LONGER capped at 720px; per-view containers are 1100–1400px. Cyberpunk bg = fixed grid lines + corner neon glows on `body`; light theme overrides stay under `body.light …` in the same file.
+- Alignment: `App.vue` wraps nav content in `.nav-inner` and footer in `.footer-inner` (both max-width var(--container), margin auto) so the top menu lines up with page content instead of hugging the left edge.
+- Responsive grids: global `.grid-2` (2 cols ≥1024px, `.span-2` spans both) and `.home-grid` (`.home-top` spans, `.home-main` search column + `.home-side` recent-checks column). ReportView `.report-body` is a 2-col grid ≥1100px with `.wide` sections (Money flows, Transaction flows) spanning; MonitorView `.feed` is 2-col ≥1024px; ContactView `.channels-grid` 2-col ≥900px; AboutView = two `.content-card`s in `.grid-2`.
+- ChainLogo.vue TRON icon is the official mark (64×64 viewBox path from cryptologos.cc, white glyph scaled 0.61 on #EB0029 disc) — do not replace with the old play-triangle.

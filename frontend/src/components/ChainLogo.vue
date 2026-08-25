@@ -131,14 +131,14 @@ const chain = computed(() => (props.chain || '').toLowerCase())
     <path fill="#fff" d="M16 6c-4.2 4.9-6.3 8.3-6.3 11.2a6.3 6.3 0 0 0 12.6 0C22.3 14.3 20.2 10.9 16 6z" />
   </svg>
 
-  <!-- Tron -->
+  <!-- Tron (official mark) -->
   <svg
     v-else-if="chain === 'tron'"
-    :width="size" :height="size" viewBox="0 0 32 32"
+    :width="size" :height="size" viewBox="0 0 64 64"
     role="img" aria-label="Tron"
   >
-    <circle cx="16" cy="16" r="16" fill="#EB0029" />
-    <path fill="#fff" d="M10.5 9.5L22 16l-11.5 6.5V9.5z" />
+    <circle cx="32" cy="32" r="32" fill="#EB0029" />
+    <path fill="#fff" transform="translate(12.5 12.5) scale(0.61)" d="M61.55,19.28c-3-2.77-7.15-7-10.53-10l-.2-.14a3.82,3.82,0,0,0-1.11-.62l0,0C41.56,7,3.63-.09,2.89,0a1.4,1.4,0,0,0-.58.22L2.12.37a2.23,2.23,0,0,0-.52.84l-.05.13v.71l0,.11C5.82,14.05,22.68,53,26,62.14c.2.62.58,1.8,1.29,1.86h.16c.38,0,2-2.14,2-2.14S58.41,26.74,61.34,23a9.46,9.46,0,0,0,1-1.48A2.41,2.41,0,0,0,61.55,19.28ZM36.88,23.37,49.24,13.12l7.25,6.68Zm-4.8-.67L10.8,5.26l34.43,6.35ZM34,27.27l21.78-3.51-24.9,30ZM7.91,7,30.3,26,27.06,53.78Z" />
   </svg>
 
   <!-- Fallback: first letter on a neutral disc -->
