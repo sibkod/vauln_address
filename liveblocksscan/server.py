@@ -363,11 +363,12 @@ class Manager:
 
     def shutdown(self):
         """Остановить все дочерние процессы (SIGTERM, затем KILL)."""
-        self.reaper_stop.set()
         with self.lock:
             sts = [st for st in self.scripts.values() if st.running]
         for st in sts:
             self._stop(st)
+        # reaper фиксирует завершения; останавливаем его после остановки всех.
+        self.reaper_stop.set()
 
 
 # ------------------------------------------------------- HTTP handler
@@ -574,10 +575,13 @@ def main():
     print("=" * 60, flush=True)
 
     def shutdown(signum, frame):  # noqa: ARG001
+        # httpd.shutdown() блокирует до конца serve_forever в главном потоке;
+        # cleanup запускаем в отдельном потоке, иначе сигнальный обработчик
+        # (сам главный поток) дедлачил бы сам с собой。
         print("\nОстановка…", flush=True)
-        manager.shutdown()
-        httpd.shutdown()
-        raise SystemExit(0)
+        threading.Thread(
+            target=lambda: (manager.shutdown(), httpd.shutdown()), daemon=True
+        ).start()
 
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
