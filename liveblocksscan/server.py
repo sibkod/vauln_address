@@ -849,7 +849,7 @@ function renderCard(s) {
 function render() {
   const app = $('#app');
   const running = state.scripts.filter(s => s.running).length;
-  const header = el('header',
+  const header = el('header', {},
     el('h1', { html:'🛰 liveblocksscan <small>live-мониторинг блоков · ' + running + '/' + state.scripts.length + ' работают</small>' }),
     el('div', { class:'header-actions' },
       el('span', { class:'badge-reset', text:'обновление: 5с' }),
