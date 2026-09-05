@@ -48,6 +48,7 @@ vauln-address/
 ├── migrations/          # SQL миграции
 ├── nginx.conf.example   # Пример конфигурации Nginx
 ├── .env.example         # Пример конфигурации API
+├── liveblocksscan/     # Сканеры live-блоков + управляющий сервер
 └── go.mod
 ```
 
