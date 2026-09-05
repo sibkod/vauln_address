@@ -707,7 +707,7 @@ h1 small { color: var(--muted); font-weight:400; font-size:13px; display:block; 
 <div id="toast"></div>
 <script>
 const TOKEN_KEY = 'lb_token';
-const $ = (sel, el=document) => el.querySelector(sel;
+const $ = (sel, el=document) => el.querySelector(sel);
 let state = { scripts: [], token: localStorage.getItem(TOKEN_KEY) || '', expanded: new Set(), adv: new Set() };
 
 function el(tag, attrs, ...kids) {
@@ -810,7 +810,7 @@ function renderLogin(err) {
 function renderCard(s) {
   const dot = el('span', { class:'dot ' + statusDot(s) });
   const meta = el('div', { class:'meta' },
-    el('span', { html:'<b>' + (s.pid || '—')) + '</b> · pid' }),
+    el('span', { html:'<b>' + (s.pid || '—') + '</b> · pid' }),
     el('span', { html:'работает <b>' + fmtUptime(s.uptime) + '</b>' }),
     el('span', { html:'запусков <b>' + s.spawn_count + '</b>' }),
     el('span', { html:'строк <b>' + s.lines_total + '</b>' }),
@@ -842,7 +842,7 @@ function renderCard(s) {
   logs.dataset.name = s.name;
 
   const card = el('div', { class:'card' }, head, meta, outHead, logs);
-  if (s.extra_args && s.extra_args.length) card.append(el('div', { class:'meta', html:'аргументы: <b>' + s.extra_args.join(' ') + '</b>' })));
+  if (s.extra_args && s.extra_args.length) card.append(el('div', { class:'meta', html:'аргументы: <b>' + s.extra_args.join(' ') + '</b>' }));
   return card;
 }
 
@@ -854,12 +854,18 @@ function render() {
     el('div', { class:'header-actions' },
       el('span', { class:'badge-reset', text:'обновление: 5с' }),
       el('button', { class:'btn', text:running ? 'Остановить все' : 'Запустить все' }),
-      el('button', { class:'btn', text:'↻' })
+      el('button', { class:'btn', text:'↻' }),
+      el('button', { class:'btn danger', id:'logout', text:'Выйти' })
     )
   );
-  header.children[1].children[1].onclick = () => { const s = running ? 'stop' : 'start'; state.scripts.forEach(x => (s === 'start' ? startScript(x) : stopScript(x, false)))); };
+  header.children[1].children[1].onclick = () => { const s = running ? 'stop' : 'start'; state.scripts.forEach(x => (s === 'start' ? startScript(x) : stopScript(x, false))); };
   header.children[1].children[2].onclick = () => refresh(true);
-```
+  header.children[1].children[3].onclick = () => {
+    state.token = '';
+    localStorage.removeItem(TOKEN_KEY);
+    renderLogin();
+    clearInterval(window.__autoRefresh);
+  };
   const cards = state.scripts.map(renderCard);
   app.replaceChildren(header, ...cards, el('div', { class:'foot', text:'liveblocksscan · сервер процессов' }));
   renderLogs();
@@ -867,13 +873,13 @@ function render() {
 
 function renderLogs() {
   state.scripts.forEach(s => {
-    const logs = $('.logs[data-name="' + s.name + '"]'});
+    const logs = $('.logs[data-name="' + s.name + '"]');
     if (!logs || logs.hidden) return;
     const wasBottom = logs.scrollTop + logs.clientHeight >= logs.scrollHeight - 20;
     logs.replaceChildren(...s.tail.map(l =>
-      el('div', { class:'line ' + logClass(l },
+      el('div', { class:'line ' + logClass(l)},
         el('span', { class:'t', text:fmtClock(l.ts) }), document.createTextNode(l.text))
-      ))
+      )
     );
     if (wasBottom) logs.scrollTop = logs.scrollHeight;
   });
@@ -882,7 +888,7 @@ function renderLogs() {
 async function refresh(markActive) {
   try {
     const data = await api('/api/scripts?ts=' + Date.now());
-    state.scripts = textContent = data.scripts;
+    state.scripts = data.scripts;
     if (markActive) clearInterval(window.__autoRefresh);
     render();
     scheduleRefresh();
@@ -903,7 +909,7 @@ function startScript(s, btn) {
 }
 
 function stopScript(s, confirmStop) {
-  if (confirmStop) && !confirm('Остановить ' + s.name + '?')) return;
+  if (confirmStop && !confirm('Остановить ' + s.name + '?')) return;
   api('/api/scripts/' + s.name + '/stop', { method:'POST' })
     .then(() => refresh(true)).catch(e => toast(e.message));
 }
@@ -920,7 +926,7 @@ function toggleAdv(name) {
 }
 
 function collectAdv(name) {
-  const adv = $('.adv[data-name="' + name + '"]'});
+const adv = $('.adv[data-name="' + name + '"]');
   if (!adv) return {};
   const iv = $('#iv_' + name).value.trim();
   const st = $('#st_' + name).value.trim();
@@ -935,7 +941,7 @@ function collectAdv(name) {
 }
 
 function init(data) {
-  state.scripts = textContent = data.scripts;
+  state.scripts = data.scripts;
  render();
   scheduleRefresh();
 }
