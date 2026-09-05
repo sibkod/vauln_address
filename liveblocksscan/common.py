@@ -31,10 +31,54 @@ POST /api/admin/scanner/findings — они появляются в монито
 import argparse
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
+
+
+def load_dotenv():
+    """Загрузить liveblocksscan/.env в окружение (не перезаписывая его).
+
+
+    Если переменная уже задана (например, из шелла или системного unit),
+    значение из .env не перекрывает её. Разделители: "=" и ";"  — то же,
+    что поддерживает docker-compose. Поддержка простых комментариев "##".
+    """
+    root = Path(__file__).resolve().parent
+    candidates = [root / ".env", Path.cwd() / ".env"]
+    if os.environ.get("LIVEBLOCKS_ENV_DIR"):
+        candidates.insert(0, Path(os.environ["LIVEBLOCKS_ENV_DIR"]) / ".env")
+    seen = set()
+    for path in candidates:
+        try:
+            with path.open("r", encoding="utf-8") as fh:
+                lines = fh.readlines()
+        except OSError:
+            continue
+        for raw in lines:
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            key, _, val = line.partition("=")
+            key = key.strip()
+            if not key or not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", key):
+                continue
+            if key in seen or key in os.environ:
+                continue
+            seen.add(key)
+            val = val.strip()
+            if len(val) >= 2 and val[0] == '"' and val[-1] == '"':
+                val = val[1:-1].replace('""', '""')
+            os.environ[key] = val
+
+
+# Загружаем .env ДО вычисления констант ниже (watcher-скрипты импортируют
+# common.py и уже на импорте получают правильные VAULN_API_URL/ADMIN_API_KEY).
+load_dotenv()
+
 
 DEFAULT_API_URL = os.environ.get("VAULN_API_URL", "http://127.0.0.1:8080")
 ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "")

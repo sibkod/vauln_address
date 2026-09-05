@@ -50,6 +50,42 @@ python3 solana.py --start 250000000 --once
 Флаги: `--api-url`, `--api-key`, `--interval` (пауза между опросами),
 `--start` (стартовый блок вместо головы), `--once`.
 
+## Конфигурация через `.env`
+
+`liveblocksscan` — отдельный подпроект со своим собственным конфиг-файлом.
+Скопируйте в .env и заполните свои значения:
+        cp .env.example .env
+
+```bash
+# --- Бэкенд (vauln_address API) ---
+# URL основного сервера: и watcher'ы и управляющий сервер льют находки сюда.
+# VAULN_API_URL=http://127.0.0.1:8080
+# Админ-ключ бэкенда (нужен для POST /api/admin/scanner/findings).
+# Сгенерируйте: openssl rand -hex 32
+# ADMIN_API_KEY=
+
+# Токен доступа к дашборду/API. Если пуст — сервер сгенерирует случайный
+# и напечатает его в stderr при старте.
+# LIVEBLOCKS_TOKEN=
+# Хост/порт, на котором слушает управляющий сервер.
+# LIVEBLOCKS_HOST=127.0.0.1
+# LIVEBLOCKS_PORT=9299
+# Каталог со watcher-скриптами ( если не рядом с server.py)。
+# LIVEBLOCKS_SCRIPTS_DIR=
+# Список скриптов через запятую, запускаемых при старте сервера。
+# Например: LIVEBLOCKS_AUTO_START=ethereum,bitcoin
+# LIVEBLOCKS_AUTO_START=
+
+# Отладка: LIVEBLOCKS_NO_AUTH=1 отключает токен (не для продакшена)。
+# LIVEBLOCKS_NO_AUTH=
+# RPC / API endpoints сетей (перекрывают встроенные списки;
+# несколько адресов через запятую для round-robin。
+# ETH_RPC_URL=https://eth.llamarpc.com,https://cloudflare-eth.com
+
+```
+
+Полный список переменных — в `liveblocksscan/.env.example`.
+
 ## Семантика находок
 
 - **Исходящий перевод с compromised адреса** (`hacked`, `drained`,
