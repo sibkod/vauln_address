@@ -822,7 +822,7 @@ function renderCard(s) {
     el('button', { class:'btn small', disabled:!s.running, text:'⏹' }),
     el('button', { class:'btn small', disabled:!s.running, text:'↻' })
   );
-  acts.children[0].onclick = () => startScript(s, actss.children[0]);
+  acts.children[0].onclick = () => startScript(s, acts.children[0]);
   acts.children[1].onclick = () => toggleAdv(s.name);
   acts.children[2].onclick = () => stopScript(s, true);
   acts.children[3].onclick = () => restartScript(s);
